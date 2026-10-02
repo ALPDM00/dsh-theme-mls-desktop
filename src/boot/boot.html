@@ -1,0 +1,54 @@
+<!-- Boot payload: DOM (marathon stage + intro stage). Images are base64 data-URIs
+     injected by scripts/build.cjs (tokens __IMG_*_B64__ are replaced before the
+     payload is JSON-embedded).
+
+     2026-10-02: the inverted-blue flicker frame is back (it was previously
+     dropped on the reasoning that a transparent window has no black plate to
+     invert against — the user wants the beat either way). assets/boot/
+     invert-blue-pixel.png stays in the repo. -->
+<div id="mb-boot">
+  <canvas id="mb-canvas"></canvas>
+
+  <div class="mb-corner mb-tl"></div><div class="mb-corner mb-tr"></div>
+  <div class="mb-corner mb-bl"></div><div class="mb-corner mb-br"></div>
+
+  <div class="mb-topbar">
+    <div class="mb-brand">MARATHON<small>// BOOT SEQUENCE</small></div>
+    <div class="mb-readout" id="mb-readout"></div>
+  </div>
+
+  <div class="mb-log" id="mb-log"></div>
+
+  <div class="mb-bottombar">
+    <div class="mb-status-dot"></div>
+    <div class="mb-status-text" id="mb-status-text">INITIALIZING</div>
+    <div class="mb-progress"><i id="mb-progress-fill"></i></div>
+  </div>
+
+  <div class="mb-lockup" id="mb-lockup">
+    <div class="mb-big">MARATHON</div>
+    <div class="mb-sub">SYSTEM ONLINE</div>
+  </div>
+
+  <div class="mb-replay" id="mb-replay">CLICK / SPACE — REPLAY</div>
+
+  <div class="mb-scanlines"></div>
+  <div class="mb-vignette"></div>
+</div>
+
+<div id="mb-intro">
+  <img class="mb-logo-bg mb-logo-invert" src="__IMG_INVERT_B64__" alt="">
+  <img class="mb-logo-bg mb-logo-blue" src="__IMG_BLUE_B64__" alt="">
+  <div class="mb-logo-blue-bg"></div>
+  <div class="mb-solid-bg" id="mb-solid-bg"></div>
+  <div class="mb-hui mb-hui-1"></div>
+  <div class="mb-hui mb-hui-2"></div>
+  <div class="mb-hui mb-hui-3"></div>
+  <div class="mb-hui mb-hui-4"></div>
+  <div class="mb-hui mb-hui-5"></div>
+  <img class="mb-logo-top" src="__IMG_GREEN_B64__" alt="">
+  <div class="mb-caption">
+    <div class="mb-line1">deepseek Harness</div>
+    <div class="mb-line2">Into the Unknown</div>
+  </div>
+</div>

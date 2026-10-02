@@ -1,0 +1,11 @@
+# dsh-theme-mls-desktop bundle patch
+#
+# When installed via `dsh plugin --profile desktop add github:<owner>/dsh-theme-mls-desktop`,
+# this declaration is reconciled against `dsh.profile.bundles` and the row below
+# is appended to the bundle stack. Profile boot then merges this patch exactly
+# like a manual `cordis.patch.yml` mount line — no profile file edits required.
+# The same row is also the `dsh.client` browser-roster entry that the web
+# modules half scans for the client bundle (exports["./client"] -> client.js).
+- insert:
+    - id: theme-mls-desktop
+      name: 'dsh-theme-mls-desktop'

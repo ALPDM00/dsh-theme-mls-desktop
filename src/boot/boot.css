@@ -1,0 +1,284 @@
+/* =============================================================================
+ * dsh-theme-mls-desktop — Boot payload: CSS
+ * -----------------------------------------------------------------------------
+ * Extracted from the standalone boot animation (启动动画.html), then namespaced
+ * under #dshMarBootHost (ids/classes get an `mb-` prefix, keyframes get an
+ * `mb-` prefix) so the injected overlay can never collide with DSH's own
+ * stylesheet when the payload is dropped into the harness page.
+ *
+ * DESKTOP ADAPTATION
+ * ------------------
+ * The Desktop shell builds its main window with `transparent: true`, so this
+ * overlay can show the real desktop through it. The host therefore paints **no
+ * background at all**: the transparent window surface is the backdrop, and only
+ * the marks the animation draws (green whale, HUI frames, blue tile) are visible
+ * against it. The one opaque beat is #mb-solid-bg, which deliberately covers the
+ * whole window at the end of the intro so the marathon stage takes over from a
+ * flat blue field instead of from the wallpaper.
+ *
+ * Reveal order is fixed and matches the standalone cut's (启动动画.html) intro
+ * exactly, including its timings: the green whale logo AND the caption are on
+ * screen from the very first frame with no entrance animation of their own, then
+ * the five HUI frames are hard-cut in one after another (2.35s .. 2.75s), all
+ * five start zooming together at 2.86s, and the blue pixel tile fades in at
+ * 3.06s while its zoom is already running. Nothing here may fade or scale in:
+ * the standalone has no entrance animation on the logo, the caption or the HUI
+ * frames, and adding one is immediately visible as "the timing changed".
+ *
+ * The final fullscreen marathon stage keeps HUD chrome hidden
+ * (.mb-corner/.mb-topbar/.mb-log/.mb-bottombar/.mb-lockup/.mb-replay/.mb-scanlines/
+ * .mb-vignette are display:none — DOM stays so the engine never sees null refs).
+ * ========================================================================== */
+
+#dshMarBootHost {
+  --lime: #C0FE04;
+  --red:  #FF003C;
+  --bg:   #000000;
+  --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+  /* Reveal schedule — single source of truth for BOTH the keyframes below and
+   * engine-intro.js, which reads these back with getComputedStyle. Retiming the
+   * intro therefore only means editing these numbers.
+   *
+   * The green whale and the caption deliberately have NO entry here: in the
+   * standalone they are plain `opacity: 1` elements with no animation at all, so
+   * they are already on screen in the first painted frame. */
+  --mb-t-hui: 2.35s;        /* first HUI frame is hard-cut in */
+  --mb-t-hui-step: .10s;    /* gap between consecutive HUI frames (standalone:
+                               2.35 / 2.45 / 2.55 / 2.65 / 2.75) */
+  --mb-t-hui-rush: 2.86s;   /* all five frames start zooming, together */
+  --mb-t-hui-dur: 2.80s;    /* HUI zoom length */
+  --mb-t-blue: 3.06s;       /* blue pixel tile fades in (its own keyframe) */
+  --mb-t-blue-rush: 2.88s;  /* ...but its zoom is already running by then */
+  --mb-t-blue-dur: 2.85s;   /* blue tile zoom to full screen */
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  background: transparent;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+  opacity: 1;
+  transition: opacity .5s ease;
+}
+/* While the overlay runs the page itself must be see-through, otherwise DSH's
+ * own canvas covers the window's alpha surface and the "transparent" boot would
+ * still read as an opaque rectangle. The attribute is set by engine-intro.js and
+ * removed on every exit path. */
+html[data-mar-boot],
+html[data-mar-boot] body,
+html[data-mar-boot] #root {
+  background: transparent !important;
+}
+/* 2026-09-26: making html/body/#root transparent is not enough on its own.
+ * DSH's own plates -- sidebar, conversation column, composer, the theme's ASCII
+ * field canvas (#mar-ascii-bg) -- each paint their own background, so with only
+ * the rules above the deepest thing over the window's alpha surface is still the
+ * live app and the "transparent" boot shows the interface instead of the desktop.
+ * Take the whole app out of the visible layer for the duration instead: every
+ * direct child of <body> except the boot overlay itself. `visibility` (not
+ * `display`) so nothing re-lays-out when the attribute comes off.
+ *
+ * The descendant half of the pair is not redundant: `visibility` is inherited,
+ * but a single `visibility: visible` deeper in the tree (DSH ships a few, to
+ * re-show a control its own stylesheet parks) punches straight through an
+ * inherited `hidden`. Without it the sidebar's 工作区 label and its two action
+ * buttons stayed floating over the desktop.
+ *
+ * Released by engine-intro.js at the moment the opaque blue plate covers the
+ * window, so the app is never seen coming back. */
+html[data-mar-boot] body > *:not(#dshMarBootHost),
+html[data-mar-boot] body > *:not(#dshMarBootHost) *,
+html[data-mar-boot] #root {
+  visibility: hidden !important;
+}
+#dshMarBootHost *,
+#dshMarBootHost *::before,
+#dshMarBootHost *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* ---- main boot container (marathon stage) ---- */
+#dshMarBootHost canvas { position: fixed; inset: 0; display: block; }
+#dshMarBootHost #mb-boot {
+  position: fixed; inset: 0;
+  opacity: 0;
+  transition: opacity .3s ease;
+  z-index: 60;
+}
+
+/* ---- HUD chrome (engine still updates these; kept display:none) ---- */
+#dshMarBootHost .mb-corner { position: fixed; width: 26px; height: 26px; border: 1.5px solid rgba(192,254,4,.75); z-index: 6; }
+#dshMarBootHost .mb-corner.mb-tl { top: 18px; left: 18px;  border-right: none; border-bottom: none; }
+#dshMarBootHost .mb-corner.mb-tr { top: 18px; right: 18px; border-left: none;  border-bottom: none; }
+#dshMarBootHost .mb-corner.mb-bl { bottom: 18px; left: 18px;  border-right: none; border-top: none; }
+#dshMarBootHost .mb-corner.mb-br { bottom: 18px; right: 18px; border-left: none;  border-top: none; }
+
+#dshMarBootHost .mb-topbar {
+  position: fixed; top: 16px; left: 58px; right: 58px;
+  display: flex; justify-content: space-between; align-items: flex-start;
+  z-index: 6; color: var(--lime); pointer-events: none;
+}
+#dshMarBootHost .mb-brand { font-family: 'Maratype', var(--mono); font-size: 22px; font-weight: 700; letter-spacing: .14em; line-height: 1; }
+#dshMarBootHost .mb-brand small { display: block; margin-top: 5px; font-family: var(--mono); font-weight: 400;
+  font-size: 9px; letter-spacing: .42em; opacity: .55; }
+#dshMarBootHost .mb-readout { font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em; opacity: .72;
+  text-align: right; line-height: 1.55; white-space: pre; }
+
+#dshMarBootHost .mb-log {
+  position: fixed; top: 70px; right: 24px; width: 250px;
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em;
+  color: rgba(192,254,4,.78); line-height: 1.65; z-index: 6;
+  text-align: right; pointer-events: none;
+}
+#dshMarBootHost .mb-log .mb-line { opacity: 0; transform: translateX(10px); animation: mb-log-in .25s ease forwards; }
+#dshMarBootHost .mb-log .mb-cursor { display: inline-block; width: 6px; height: 10px; background: var(--lime);
+  margin-left: 3px; vertical-align: -1px; animation: mb-blink 1s steps(1) infinite; }
+
+#dshMarBootHost .mb-bottombar {
+  position: fixed; bottom: 22px; left: 58px; right: 58px;
+  display: flex; align-items: center; gap: 14px; z-index: 6;
+  color: var(--lime); font-family: var(--mono); font-size: 9.5px; letter-spacing: .22em;
+  pointer-events: none;
+}
+#dshMarBootHost .mb-status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red);
+  box-shadow: 0 0 9px var(--red); animation: mb-pulse 1.3s ease-in-out infinite; }
+#dshMarBootHost .mb-status-text { min-width: 260px; opacity: .85; }
+#dshMarBootHost .mb-progress { flex: 1; height: 2px; background: rgba(192,254,4,.12); position: relative; overflow: hidden; }
+#dshMarBootHost .mb-progress > i { position: absolute; left: 0; top: 0; height: 100%; width: 0; background: var(--lime);
+  box-shadow: 0 0 8px rgba(192,254,4,.7); }
+
+#dshMarBootHost .mb-lockup {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%) scale(.94);
+  z-index: 6; text-align: center; color: var(--lime); pointer-events: none;
+  opacity: 0; transition: opacity .9s ease, transform .9s ease; font-family: 'Maratype', var(--mono);
+}
+#dshMarBootHost .mb-lockup .mb-big { font-size: clamp(44px, 9vw, 96px); font-weight: 700; letter-spacing: .18em; line-height: 1; }
+#dshMarBootHost .mb-lockup .mb-sub { font-family: var(--mono); font-size: 10px; letter-spacing: .55em; opacity: .7; margin-top: 14px; }
+#dshMarBootHost .mb-lockup.mb-show { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+
+#dshMarBootHost .mb-replay {
+  position: fixed; bottom: 52px; left: 50%; transform: translateX(-50%);
+  z-index: 8; color: rgba(192,254,4,.55); font-family: var(--mono); font-size: 9px;
+  letter-spacing: .34em; opacity: 0; transition: opacity .6s; pointer-events: none;
+}
+#dshMarBootHost .mb-replay.mb-show { opacity: 1; }
+
+#dshMarBootHost .mb-scanlines { position: fixed; inset: 0; z-index: 7; pointer-events: none; opacity: .5;
+  background: repeating-linear-gradient(0deg, rgba(0,0,0,0) 0, rgba(0,0,0,0) 2px,
+    rgba(0,0,0,.25) 3px, rgba(0,0,0,0) 4px); mix-blend-mode: multiply; }
+#dshMarBootHost .mb-vignette { position: fixed; inset: 0; z-index: 7; pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0) 52%, rgba(0,0,0,.65) 100%); }
+
+/* HUD + filter layers are deliberately hidden in the final animation */
+#dshMarBootHost .mb-corner,
+#dshMarBootHost .mb-topbar,
+#dshMarBootHost .mb-log,
+#dshMarBootHost .mb-bottombar,
+#dshMarBootHost .mb-lockup,
+#dshMarBootHost .mb-replay,
+#dshMarBootHost .mb-scanlines,
+#dshMarBootHost .mb-vignette { display: none; }
+
+@keyframes mb-log-in { to { opacity: 1; transform: none; } }
+@keyframes mb-blink { 50% { opacity: 0; } }
+@keyframes mb-pulse { 0%,100% { opacity: .35; transform: scale(.85); } 50% { opacity: 1; transform: scale(1.35); } }
+
+/* ---- underlay swap: engine adds .mb-run on the marathon stage's first
+ * rendered frame. The intro's fullscreen #4D6CFE layer is dropped because from
+ * this frame the canvas itself paints the whole plate — blue field, black
+ * panels, red sweep — at full opacity, so transparent canvas pixels are the
+ * LIVE APP underneath. Nothing of the app shows through until the ONE closing
+ * cross-fade: render() erases the plate uniformly with `destination-out`
+ * (UI_FADE / UI_MARK_LEAD in engine-marathon.js). That single beat is what
+ * makes the ending read as 界面整体淡入 with the marks leaving first — not a
+ * panel-by-panel reveal. */
+#dshMarBootHost.mb-run #mb-intro { display: none; }
+
+/* ---- intro stage (deepseek 启动1 pre-sequence, above the marathon stage) ---- */
+#dshMarBootHost #mb-intro { position: fixed; inset: 0; z-index: 50; }
+/* Every intro mark is hidden until its own delay elapses -- but that is already
+ * said by the `opacity: 0` in each base rule below plus `animation-fill-mode:
+ * both`, so there is deliberately NO blanket `opacity: 0` reset here.
+ *
+ * 2026-09-26: there used to be one,
+ *     #dshMarBootHost #mb-intro .mb-hui { opacity: 0 }
+ * and it silently killed the whole HUI beat. Specificity (0,2,1) outranks the
+ * `.mb-hui.mb-rush { opacity: 1 }` rule further down at (0,1,2), and JS adds
+ * `.mb-rush` (which also drops the entrance animation) exactly when the frames
+ * are supposed to appear -- so all five frames zoomed to 19558px while staying
+ * fully transparent, and the intro played green whale -> caption -> blue with no
+ * green frames in between. The same clash hid `.mb-logo-blue-bg`. */
+
+/* 1) the green whale logo — the very first thing on screen, alone, and already
+ * there when the first frame is painted. No entrance animation on purpose: the
+ * standalone's rule is a plain `opacity: 1` with no `animation` at all, and the
+ * scale-in this used to carry (plus the delay) read as "the logo now fades in".
+ * It keeps a soft lime halo so it stays legible against an arbitrary desktop
+ * wallpaper rather than a black plate. */
+#dshMarBootHost .mb-logo-top {
+  position: absolute; top: 45%; left: 50%; width: 115px; height: 115px;
+  transform: translate(-50%, -50%);
+  object-fit: contain; z-index: 10; opacity: 1;
+  filter: drop-shadow(0 0 26px rgba(192, 254, 4, .38)) drop-shadow(0 0 4px rgba(0, 0, 0, .55));
+}
+/* 2) the caption, also on screen from the first frame (no animation, matching
+ * the standalone's `.caption` rule).
+ * Centred as a FULL-WIDTH BAND rather than as a shrink-wrapped box carrying
+ * `left:50%; transform:translateX(-50%)`. Measured cause of "the logo text
+ * starts offset and then fixes itself": the caption renders with fallback font
+ * metrics first (373px wide) and re-lays out when the webfont arrives (266px),
+ * which drags the left edge of a translateX(-50%) element sideways by 53px.
+ * A band cannot move when its text changes width, which is why the standalone's
+ * translateX(-50%) box is not reproduced verbatim here. */
+#dshMarBootHost .mb-caption {
+  position: absolute; top: calc(40% + 105px); left: 0; right: 0;
+  text-align: center; z-index: 10; color: #C0FD04;
+  text-shadow: 0 0 18px rgba(0, 0, 0, .55);
+}
+#dshMarBootHost .mb-caption .mb-line1 { font-family: 'Maratype', sans-serif; font-size: 44px; letter-spacing: 0; line-height: 1.1; }
+#dshMarBootHost .mb-caption .mb-line2 { margin-top: 6px; font-family: 'Maratype', sans-serif; font-size: 16px;
+  letter-spacing: 10px; line-height: 1.1; }
+#dshMarBootHost .mb-logo-bg { position: absolute; top: 50%; left: 50%; width: 140vmin; height: 140vmin;
+  transform: translate(-50%, -50%); object-fit: contain; z-index: 1; opacity: 0; }
+/* 3) HUI frames, released one by one from the outside in */
+#dshMarBootHost .mb-hui { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  border: 3px solid #19F017; z-index: 5; opacity: 0; will-change: transform;
+  box-shadow: 0 0 22px rgba(25, 240, 23, .22); }
+#dshMarBootHost .mb-hui-1 { width: 1270px; height: 570px; animation: mb-appear .01s linear calc(var(--mb-t-hui)) both; }
+#dshMarBootHost .mb-hui-2 { width: 925px; height: 420px; animation: mb-appear .01s linear calc(var(--mb-t-hui) + var(--mb-t-hui-step)) both; }
+#dshMarBootHost .mb-hui-3 { width: 727px; height: 330px; animation: mb-appear .01s linear calc(var(--mb-t-hui) + 2 * var(--mb-t-hui-step)) both; }
+#dshMarBootHost .mb-hui-5 { width: 510px; height: 230px; animation: mb-appear .01s linear calc(var(--mb-t-hui) + 3 * var(--mb-t-hui-step)) both; }
+#dshMarBootHost .mb-hui-4 { width: 598px; height: 270px; animation: mb-appear .01s linear calc(var(--mb-t-hui) + 4 * var(--mb-t-hui-step)) both; }
+/* 4) last, the blue pixel tile that the whole intro zooms into */
+#dshMarBootHost .mb-logo-blue-bg { position: absolute; top: 50%; left: 50%; width: 80px; height: 80px;
+  background: #4D6CFE; transform: translate(-50%, -50%); z-index: 3; opacity: 0;
+  animation: mb-fade-in .15s linear var(--mb-t-blue) forwards; will-change: transform, opacity; }
+/* The one opaque layer: it covers the window at the end of the intro so the
+ * marathon stage starts from a flat blue field, never from the desktop. */
+#dshMarBootHost .mb-solid-bg { position: fixed; inset: 0; background: #4D6CFE; z-index: 9; opacity: 0; }
+/* Inverted-blue logo flicker, matching the standalone cut's stage2 keyframes.
+ * Visible from frame 0, then 0.25s of flicker starting at 1.20s, then held
+ * at opacity 0 until the blue logo fades in at 1.85s. The standalone keeps
+ * this image on top of a BLACK plate; the desktop cut has no black plate
+ * (the window is see-through), so the flicker reads against whatever is
+ * behind it — usually the user's wallpaper. 2026-10-02: REINSTATED — the
+ * earlier "no black plate" reasoning was wrong; the user wanted it back. */
+#dshMarBootHost .mb-logo-invert { animation: mb-stage2 .25s linear 1.2s forwards; }
+/* JS drives the zoom with inline transforms; dropping the entrance animation
+ * keeps the two from fighting over `transform` mid-rush.
+ *
+ * .mb-logo-blue-bg is deliberately NOT in this list. Its entrance animation
+ * (`mb-fade-in`) is the standalone's 3.06s opacity fade-in and it animates
+ * opacity only, so it cannot fight the inline transform — and the element only
+ * joins the rush at 2.88s, i.e. 180ms before it becomes visible. The `opacity: 1`
+ * this rule would have forced is exactly what removed the fade-in. */
+#dshMarBootHost .mb-hui.mb-rush { animation: none; opacity: 1; }
+#dshMarBootHost .mb-logo-blue { animation: mb-stage3 .5s ease-out 1.85s forwards; will-change: transform; }
+@keyframes mb-stage2 { 0% { opacity: 1; } 14% { opacity: 0; } 28% { opacity: 1; } 43% { opacity: 0; }
+  57% { opacity: 1; } 71% { opacity: 0; } 86% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes mb-stage3 { 0% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes mb-appear { 0% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes mb-fade-in { 0% { opacity: 0; } 100% { opacity: 1; } }

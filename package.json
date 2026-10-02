@@ -1,0 +1,84 @@
+{
+  "name": "dsh-theme-mls-desktop",
+  "version": "0.1.0",
+  "description": "Marathon-inspired FUI + editorial glitch theme for the deepseekHarness Desktop shell. Transparent cold-start intro, staged whale-logo reveal, native caption-button handoff. Programmatic assets only; no Bungie/Marathon copyrighted material.",
+  "license": "MIT",
+  "private": false,
+  "main": "index.js",
+  "scripts": {
+    "build": "node scripts/build.cjs",
+    "check": "node check.cjs",
+    "selftest": "node selftest.cjs",
+    "test": "node test/plugin.test.cjs",
+    "verify:boot": "node test/boot-engine.test.cjs",
+    "verify:patch": "node --no-warnings --experimental-vm-modules test/shell-patch.test.cjs",
+    "verify:auto": "node test/auto-apply.test.cjs",
+    "postinstall": "node postinstall.cjs",
+    "patch": "node shell-patch/auto.cjs",
+    "patch:check": "node shell-patch/auto.cjs --check",
+    "patch:revert": "node shell-patch/revert.cjs"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "client.js",
+    "index.js",
+    "postinstall.cjs",
+    "cordis.patch.yml",
+    "assets/",
+    "shell-patch/",
+    "docs/",
+    "LICENSE",
+    "README.md"
+  ],
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "theme",
+    "fui",
+    "glitch",
+    "marathon",
+    "desktop",
+    "electron"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-theme"
+      ],
+      "platform": "web"
+    }
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "jsdom": "^30.0.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ALPDM00/dsh-theme-mls-desktop.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ALPDM00/dsh-theme-mls-desktop/issues"
+  },
+  "homepage": "https://github.com/ALPDM00/dsh-theme-mls-desktop#readme"
+}
