@@ -382,6 +382,20 @@ async function waitFor(fn, ms) {
   ok('density / breathing are parked while the field is off',
     pane.querySelector('#mar-bg-cell').disabled === true &&
     pane.querySelector('#mar-bg-speed').disabled === true);
+  // 每轮 Token 结算（2026-10-09）：与背景动画并列的**独立**开关，默认开
+  const billIn = pane && pane.querySelector('#mar-billing');
+  ok('per-turn settlement switch is its own control, ON by default',
+    !!billIn && billIn.type === 'checkbox' && billIn.checked === true);
+  billIn.checked = false;
+  billIn.dispatchEvent(new r.win.Event('change', { bubbles: true }));
+  ok('turning the settlement off is stored under its own key',
+    JSON.parse(r.win.localStorage.getItem('mar.billing.v1')).on === false &&
+    billIn.checked === false);
+  billIn.checked = true;
+  billIn.dispatchEvent(new r.win.Event('change', { bubbles: true }));
+  ok('turning it back on stores {on:true} and does not disturb the background switch',
+    JSON.parse(r.win.localStorage.getItem('mar.billing.v1')).on === true &&
+    d.body.classList.contains('mar-bg-on') === false);
   // switch ON: the field starts, the pair does not move
   animIn.checked = true;
   animIn.dispatchEvent(new r.win.Event('change', { bubbles: true }));

@@ -937,7 +937,93 @@ window.__ModuleLoader__.load({
         '/* ---- boot sequence ---- */',
         '/* (the boot overlay CSS is not part of the theme sheet anymore — it ships',
         '    inside the injected boot payload, see src/boot/boot.css. The host',
-        '    <style data-boot> is created at runtime inside #dshMarBootHost.) */'
+        '    <style data-boot> is created at runtime inside #dshMarBootHost.) */',
+
+        // ---- per-turn token settlement block ------------------------------
+        //   一次「任务结算」小纸条：挂在**每一轮已经结束**的轮次尾巴上
+        //   （DSH 自己的 [data-turn-tail="<turn>"]，见 dsh-client-ui-chat 的
+        //   TurnTailNodeView）。它是内容的一部分，跟着转录一起滚动、跟着会话一起
+        //   销毁，所以没有任何跨会话的展开状态需要维护。
+        //
+        //   尺寸与形状取自用户模板（token结算.html）：宽 268px、展开后整块 ≈240px 高；
+        //   绿条两侧各一个十字、绿条下方展开的信息面板与它**无缝拼接**（绿条下方
+        //   变直角、面板下方给圆角），绿条与灰条之间留 5px 间隙。
+        //   圆角由下面的 `body.theme-marathon .mlsb-*` 规则用 !important 顶出来 ——
+        //   §4.3 那条全站直角通配规则会让它变方，这里必须显式豁免（与启动动画里
+        //   那颗状态灯同一手法：多一个类，特异性压过通配规则）。
+        //
+        //   颜色全部来自主题 token（这个文件就是主题本身），英文用 Maratype，
+        //   数字用等宽栈。
+        '/* ---- per-turn token settlement ---- */',
+        // 出现动画（2026-10-09 用户）：纸条在轮次结束 1–2s 后才落地（宿主 /state 是轮询的），
+        // 所以给它一个**从中间向两端展开**的入场：clip-path 从「中间一条零宽的缝」长到整块。
+        // 用 clip-path 而不是 scaleX —— scaleX 会把卡片里的字一起压扁。
+        '@keyframes mlsb-reveal{',
+        '  from{clip-path:inset(0 50% 0 50%);}',
+        '  to{clip-path:inset(0 0 0 0);}',
+        '}',
+        //   ── 尺寸：只有一个旋钮 ──────────────────────────────────────────────
+        //   2026-10-09 用户："可以放大 0.5 倍左右，目前来看有点挤"。所有尺寸都写成
+        //   `calc(<原始值> * var(--mlsb-s))`，所以「再大一点/小一点」只改这一个数。
+        //   1.5 ⇒ 宽 402px、绿条 42px、明细行 33px、灰条 39px、圆角 9px、间隙 7.5px。
+        '.mlsb-turn{margin:12px auto 0;--mlsb-s:1.5;width:calc(268px * var(--mlsb-s));max-width:100%;',
+        '  --mlsb-radius:calc(6px * var(--mlsb-s));--mlsb-gap:calc(5px * var(--mlsb-s));',
+        '  font-family:var(--dsw-font-family);animation:mlsb-reveal .18s cubic-bezier(.2,.8,.2,1) both;}',
+        // 2026-10-09（用户）：消息内居中 + 绿条上不放费用 + 两侧各一个十字；字体回默认
+        '.mlsb-turn-head{display:grid;grid-template-columns:calc(18px * var(--mlsb-s)) 1fr calc(18px * var(--mlsb-s));',
+        '  align-items:center;gap:calc(6px * var(--mlsb-s));width:100%;height:calc(28px * var(--mlsb-s));',
+        '  padding:0 calc(9px * var(--mlsb-s));border:0;background:var(--mar-accent);color:var(--mar-accent-ink);',
+        '  cursor:pointer;font:inherit;text-align:center;transition:border-radius .2s cubic-bezier(.2,.8,.2,1);}',
+        '.mlsb-turn-head:hover{filter:brightness(1.05);}',
+        '.mlsb-turn-head:focus-visible{outline:1px solid var(--mar-ink-primary);outline-offset:2px;}',
+        '.mlsb-turn-title{font:800 calc(11px * var(--mlsb-s))/1 var(--dsw-font-family);',
+        '  letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
+        '.mlsb-cross{font:400 calc(14px * var(--mlsb-s))/1 Arial,sans-serif;color:var(--mar-accent-ink);}',
+        '.mlsb-cross.mlsb-left{justify-self:start;}',
+        '.mlsb-cross.mlsb-right{justify-self:end;}',
+        // 展开/收起动画（2026-10-09 用户）：`display` 不能过渡，所以用模板那套
+        // `grid-template-rows:0fr → 1fr`（内层再包一层 min-height:0/overflow:hidden）：
+        // 收起时高度为 0 但仍在文档流里，于是高度与透明度都能平滑过渡。
+        '.mlsb-turn-body{display:grid;grid-template-rows:0fr;opacity:0;overflow:hidden;background:var(--mar-bg-panel);',
+        '  transition:grid-template-rows .2s cubic-bezier(.2,.8,.2,1),opacity .16s ease;}',
+        '.mlsb-turn-body-inner{min-height:0;overflow:hidden;}',
+        '.mlsb-turn.mlsb-open .mlsb-turn-body{grid-template-rows:1fr;opacity:1;}',
+        '.mlsb-row{display:flex;align-items:center;justify-content:space-between;gap:calc(10px * var(--mlsb-s));',
+        '  height:calc(22px * var(--mlsb-s));padding:0 calc(9px * var(--mlsb-s));',
+        '  border-bottom:1px solid var(--mar-line-faint);background:var(--mar-wash);',
+        '  font-size:calc(11px * var(--mlsb-s));line-height:1;color:var(--mar-ink-secondary);}',
+        '.mlsb-row:nth-child(odd){background:var(--mar-wash-strong);}',
+        '.mlsb-row:last-child{border-bottom:0;}',
+        '.mlsb-row b{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;',
+        '  font-size:calc(11px * var(--mlsb-s));font-weight:700;',
+        '  font-variant-numeric:tabular-nums;color:var(--mar-ink-primary);}',
+        '.mlsb-row b.mlsb-acid{color:var(--mar-accent-text);}',
+        '.mlsb-row b.mlsb-signal{color:var(--mar-signal);}',
+        '.mlsb-turn-foot{display:flex;align-items:center;justify-content:space-between;gap:calc(8px * var(--mlsb-s));',
+        '  height:calc(26px * var(--mlsb-s));padding:0 calc(9px * var(--mlsb-s));',
+        '  margin-top:var(--mlsb-gap);background:var(--mar-bg-overlay);color:var(--mar-ink-primary);',
+        '  font-size:calc(11px * var(--mlsb-s));}',
+        '.mlsb-turn-clock{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;',
+        '  font-weight:700;letter-spacing:.04em;}',
+        '.mlsb-turn-note{color:var(--mar-ink-tertiary);font-size:calc(11px * var(--mlsb-s));letter-spacing:.02em;}',
+        //   ⚠️ i 角标（暂时注释掉，2026-10-09 用户："任务用时不需要这个 i 和方框了，
+        //   相关代码先注释掉，万一后面需要再启动和修改"）。要恢复的话，把下面两行
+        //   和 buildTurnBlock() 里那行 appendChild(mlsbEl('span','mlsb-info','i')) 一起取消注释。
+        //   —— 它必须是圆的：`body.theme-marathon *{border-radius:0!important}` 会把它压成方块。
+        // '.mlsb-info{display:inline-grid;place-items:center;width:14px;height:14px;flex:none;',
+        // '  border:1px solid currentColor;border-radius:50%!important;font:700 9px/1 Georgia,serif;}',
+        // 'body.theme-marathon .mlsb-info{border-radius:50%!important;}',
+        //   —— 圆角：绿条（收起时四角圆 / 展开时下方变直角）+ 信息面板（下方圆）+ 灰条（四角圆）
+        'body.theme-marathon .mlsb-turn-head{border-radius:var(--mlsb-radius)!important;}',
+        'body.theme-marathon .mlsb-turn.mlsb-open .mlsb-turn-head{',
+        '  border-radius:var(--mlsb-radius) var(--mlsb-radius) 0 0!important;}',
+        'body.theme-marathon .mlsb-turn-body{border-radius:0 0 var(--mlsb-radius) var(--mlsb-radius)!important;}',
+        'body.theme-marathon .mlsb-turn-foot{border-radius:var(--mlsb-radius)!important;}',
+        //   动效要能被关掉：与主题其它动效同一条 reduced-motion 规则（入场、展开、圆角过渡）
+        '@media (prefers-reduced-motion: reduce){',
+        '  .mlsb-turn{animation:none;}',
+        '  .mlsb-turn-body,.mlsb-turn-head{transition:none;}',
+        '}'
       ].join('\n');
 
       var disposeStyles = insertCss(css);
@@ -1254,6 +1340,10 @@ window.__ModuleLoader__.load({
       function bgPaintWalker(el, out, depth) {
         if (!el || el.nodeType !== 1 || depth > 9) return;
         if (bgModal(el) || bgLayer(el)) return;   // 不标记它，也不进它的子树
+        // 我们自己的每轮结算纸条：它是**内容**（转录的一部分），不是界面底板。
+        // 展开后它约 268x240，正好越过 bgPaints 的 200x200 底板门槛 ——
+        // 少了这一条，ASCII 背景模式下纸条会被清成透明（数字浮在网格上）。
+        if (el.hasAttribute && el.hasAttribute('data-mlsb-turn')) return;
         if (bgPaints(el)) out.push(el);
         for (var i = 0; i < el.children.length; i++) {
           bgPaintWalker(el.children[i], out, depth + 1);
@@ -1863,6 +1953,9 @@ window.__ModuleLoader__.load({
         pane.setAttribute('data-mar-pane', '1');
         pane.innerHTML =
           '<h4>主题设置</h4>' +
+          '<div class="mar-set-row mar-set-switch"><label for="mar-billing">每轮 Token 结算</label>' +
+          '<input type="checkbox" class="mar-switch" id="mar-billing">' +
+          '<span class="mar-val" data-val="billing"></span></div>' +
           '<div class="mar-set-row mar-set-switch"><label for="mar-bg-anim">背景动画</label>' +
           '<input type="checkbox" class="mar-switch" id="mar-bg-anim">' +
           '<span class="mar-val" data-val="anim"></span></div>' +
@@ -1879,8 +1972,20 @@ window.__ModuleLoader__.load({
 
         var seg = pane.querySelector('.mar-seg');
         var animIn = pane.querySelector('#mar-bg-anim');
+        var billIn = pane.querySelector('#mar-billing');
         var cellIn = pane.querySelector('#mar-bg-cell');
         var speedIn = pane.querySelector('#mar-bg-speed');
+
+        // 「每轮 Token 结算」：一个独立的开关（2026-10-09 用户要求加进主题设置）。
+        // 关掉 = 不再贴纸条、已有的立刻摘掉、也停止轮询计费接口；打开 = 立即拉一次。
+        if (billIn) {
+          billIn.addEventListener('change', function () {
+            BILLING_STATE.on = !!billIn.checked;
+            billingSave();
+            billingApply();
+            syncPane(pane);
+          });
+        }
 
         // 背景动画 is its own switch and NEVER touches the pair: stopping the
         // field leaves the UI exactly as it is (this is the "关闭后会切换为
@@ -1948,12 +2053,16 @@ window.__ModuleLoader__.load({
         var speedIn = pane.querySelector('#mar-bg-speed');
         if (cellIn) { cellIn.value = String(BG_STATE.cell); cellIn.disabled = !BG_STATE.anim; }
         if (speedIn) { speedIn.value = String(BG_STATE.speed); speedIn.disabled = !BG_STATE.anim; }
+        // 每轮 Token 结算：自己一个开关（与背景动画互不影响）
+        var billIn = pane.querySelector('#mar-billing');
+        if (billIn) billIn.checked = billingEnabled();
         if (BG_STATE.anim) pane.classList.remove('mar-anim-off');
         else pane.classList.add('mar-anim-off');
         var vals = {
           anim: BG_STATE.anim ? '开' : '关',
           cell: BG_STATE.cell + ' px',
-          speed: BG_STATE.speed.toFixed(2)
+          speed: BG_STATE.speed.toFixed(2),
+          billing: billingEnabled() ? '开' : '关'
         };
         var outs = pane.querySelectorAll('.mar-val');
         for (var k = 0; k < outs.length; k++) {
@@ -2499,6 +2608,8 @@ window.__ModuleLoader__.load({
       function sweepReveals() {
         sweepSettingsPanel();
         sweepBoardIntro();
+        // 轮次尾巴是新渲染出来的 → 每次巡扫都补一次结算纸条（拿不到数据时是 no-op）
+        billingTick();
         //   Re-assert the scheme every tick. The write at apply() time is provably
         //   correct and provably sticks when it runs (measured: setting
         //   body[data-ds-dark-theme] turned the rail ink near-white within 1.5s and
@@ -2512,6 +2623,290 @@ window.__ModuleLoader__.load({
         if (BG_STATE.anim) { bgMarkClear(false); bgWatch(); }
       }
       if (typeof setInterval !== 'undefined') mosaicSweeper = setInterval(sweepReveals, 1200);
+
+      // ---- per-turn token settlement ---------------------------------------
+      //   每一轮**已经结束**的任务，在它的轮次尾巴上贴一张结算小纸条：花了多少钱、
+      //   四桶怎么分、命中率多少、这轮跑了多久。
+      //
+      //   为什么贴在轮次尾巴上（而不是像上一版那样浮在输入框上方）：
+      //     · 它是**那一轮的注脚**，跟着转录一起滚动 —— 用户滚动时位置不变，
+      //       因为位置本来就由转录决定；
+      //     · 切会话 = 转录整块换掉 = 纸条跟着消失，不存在"展开状态跨会话残留"；
+      //     · DSH 自己在每轮结尾已经画了动作行（复制/分支/用量），我们贴在它前面，
+      //       读起来就是"任务结束 → 结算 → 动作"。
+      //
+      //   锚点是 DSH 自己的语义属性 `[data-turn-tail="<turn>"]`
+      //   （dsh-client-ui-chat 的 TurnTailNodeView；比哈希类名稳），
+      //   数据来自主题 Host 半边的 `/dsh-mls-billing/state`。
+      var BILLING_ENDPOINT = '/dsh-mls-billing/state';
+      var BILLING_POLL_MS = 2000;
+      // 只给"最近结束"的轮次补纸条：页面重载后不会把一屏历史轮次都贴上。
+      // 会话匹配已经是**精确的**（见 billingDisplayedSessionId），所以这里只剩"别翻太旧"。
+      var BILLING_FRESH_MS = 7 * 24 * 60 * 60 * 1000;
+      var BILLING_STORE_KEY = 'mar.billing.v1';
+      var BILLING_ROWS = [
+        ['消耗 Token', 'total', 1],
+        ['输入 Token', 'input', 0],
+        ['输出 Token', 'output', 0],
+        ['缓存命中 Token', 'hit', 0],
+        ['缓存命中率', 'hitRate', 1],
+        ['缓存未命中 Token', 'miss', 0],
+        ['本次费用', 'cost', 0],
+        ['计费状态', 'status', 1]
+      ];
+      var billingState = null;
+      var billingOpen = {};        // turn -> true；块随转录销毁，所以这份状态天然不跨会话
+      var billingTimer = null;
+
+      // 开关（主题设置里的「每轮 Token 结算」）：默认开，持久化在 localStorage。
+      function billingLoad() {
+        try {
+          var raw = (typeof window !== 'undefined' && window.localStorage)
+            ? window.localStorage.getItem(BILLING_STORE_KEY) : null;
+          if (!raw) return { on: true };
+          var parsed = JSON.parse(raw);
+          return { on: !(parsed && parsed.on === false) };
+        } catch (e) { return { on: true }; }
+      }
+      function billingSave() {
+        try {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            window.localStorage.setItem(BILLING_STORE_KEY, JSON.stringify(BILLING_STATE));
+          }
+        } catch (e) {}
+      }
+      var BILLING_STATE = billingLoad();
+      function billingEnabled() { return BILLING_STATE.on !== false; }
+
+      // 精确拿到「客户端当前显示的那个会话」：DSH 的 sessions 服务里 `list.current`
+      // 就是持久化的选中项（每个 session 作用域的面板都键在它上面）。有了它，
+      // 「看着 A 会话、后台在跑 B 会话」时不会把 B 的数字贴到 A 的尾巴上。
+      var billingSessions = null;
+      try {
+        billingSessions = (ctx && typeof ctx.get === 'function') ? ctx.get('sessions') : null;
+      } catch (e) { billingSessions = null; }
+
+      function billingDisplayedSessionId() {
+        try {
+          if (!billingSessions || !billingSessions.list) return null;
+          var snap = typeof billingSessions.list.getSnapshot === 'function'
+            ? billingSessions.list.getSnapshot() : null;
+          return (snap && snap.current) ? String(snap.current) : null;
+        } catch (e) { return null; }
+      }
+
+      /** 摘掉页面上所有纸条（关掉开关、或页面重挂时用）。 */
+      function billingDetachAll() {
+        var blocks = doc.querySelectorAll('[data-mlsb-turn]');
+        for (var i = 0; i < blocks.length; i++) {
+          if (blocks[i].parentNode) blocks[i].parentNode.removeChild(blocks[i]);
+        }
+      }
+
+      /** 开关变化后的即时生效：关 → 摘掉并停止轮询；开 → 立刻拉一次。 */
+      function billingApply() {
+        if (!billingEnabled()) {
+          billingState = null;
+          billingDetachAll();
+          return;
+        }
+        billingFetch();
+      }
+
+      function mlsbEl(tag, cls, text) {
+        var node = doc.createElement(tag);
+        if (cls) node.className = cls;
+        if (text !== undefined) node.textContent = text;
+        return node;
+      }
+
+      function mlsbCount(value) {
+        var n = Number(value);
+        if (!isFinite(n)) return '--';
+        return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      }
+
+      function mlsbMoney(value, currency) {
+        var n = Number(value);
+        if (!isFinite(n)) return '--';
+        var symbol = currency === 'USD' ? '$' : '¥';
+        var abs = Math.abs(n);
+        var digits = abs >= 1 ? 2 : abs >= 0.01 ? 4 : 6;
+        return symbol + n.toFixed(digits);
+      }
+
+      function mlsbClock(ms) {
+        var total = Math.max(0, Math.floor(Number(ms) / 1000));
+        var pad = function (v) { return v < 10 ? '0' + v : String(v); };
+        return pad(Math.floor(total / 60)) + ':' + pad(total % 60);
+      }
+
+      /** 这一轮该显示的状态：结束/结算中/未定价。 */
+      function mlsbStatus(turn, streaming) {
+        if (turn.unpriced && turn.unpriced.length > 0) return 'UNPRICED';
+        if (streaming) return 'STREAMING';
+        return 'SETTLED';
+      }
+
+      function buildTurnBlock(turn) {
+        var root = mlsbEl('div', 'mlsb-turn');
+        root.setAttribute('data-mlsb-turn', String(turn.turn));
+        var head = mlsbEl('button', 'mlsb-turn-head');
+        head.type = 'button';
+        head.setAttribute('aria-expanded', 'false');
+        // 用户 2026-10-09：绿条上不放费用，只留标题；左右各一个**黑色十字**做装饰。
+        // 十字同时兼任展开指示（与模板一致：展开时两边一起变减号）。
+        var crossLeft = mlsbEl('span', 'mlsb-cross mlsb-left', '+');
+        var title = mlsbEl('span', 'mlsb-turn-title', 'TOKEN USAGE');
+        var crossRight = mlsbEl('span', 'mlsb-cross mlsb-right', '+');
+        head.appendChild(crossLeft);
+        head.appendChild(title);
+        head.appendChild(crossRight);
+        var body = mlsbEl('div', 'mlsb-turn-body');
+        // 内层包一层：`grid-template-rows:0fr` 需要一个 min-height:0/overflow:hidden 的行盒，
+        // 它才是被压成 0 高度的那个；行本身留在里面，展开时高度平滑长出来。
+        var bodyInner = mlsbEl('div', 'mlsb-turn-body-inner');
+        var values = {};
+        for (var i = 0; i < BILLING_ROWS.length; i++) {
+          var row = mlsbEl('div', 'mlsb-row');
+          row.appendChild(mlsbEl('span', null, BILLING_ROWS[i][0]));
+          var value = mlsbEl('b', BILLING_ROWS[i][2] ? 'mlsb-acid' : null, '--');
+          value.setAttribute('data-mlsb', 'turn-' + BILLING_ROWS[i][1]);
+          row.appendChild(value);
+          bodyInner.appendChild(row);
+          values[BILLING_ROWS[i][1]] = value;
+        }
+        body.appendChild(bodyInner);
+        var foot = mlsbEl('div', 'mlsb-turn-foot');
+        foot.appendChild(mlsbEl('span', 'mlsb-turn-note', '任务用时'));
+        var right = mlsbEl('span', 'mlsb-turn-clock');
+        var clock = mlsbEl('span', null, '--:--');
+        clock.setAttribute('data-mlsb', 'turn-clock');
+        right.appendChild(clock);
+        // i 角标：用户 2026-10-09 要求先去掉（"任务用时不需要这个 i 和方框了"）。
+        // 需要时取消注释即可（样式里对应的两行也一起取消注释）。
+        // right.appendChild(mlsbEl('span', 'mlsb-info', 'i'));
+        foot.appendChild(right);
+        root.appendChild(head);
+        root.appendChild(body);
+        root.appendChild(foot);
+        root.mlsbValues = values;
+        root.mlsbCrosses = [crossLeft, crossRight];
+        root.mlsbHead = head;
+        head.addEventListener('click', function () {
+          var next = !(root.classList.contains('mlsb-open'));
+          if (next) root.classList.add('mlsb-open'); else root.classList.remove('mlsb-open');
+          billingOpen[turn.turn] = next;
+          head.setAttribute('aria-expanded', next ? 'true' : 'false');
+          var sign = next ? '\u2212' : '+';
+          crossLeft.textContent = sign;
+          crossRight.textContent = sign;
+        });
+        return root;
+      }
+
+      function updateTurnBlock(block, turn) {
+        var values = block.mlsbValues;
+        var totals = turn.totals || { total: 0, input: 0, out: 0, hit: 0, miss: 0, hitRate: 0 };
+        var status = mlsbStatus(turn, false);
+        values.total.textContent = mlsbCount(totals.total);
+        values.input.textContent = mlsbCount(totals.input);
+        values.output.textContent = mlsbCount(totals.out);
+        values.hit.textContent = mlsbCount(totals.hit);
+        values.hitRate.textContent = (Number(totals.hitRate) * 100).toFixed(1) + '%';
+        values.miss.textContent = mlsbCount(totals.miss);
+        values.cost.textContent = mlsbMoney(turn.cost, turn.currency || 'CNY');
+        values.status.textContent = status;
+        values.status.className = status === 'UNPRICED' ? 'mlsb-signal' : (BILLING_ROWS[7][2] ? 'mlsb-acid' : null);
+        block.querySelector('[data-mlsb="turn-clock"]').textContent = mlsbClock(turn.durationMs);
+        var open = billingOpen[turn.turn] === true;
+        if (open) block.classList.add('mlsb-open'); else block.classList.remove('mlsb-open');
+        var head = block.mlsbHead;
+        head.setAttribute('aria-expanded', open ? 'true' : 'false');
+        var sign = open ? '\u2212' : '+';
+        for (var c = 0; c < block.mlsbCrosses.length; c++) block.mlsbCrosses[c].textContent = sign;
+      }
+
+      /**
+       * 把纸条贴到轮次尾巴上。
+       * 贴的位置是**动作行之前**（复制/分支那行），读作「任务结束 → 结算 → 动作」；
+       * 找不到动作行就追加到末尾（两种都不会破坏 React 自己管理的节点引用）。
+       */
+      function billingAttach(host, block) {
+        var actions = host.lastElementChild;
+        if (actions && actions !== block && /_actions/.test(String(actions.className || ''))) {
+          host.insertBefore(block, actions);
+        } else {
+          host.appendChild(block);
+        }
+      }
+
+      function billingTick() {
+        // 开关关掉 → 摘干净并退出（巡扫每 1.2s 调一次，这里必须最先判断）
+        if (!billingEnabled()) {
+          if (doc.querySelector('[data-mlsb-turn]')) billingDetachAll();
+          return;
+        }
+        if (!billingState) return;
+        // 优先用**客户端选中的那个会话**；拿不到选择（老宿主/服务缺席）才退回
+        // "最近有账的那个会话"。这一步是"重启后当前这段对话也能贴上"的关键。
+        var displayed = billingDisplayedSessionId();
+        var session = null;
+        if (displayed) {
+          var list = billingState.sessions || [];
+          for (var s = 0; s < list.length; s++) {
+            if (list[s].sessionId === displayed) { session = list[s]; break; }
+          }
+          if (!session) return;            // 这段对话还没有账 → 什么都不贴
+        } else {
+          session = billingState.current || null;
+        }
+        if (!session) return;
+        var turns = session.turns || [];
+        var now = Date.now();
+        for (var i = 0; i < turns.length; i++) {
+          var turn = turns[i];
+          // 只结算**已结束**的轮次：任务没结束就没有"本轮用时"可言
+          if (!turn.closed) continue;
+          if (now - Number(turn.endedAt || 0) > BILLING_FRESH_MS) continue;
+          var host = doc.querySelector('[data-turn-tail="' + turn.turn + '"]');
+          if (!host) continue;
+          var block = host.querySelector(':scope > [data-mlsb-turn="' + turn.turn + '"]');
+          if (!block) {
+            block = buildTurnBlock(turn);
+            billingAttach(host, block);
+          }
+          updateTurnBlock(block, turn);
+        }
+      }
+
+      function billingFetch() {
+        if (typeof fetch !== 'function') return;
+        if (!billingEnabled()) return;      // 开关关掉就不打扰宿主
+        // 页面在后台时不轮询：桌面端最小化时省电，也不产生无意义请求
+        if (doc.hidden) return;
+        // 把「我正在显示哪个会话」带过去：宿主若发现这段对话还没有逐轮数据
+        // （本功能上线之前跑过的轮次），会就地回填一次再返回 —— 于是重启后
+        // 当前这段对话也能立刻贴上纸条，而不是只有新跑的轮次才有。
+        var displayed = billingDisplayedSessionId();
+        var url = BILLING_ENDPOINT + (displayed ? '?session=' + encodeURIComponent(displayed) : '');
+        fetch(url, { cache: 'no-store' })
+          .then(function (response) { return response.ok ? response.json() : null; })
+          .then(function (body) {
+            if (!body) return;
+            billingState = body;
+            billingTick();
+          })
+          .catch(function () { /* 宿主计费半边不在（或还没起来）：静默 */ });
+      }
+
+      if (typeof setInterval === 'function') {
+        billingTimer = setInterval(billingFetch, BILLING_POLL_MS);
+        billingApply();
+      }
+      if (typeof doc.addEventListener === 'function') {
+        doc.addEventListener('visibilitychange', function () { if (!doc.hidden) billingFetch(); });
+      }
 
       // ---- no settings drawer, no kill switch ------------------------------
       // Removed on purpose. The drawer's enable checkbox dropped the
@@ -2552,6 +2947,17 @@ window.__ModuleLoader__.load({
         var steps = [
           function () { if (bootCleanup) bootCleanup(); },
           function () { if (typeof window !== 'undefined') window.__mbBootDone = null; },
+          // per-turn token settlement: 停掉轮询、摘掉所有纸条、丢掉缓存的快照。
+          // 纸条本身挂在转录内部（转录由 DSH 管理），这里按属性兜底清一遍，
+          // 免得主题被热禁用时留下几张无主的纸条。
+          function () { if (billingTimer) { clearInterval(billingTimer); billingTimer = null; } },
+          function () { billingState = null; },
+          function () {
+            var blocks = doc.querySelectorAll('[data-mlsb-turn]');
+            for (var b = 0; b < blocks.length; b++) {
+              if (blocks[b].parentNode) blocks[b].parentNode.removeChild(blocks[b]);
+            }
+          },
           // settings-panel watcher: layer, timer and observer
           function () { clearMosaic(); },
           function () { if (mosaicSweeper) { clearInterval(mosaicSweeper); mosaicSweeper = null; } },

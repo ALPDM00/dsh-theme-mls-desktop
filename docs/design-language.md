@@ -371,6 +371,87 @@ body.theme-marathon [data-sidebar-collapsed] [data-dsh-part="sidebar-entry"] > s
 > 也**不要**用 `margin:0 auto` —— 在 35px 的盒子里会变成 `-0.5px`
 > （DSH 自己的 `_rail` 变体就是这么偏掉 0.5px 的）。
 
+### 7.2 每轮 token 结算块（2026-10-09 新增）
+
+**它是内容，不是界面层。** §5/§6 的「主题不往页面上叠东西」没有变：这个块贴在
+**转录内部**的轮次尾巴上，跟着转录滚动、跟着会话销毁。
+
+| 事 | 取值 / 位置 |
+| --- | --- |
+| 锚点 | `[data-turn-tail="<轮次号>"]`（DSH 的 `TurnTailNodeView`；语义属性，不是哈希类名） |
+| 插入位置 | 动作行**之前**（`:scope > [class*="_actions"]`）→ 读作「任务结束 → 结算 → 操作」 |
+| 对齐 | **消息内居中**（`margin:12px auto 0`），不是靠左 |
+| 尺寸 | **一个旋钮** `--mlsb-s:1.5`：宽 `calc(268px * var(--mlsb-s))` = 402px；绿条 42px、明细行 33px、灰条 39px、圆角 9px、间隙 7.5px。所有尺寸都写成 `calc(<原始值> * var(--mlsb-s))` |
+| 绿条 | `--mar-accent` 填充 + `--mar-accent-ink`（黑）字；**只有 `TOKEN USAGE`**，左右各一个黑色十字（`+`，展开时两边一起变 `−`） |
+| 明细行 | 高 33px，`--mar-wash` / `--mar-wash-strong` 交替，1px `--mar-line-faint` 分隔 |
+| 灰条 | `--mar-bg-overlay` 填充 + `--mar-ink-primary` 字；左边「任务用时」、右边 `mm:ss`（**没有 i 角标**） |
+| 圆角 | `--mlsb-radius:calc(6px * var(--mlsb-s))`；绿条收起时四角圆、**展开时下方变直角**衔接信息面板，面板顶直角、**底圆角**，灰条四角圆 |
+| 间隙 | 绿条/面板与灰条之间 `--mlsb-gap:calc(5px * var(--mlsb-s))`（`margin-top`）——两者**不紧贴** |
+| 字体 | **回到宿主默认栈**：标题 `font:800 …/1 var(--dsw-font-family)`、备注同栈；只有数字走等宽栈 + `tabular-nums`（Maratype 不再用于这一块） |
+| 强调色 | 只做**文字**时用 `--mar-accent-text`（不是 `--mar-accent`），否则「主绿 + 黑」看不见 |
+| 用时口径 | `turn/end.time − turn/start.time`，`turn/end` 之后**冻住** |
+| 触发时机 | 只在 `closed`（`turn/end` 到过）之后贴；没有用量的空轮次不贴 |
+| 贴哪一段对话 | **精确**：`ctx.get('sessions').list.current`（DSH 的选中项）；拿不到才退回「最近有账的会话」 |
+| 重启后 | ① 账本里存**逐轮**数据（`ledger.sessions[sid].turns`，每会话最近 40 轮），启动 `hydrateSessions` 回填；② 客户端把 `?session=<显示的会话>` 带给宿主，宿主发现这段对话没有逐轮数据就 `ctx.sessionPersistence.readFrom(id, 0)` **重放一遍**（本功能上线前的旧轮次靠它补上；每会话只试一次、8s 超时、失败静默、结果写回账本） |
+| 开关 | 主题设置里的「每轮 Token 结算」，`localStorage['mar.billing.v1']`，默认开；关掉即摘纸条 + 停轮询 |
+| **入场动画** | `@keyframes mlsb-reveal`：`clip-path:inset(0 50% 0 50%) → inset(0 0 0 0)`，`.18s` —— **从中间向两端展开**。用 clip-path 不用 `scaleX`（后者会把字一起压扁） |
+| **展开/收起动画** | `grid-template-rows:0fr → 1fr` + `opacity`，`.2s`；内层 `min-height:0;overflow:hidden` —— 模板的做法；`display:none` 不能过渡 |
+| 圆角过渡 | 绿条 `transition:border-radius .2s`，展开时下方两角平滑变直角 |
+| 减档 | 上面三条都在 `@media (prefers-reduced-motion: reduce)` 里关掉 |
+| i 角标 | **已按用户要求停用**（样式与创建代码都注释保留，需要时一起放开） |
+
+**两轮用户实测后的修正**（原版浮在输入框上方、还是个独立插件）：
+
+第一轮：
+
+1. 太宽太长 → 268×240 的小纸条；
+2. 是「另外一个插件」→ 内置进主题（`billing/` + `src/client.template.js`）；
+3. 展开态跨会话残留、滚动时纹丝不动 → 改贴在轮次尾巴上（位置由转录决定，随会话销毁）；
+4. 运行时间一直涨 → 改成**本轮用时并冻住**；
+5. 英文没用主题字体 → `TOKEN USAGE` 等一律 `Maratype`。
+
+第二轮（2026-10-09，模板 `token结算.html` 里本来就有这些参考）：
+
+6. 靠左 → **消息内居中**；
+7. 绿条上有费用 → 去掉，**只留 `TOKEN USAGE` + 左右两个黑色十字**（模板的 `.symbol` 就是它）；
+8. `i` 与方框 → **去掉并注释**（"万一后面需要再启动和修改"）；
+9. 需要圆角，且**绿条展开后下方变直角**衔接信息面板、**面板下方圆角**（模板 `.header[aria-expanded=true]` + `.details-wrap` 就是这套）；
+10. 绿条与灰条紧贴 → 留 `--mlsb-gap:5px`（模板 `.details-wrap{margin-bottom:var(--gap)}`）。
+
+第三轮（2026-10-09，动作要快、要简单）：
+
+11. 纸条要 1–2s 才出现（宿主 `/state` 是 2s 轮询）→ 补一个**从中间向两端展开**的入场（`mlsb-reveal`，`.18s`）；
+12. 展开/收起是「啪」地跳变 → 改用模板那套 `grid-template-rows:0fr → 1fr` + 透明度过渡（`.2s`）。
+
+第四轮（2026-10-09）：
+
+13. 有点挤 → 整体**放大 1.5 倍**，并把所有尺寸收敛成一个 `--mlsb-s` 旋钮；**字体回默认栈**（不再用 Maratype）；
+14. **重启桌面端后功能不见了、重新对话才正常** → 两层修复：账本里存**逐轮**数据并在启动回填；
+    贴纸前用 `ctx.get('sessions').list.current` **精确**确认"客户端显示的是哪一段对话"；
+15. 加一个开关 → 主题设置里新增 **「每轮 Token 结算」**（`localStorage['mar.billing.v1']`，默认开）。
+
+第五轮（2026-10-09，用户复测："刚刚的对话没纸条，另一个工具区里新跑的却有"）：
+
+16. 诊断：**宿主半边的代码要重启才生效**，所以"本功能上线前跑过的轮次"从来没有逐轮数据 ——
+    实测账本里本话 `requests=215 / turns=0`，而重启后新跑的那个工具区会话 `turns=1`。
+    → 新增**按需回填**：客户端带 `?session=` 来，宿主用 `ctx.sessionPersistence.readFrom(id, 0)`
+    重放日志补出逐轮数据（走 DSH 自己的服务，不碰磁盘格式），每会话一次、8s 超时、失败静默。
+
+> 为什么圆角要 `!important`：§4.3 那条 `body.theme-marathon *{border-radius:0!important}`
+> 会把纸条也压成直角。豁免写在 `body.theme-marathon .mlsb-*` 上（多一个类，特异性压过通配），
+> 与启动动画那颗 6px 状态灯同一手法。
+
+> **背景层必须放行它。** ASCII 背景的「谁在画底板」扫描（`bgPaints`）有一个 200×200 的
+> 尺寸门槛，而展开后的纸条约 268×240，正好越过它。所以 `bgPaintWalker()` 显式跳过
+> `[data-mlsb-turn]`：它是内容不是底板 —— 少了这一条，展开时数字会浮在网格上。
+
+> **为什么"居中"能这么写**：轮次尾巴的容器是 DSH 自己的
+> `.zZmEaW_root{flex-direction:column;gap:16px;display:flex}`（`ui-chat` 的
+> `TurnTailNodeView.module.css`）。它是**列**弹性容器，所以固定 `width:268px` +
+> `margin-inline:auto` 在交叉轴上自动居中 —— 换成 `text-align` 或
+> `justify-content` 都不会有用（那些走主轴/行内）。同一个 `gap:16px` 还顺手提供了
+> 纸条与动作行之间的间距；纸条自己不再需要下外边距。
+
 ---
 
 ## 8. 不再有页面内设置（No In-Page Settings）

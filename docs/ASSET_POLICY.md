@@ -1,58 +1,54 @@
-# Asset Policy — DSH Theme · Marathon
+# 资产政策 —— DSH 主题 · Marathon
 
-> **TL;DR** — This theme is **inspired by** *Marathon* (Bungie). It contains
-> **zero** copyrighted Bungie/Marathon assets, trademarks, official artwork, or
-> protected fonts. Every pixel is generated at runtime by the plugin itself.
+> **一句话**：本主题**以**《失落星船：马拉松》(Marathon, Bungie)**为灵感**，
+> **不含**任何 Bungie / Marathon 的版权素材、商标、官方美术或受保护字体。
+> 每一个像素都由插件在运行时程序化生成。
 
-## 1. Inspiration vs. copying
+## 1. 灵感 vs 抄袭
 
-*Marathon* (the Bungie game) is used **only as a visual reference** — colour
-mood, HUD vocabulary, grid discipline, glitch language. The plugin does **not**
-reproduce any of the following:
+《Marathon》（Bungie 的游戏）在这里**只作为视觉参考**：配色气质、HUD 语汇、
+栅格纪律、故障语言。本插件**不**复现以下任何东西：
 
-- No screenshots, renders, logos, or iconography owned by Bungie / Marathon.
-- No game audio, video, or 3D models.
-- No extracted or redistributed Bungie fonts or typefaces.
-- No trademarked names used as product identity beyond the descriptive theme
-  title `dsh-theme-marathon` (a fan-made, non-commercial skin for an unrelated
-  tool, deepseekHarness).
+- 不使用 Bungie / Marathon 拥有的截图、渲染图、logo 或图标；
+- 不含游戏音频、视频、3D 模型；
+- 不含提取或再分发的 Bungie 字体；
+- 除描述性主题名 `dsh-theme-marathon` 外，不以任何商标名作为产品身份
+  （它是给一个无关工具 deepseekHarness 做的、非商业的同人皮肤）。
 
-## 2. What this plugin actually ships
+## 2. 本插件实际随包发布的东西
 
-| Asset | Source | License / note |
-| ----- | ------ | -------------- |
-| `client.js` (generated) | Authored by this project | MIT |
-| CSS (palette tokens, brand accents, boot overlay) | Generated procedurally in `src/client.template.js` | MIT |
-| Boot overlay CSS (`src/boot/boot.css`) | Procedural + base64-inline images; no copyrighted source material | MIT |
-| Boot overlay images (`assets/boot/green-logo.png`, `blue-pixel.png`, `invert-blue-pixel.png`) | Programmatic DeepSeek company brand mark recreated as PNG for the boot transition | DeepSeek brand mark — fair-use reference; not Bungie / Marathon |
-| ~~FUI glyphs (crosshair, corner brackets, data plates)~~ | Removed 2026-09-18 with the plate layer | MIT |
-| `Maratype.otf` | **User-supplied** decorative font | **Must be cleared by the user** — see §3 |
-| `design-language.md`, `README.md` | Authored docs | MIT |
+| 资产 | 来源 | 许可 / 说明 |
+| ---- | ---- | ----------- |
+| `client.js`（生成物） | 本项目编写 | MIT |
+| CSS（调色板 token、品牌点缀、启动覆盖层） | 在 `src/client.template.js` 里程序化生成 | MIT |
+| 启动覆盖层 CSS（`src/boot/boot.css`） | 程序化 + base64 内联图；无版权素材 | MIT |
+| 启动覆盖层图像（`assets/boot/green-logo.png`、`blue-pixel.png`、`invert-blue-pixel.png`） | 把 DeepSeek 公司品牌标记程序化重绘为 PNG，用于启动转场 | DeepSeek 品牌标记 —— 合理引用；**不是** Bungie / Marathon |
+| ~~FUI 字符（准星、角标、数据牌）~~ | 已于 2026-09-18 随铭牌层一起移除 | MIT |
+| `Maratype.otf` | **用户提供**的装饰字体 | **须由用户自行厘清权利** —— 见 §3 |
+| `design-language.md`、`README.md` | 本项目编写的文档 | MIT |
 
-## 3. Maratype font — responsibility boundary
+## 3. Maratype 字体 —— 责任边界
 
-`Maratype.otf` is provided by the **end user** for their own personal use. The
-plugin embeds it as a base64 data-URI at build time (`scripts/build.cjs`) so no
-network request is made at runtime.
+`Maratype.otf` 由**最终用户**为个人使用而提供。插件在构建时
+（`scripts/build.cjs`）把它以 base64 data-URI 内联，因此运行时不发起任何网络请求。
 
-- The plugin author does **not** claim ownership of Maratype.
-- If Maratype is **not** licensed for redistribution, the user must:
-  1. keep `assets/fonts/Maratype.otf` **out of any public publish**, or
-  2. replace it with a font they are licensed to ship (e.g. an OFL typeface), or
-  3. delete the font and accept the `ui-monospace, monospace` fallback.
-- The build will still succeed without the font; the `@font-face` simply
-  resolves to the fallback stack.
+- 插件作者**不主张**对 Maratype 的所有权；
+- 若 Maratype **未**获准再分发，用户必须：
+  1. 让它**不出现在任何公开分发**里（把 `assets/fonts/Maratype.otf` 排除在发布之外），或
+  2. 换成自己有分发许可的字体（例如某个 OFL 字体），或
+  3. 删掉字体、接受 `ui-monospace, monospace` 回落；
+- 没有字体时构建照样成功：`@font-face` 只是解析到回落字体栈。
 
-## 4. Publishing & the marketplace
+## 4. 发布与市场
 
-When submitting to `dsh-market`, the entry must declare this theme as
-**`type: theme`** and link this policy. Reviewers should confirm:
+提交到 `dsh-market` 时，条目必须声明本主题为 **`type: theme`** 并链接本政策。
+审核方应确认：
 
-- No Bungie/Marathon trademark is used as a store identity.
-- No copyrighted media is bundled.
-- The decorative font's redistribution rights are the uploader's responsibility.
+- 未以 Bungie / Marathon 商标作为商店身份；
+- 未打包任何版权媒体；
+- 装饰字体的再分发权利由上传者负责。
 
-## 5. Takedown
+## 5. 下架
 
-If any asset is later found to infringe, the maintainer will remove it and ship
-the fallback stack. File an issue on the repository; response within 14 days.
+若日后发现某项资产构成侵权，维护者会移除它并改发回落方案。
+请在仓库里开 issue；14 天内响应。

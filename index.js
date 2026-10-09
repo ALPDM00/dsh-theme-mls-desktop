@@ -190,15 +190,52 @@ function scheduleShellPatch(ctx) {
 }
 
 /**
+ * 计费半边（**内置在主题里**，不再是一个独立插件）。
+ *
+ * `billing/` 是 ESM（`.mjs`），而本文件是 CJS，所以这里用**动态 import** 把它挂上来；
+ * 于是计费与主题同生共死：主题被禁用，路由、事件订阅与账本定时器一起拆掉。
+ *
+ * 为什么动态 import 而不是静态：主题的 Host 半边必须能在**任何**宿主上加载成功
+ * （它还要负责清掉插件加载前的原生启动屏），计费半边是可选能力，
+ * 它出问题只能是「没有计费」，绝不能变成「主题加载失败」。
+ * @param ctx - Host context.
+ * @param log - 与 scheduleShellPatch 共用的日志函数。
+ */
+function scheduleBilling(ctx, log) {
+  import('./billing/host.mjs')
+    .then((mod) => {
+      mod.applyBilling(ctx, { log: (level, text) => log('billing: ' + text) })
+    })
+    .catch((error) => {
+      log('billing: unavailable (' + String((error && error.message) || error) + ')')
+    })
+}
+
+/**
  * Host activation. The webserver emits `webserver/index-inject` on every
  * index render and each listener pushes its current rows, so the table is
  * read fresh per response and unloading the plugin withdraws the row.
  * @param ctx - Host context carrying the webserver event.
  */
 async function apply(ctx) {
+  const log = (text) => {
+    try {
+      if (ctx && ctx.logger && typeof ctx.logger.info === 'function') ctx.logger.info(text)
+      else if (ctx && typeof ctx.log === 'function') ctx.log(text)
+      else console.log('[theme-mls-desktop] ' + text)
+    } catch {
+      /* ignore */
+    }
+  }
   ctx.on('webserver/index-inject', (table) => {
     table.push({ kind: 'style', text: NATIVE_BOOT_CSS })
   })
+  try {
+    scheduleBilling(ctx, log)
+  } catch (error) {
+    // 计费半边是可选能力：它挂了也不能让主题加载失败。
+    log('billing: unavailable (' + String((error && error.message) || error) + ')')
+  }
   try {
     scheduleShellPatch(ctx)
   } catch (error) {
@@ -211,4 +248,4 @@ async function apply(ctx) {
   }
 }
 
-module.exports = { name, apply, NATIVE_BOOT_CSS, VOID, scheduleShellPatch }
+module.exports = { name, apply, scheduleBilling, NATIVE_BOOT_CSS, VOID, scheduleShellPatch }
