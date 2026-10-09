@@ -152,8 +152,8 @@ console.log('dsh-theme-mls-desktop · plugin self-test\n');
     /#dshMarBootHost \.mb-status-dot\{border-radius:50%!important;\}/.test(r.cssCaptured));
   ok('css drops the HUD plate layer', !r.cssCaptured.includes('.mar-hud') && !r.cssCaptured.includes('.mar-strip') && !r.cssCaptured.includes('.mar-corner'));
   // Asserted on the drawer's OWN class names, not on the `.mar-set-` prefix:
-  // the background settings pane added on 2026-09-20 legitimately uses
-  // `.mar-set-pane` / `.mar-set-row` / `.mar-set-note`.
+  // the 主题设置 pane added on 2026-09-20 legitimately uses
+  // `.mar-set-pane` / `.mar-set-row` / `.mar-switch`.
   ok('css drops the settings drawer',
     !r.cssCaptured.includes('.mar-set-toggle') && !r.cssCaptured.includes('.mar-set-panel'));
   ok('css drops the heading RGB split', !r.cssCaptured.includes('theme-marathon-no-rgb'));
@@ -165,11 +165,20 @@ console.log('dsh-theme-mls-desktop · plugin self-test\n');
   const bg = r.win.document.getElementById('mar-ascii-bg');
   ok('ascii background canvas mounted as first child of body',
     !!bg && r.win.document.body.firstChild === bg);
-  ok('background mode class on body', r.win.document.body.classList.contains('mar-bg-on'));
-  ok('css carries the background layer + both palettes',
+  // 2026-10: 关闭背景动画 is an INDEPENDENT switch and it defaults to OFF, so a
+  // fresh install has no dot field and no light layer (the dark pair is the
+  // default UI).
+  ok('background animation is OFF by default',
+    !r.win.document.body.classList.contains('mar-bg-on') &&
+    !r.win.document.body.classList.contains('mar-bg-light') &&
+    bg.style.display === 'none');
+  ok('css carries the background layer + the two controls',
     r.cssCaptured.includes('#mar-ascii-bg') &&
     /mar-bg-on\s+\.mar-bg-clear/.test(r.cssCaptured) &&
     !r.cssCaptured.includes('mar-bg-veil') &&
+    r.cssCaptured.includes('.mar-set-switch') && r.cssCaptured.includes('.mar-switch') &&
+    r.cssCaptured.includes('.mar-seg button[aria-checked="true"]') &&
+    !r.cssCaptured.includes('aria-pressed') &&
     r.cssCaptured.includes('.mar-set-pane') && r.cssCaptured.includes('.mar-nav-on'));
   // the four structural containers are the only things we let step aside
   const clearMarks = r.win.document.querySelectorAll('.mar-bg-clear');
@@ -192,6 +201,34 @@ console.log('dsh-theme-mls-desktop · plugin self-test\n');
     return sc.length === 2 && sc[0].textContent.includes('__mbMarathon') && sc[1].textContent.includes('__mbIntroStop');
   })());
   ok('dispose is a function', typeof r.dispose === 'function');
+})();
+
+// --- Test 1b: the field switch + the colour pair are independent (2026-10) ---
+// 关闭背景动画 is its own switch and defaults to OFF; 主白+绿 / 主黑+绿 are a
+// radio group that survives it. The store key is unchanged, so the old triple
+// (mode: off|light|dark, plus a scheme for the 'off' case) has to migrate.
+(() => {
+  const key = 'dsh-theme-marathon.bg.v1';
+  const fresh = runClient({});
+  ok('fresh install: no stored state -> animation OFF, dark pair',
+    !fresh.win.document.body.classList.contains('mar-bg-on') &&
+    !fresh.win.document.body.classList.contains('mar-bg-light'));
+  const v2 = runClient({ [key]: JSON.stringify({ mode: 'light' }) });
+  ok('v2 {mode:light} migrates to anim:true + the white pair',
+    v2.win.document.body.classList.contains('mar-bg-on') &&
+    v2.win.document.body.classList.contains('mar-bg-light'));
+  const v2off = runClient({ [key]: JSON.stringify({ mode: 'off', scheme: 'light' }) });
+  ok('v2 {mode:off, scheme:light} migrates to anim:false with the white UI kept',
+    !v2off.win.document.body.classList.contains('mar-bg-on') &&
+    v2off.win.document.body.classList.contains('mar-bg-light'));
+  const v2green = runClient({ [key]: JSON.stringify({ mode: 'green' }) });
+  ok('v1 {mode:green} migrates to anim:true + the white pair',
+    v2green.win.document.body.classList.contains('mar-bg-on') &&
+    v2green.win.document.body.classList.contains('mar-bg-light'));
+  const v3 = runClient({ [key]: JSON.stringify({ anim: true, scheme: 'light' }) });
+  ok('v3 {anim:true, scheme:light} restores both flags',
+    v3.win.document.body.classList.contains('mar-bg-on') &&
+    v3.win.document.body.classList.contains('mar-bg-light'));
 })();
 
 // --- Test 2: no kill switch (regression, 2026-09-18) ---
@@ -291,7 +328,7 @@ async function waitFor(fn, ms) {
   const d = r.win.document;
   const overlay = d.createElement('div'); overlay.className = 'zz_overlay';
   const panel = d.createElement('div'); panel.className = 'zz_panel';
-  const nav = d.createElement('nav'); nav.className = 'zz_nav';
+  const nav = d.createElement('nav'); nav.className = 'zz_nav zz_navList';
   for (let i = 0; i < 8; i++) { const c = d.createElement('button'); c.className = 'zz_navCell'; nav.appendChild(c); }
   panel.appendChild(nav);
   panel.appendChild(d.createElement('div'));
@@ -327,6 +364,46 @@ async function waitFor(fn, ms) {
     Math.abs(parseFloat(layer.children[3].style.animationDelay) - 0.0155) < 1e-9 &&
     Math.abs(lastStart - 0.341) < 1e-9);
   ok('the whole reveal finishes inside 0.5s', lastStart <= 0.5 + 1e-6);
+
+  // --- the 主题设置 pane's two controls (2026-10) ---------------------------
+  // The pane is built when the tab mounts (not on first click), so it is here.
+  // 关闭背景动画 is an independent switch (off by default); 主白+绿 / 主黑+绿
+  // are a radio group: toggling the field must never move the pair, and picking
+  // a pair must never start the field.
+  const pane = panel.querySelector('.mar-set-pane');
+  ok('settings pane is pre-built inside the dialog', !!pane);
+  const animIn = pane && pane.querySelector('#mar-bg-anim');
+  const pairs = pane ? panel.querySelectorAll('.mar-seg button') : [];
+  const pairOn = () => Array.from(pairs).filter((b) => b.getAttribute('aria-checked') === 'true');
+  ok('background animation switch is its own control, OFF by default',
+    !!animIn && animIn.type === 'checkbox' && animIn.checked === false && pairs.length === 2);
+  ok('exactly one colour pair is selected (主黑 + 绿 by default)',
+    pairOn().length === 1 && pairOn()[0].getAttribute('data-pair') === 'dark');
+  ok('density / breathing are parked while the field is off',
+    pane.querySelector('#mar-bg-cell').disabled === true &&
+    pane.querySelector('#mar-bg-speed').disabled === true);
+  // switch ON: the field starts, the pair does not move
+  animIn.checked = true;
+  animIn.dispatchEvent(new r.win.Event('change', { bubbles: true }));
+  ok('turning the animation on starts the field and keeps the pair',
+    d.body.classList.contains('mar-bg-on') &&
+    !d.body.classList.contains('mar-bg-light') &&
+    pairOn().length === 1 && pairOn()[0].getAttribute('data-pair') === 'dark' &&
+    pane.querySelector('#mar-bg-cell').disabled === false);
+  // pair -> 主白 + 绿: the palette flips, the field keeps running
+  pairs[0].dispatchEvent(new r.win.Event('click', { bubbles: true }));
+  ok('picking 主白 + 绿 flips the UI pair but not the field switch',
+    d.body.classList.contains('mar-bg-light') && d.body.classList.contains('mar-bg-on') &&
+    animIn.checked === true &&
+    pairOn().length === 1 && pairOn()[0].getAttribute('data-pair') === 'light');
+  // switch OFF: the field stops, the white UI stays (this was the bug)
+  animIn.checked = false;
+  animIn.dispatchEvent(new r.win.Event('change', { bubbles: true }));
+  ok('turning the animation off keeps the chosen pair (主白 + 绿 stays white)',
+    !d.body.classList.contains('mar-bg-on') &&
+    d.body.classList.contains('mar-bg-light') &&
+    pairOn().length === 1 && pairOn()[0].getAttribute('data-pair') === 'light' &&
+    pane.querySelector('#mar-bg-cell').disabled === true);
 
   // the order is a fixed permutation: same layout every run
   const order1 = layer ? Array.from(layer.children).map((c) => c.style.left + '/' + c.style.top).join(',') : '';

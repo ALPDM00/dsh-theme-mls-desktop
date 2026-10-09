@@ -1,6 +1,6 @@
 {
   "name": "dsh-theme-mls-desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Marathon-inspired FUI + editorial glitch theme for the deepseekHarness Desktop shell. Transparent cold-start intro, staged whale-logo reveal, native caption-button handoff. Programmatic assets only; no Bungie/Marathon copyrighted material.",
   "license": "MIT",
   "private": false,

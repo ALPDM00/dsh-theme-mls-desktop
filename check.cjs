@@ -180,10 +180,20 @@ else {
   // colour pair and the field switch are SEPARATE state. The UI has to be read
   // from BG_STATE.scheme — reading it off the drawn field (null once the field is
   // off) is precisely the bug: 关闭动画 tore the light layer off 主白 + 绿.
-  else if (!/var ui = BG_MODES\[BG_STATE\.scheme\]/.test(src)) fail('the UI pair is not read from BG_STATE.scheme (关闭动画 would flip 主白 + 绿 back to the dark pair)');
-  else if (/if \(m && m\.light\)/.test(src)) fail('the light layer is bound to the drawn field again — 关闭动画 tears it off the page');
-  else if (!src.includes("if (next !== 'off') BG_STATE.scheme = next;")) fail('picking a colour pair does not persist it (关闭动画 would forget which UI to keep)');
-  else if (!src.includes("if (out.mode !== 'off') out.scheme = out.mode;")) fail('the stored colour pair is not restored on load');
+  // 2026-10: they are two CONTROLS now, not one three-way segment —
+  // 关闭背景动画 is an independent switch (default OFF) and 主白+绿 / 主黑+绿 are a
+  // radio group, so exactly one pair is always chosen and the switch can never
+  // change it. The three guarantees above are still asserted, plus the split.
+  else if (!/var ui = BG_MODES\[BG_STATE\.scheme\]/.test(src)) fail('the UI pair is not read from BG_STATE.scheme (关掉背景动画 would flip 主白 + 绿 back to the dark pair)');
+  else if (/if \(m && m\.light\)/.test(src)) fail('the light layer is bound to the drawn field again — 关掉背景动画 tears it off the page');
+  else if (!src.includes("var out = { anim: false, scheme: 'dark', cell: 16, speed: 0.55 };")) fail('the field switch does not default to OFF (背景动画 must start disabled)');
+  else if (!src.includes("if (typeof s.anim === 'boolean') out.anim = s.anim;") ||
+           !src.includes("else if (s.mode === 'off') out.anim = false;")) fail('the stored state is not migrated — a v2 mode must split into the switch flag + the pair it was carrying');
+  else if (!src.includes("animIn.addEventListener('change'") ||
+           !src.includes('BG_STATE.anim = !!animIn.checked;')) fail('the 背景动画 switch does not drive BG_STATE.anim');
+  else if (!src.includes('data-pair="light"') || !src.includes('data-pair="dark"') ||
+           !src.includes("btns[i].getAttribute('data-pair') === BG_STATE.scheme")) fail('主白 + 绿 / 主黑 + 绿 are not a radio group — the chosen pair could be lost while the field is off');
+  else if (/data-bg=|aria-pressed/.test(src)) fail('the old three-way off|light|dark segment is back — 背景动画 is an independent switch, not a third choice');
   // 2026-10-01: the theme must ALSO drive DSH's own appearance preference. The
   // token overrides are mode-independent, but body[data-ds-dark-theme] and html's
   // color-scheme are not — 主白 + 绿 with 通用设置 left on 深色 keeps native
@@ -334,6 +344,7 @@ else {
   else if (/@property --mar-vt-r/.test(src)) fail('the registered pour length is back (the ring driver removed in 2026-09-21)');
   else ok('colour-pair switch: mosaic squares via clip-path:path(), old snapshot pinned, five dead ends still banned');
   if (!/function vtPour\(apply\)/.test(src)) fail('the switch driver is gone');
+  else if (!/if \(next === prevPair\) \{ syncPane\(pane\); return; \}/.test(src)) fail('the pour is not gated on the colour PAIR actually moving (re-picking the same pair would pour for nothing)');
   // 2026-10-01: THE REVEAL MUST BE A VIEW TRANSITION, and this block used to say the
   // exact opposite — it is worth recording why it flipped.
   //   · The effect's squares carry the PAGE CONTENT, and only the view transition's

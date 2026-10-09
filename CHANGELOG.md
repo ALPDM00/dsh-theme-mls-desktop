@@ -5,6 +5,32 @@
 次版本号 = 向后兼容的新功能；
 修订号 = 向后兼容的 bug 修复。
 
+## [0.2.0] - 2026-10-08
+
+「主题设置」页与网页版对齐：点阵动画变成独立开关，两组配色成为互斥单选。
+
+### 变更
+- **背景动画** 从原来的三段式 `关闭背景动画 / 主白 + 绿 / 主黑 + 绿` 里拆出来，成为
+  **独立开关**，**默认关闭**（新装 / 清空 `localStorage` 后不播放点阵场）。
+- **主白 + 绿 / 主黑 + 绿** 变成单选组：恒有且只有一个被选中，与动画开关互不影响 ——
+  关掉动画不会把配色弹回主黑 + 绿，换配色也不会顺带把动画打开。
+- 状态模型由 `BG_STATE.mode (off|light|dark)` 拆成 `BG_STATE.anim`（布尔）+
+  `BG_STATE.scheme`（light|dark）；`bgApplyMode` / `bgDraw` / `bgStart` / `bgKick` /
+  `sweepReveals` 全部改读新字段。
+- 存储形状 `dsh-theme-marathon.bg.v1` 从 `{mode, scheme, cell, speed}` 变为
+  `{anim, scheme, cell, speed}`；旧形状读取时按语义迁移（`mode: off` → `anim: false` 且
+  保留 `scheme`，`mode: light|dark|green` → `anim: true` + 对应配色）。
+- 点阵密度 / 呼吸速度在场关闭时变暗且 `disabled`；面板在挂载时就同步当前状态（不再等到
+  第一次点击 tab）。
+- 换配色只在真的换了另一对时重放马赛克灌注。
+- 面板结构与文案与网页版 `dsh-theme-marathon` 的 `buildPane` **逐字节一致**（顺带补上了
+  桌面版缺的 `.mar-val` 数值样式）。
+
+### 工程质量
+- `check.cjs` 与 `test/plugin.test.cjs`（113 项）增加与网页版相同的断言：
+  默认关闭、四种存储形状迁移、配色单选组、旧 `data-bg=` / `aria-pressed` 不得回来、
+  以及通过真实面板控件驱动的「开关不影响配色 / 配色不影响开关」交互回归。
+
 ## [0.1.0] - 2026-10-02
 
 首次正式发布（GitHub 上传前的整理快照）。

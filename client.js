@@ -284,8 +284,8 @@ window.__ModuleLoader__.load({
         '   It is a SCHEME, not a second theme — only the --mar-* surface/ink/line',
         '   variables move, and only while .mar-bg-light is on <body>. JS sets it',
         '   from BG_STATE.scheme, i.e. from the chosen colour pair and NOT from the',
-        '   field switch: 关闭动画 must keep the white UI. Binding it to the drawn',
-        '   field instead is exactly the reported bug — 「主白 + 绿」 + 关闭动画',
+        '   field switch: 背景动画 must keep the white UI. Binding it to the drawn',
+        '   field instead is exactly the reported bug — 「主白 + 绿」 + 关掉背景动画',
         '   dropped the page back to the dark pairing, as if 主黑 + 绿 had been',
         '   picked. Nothing has to be re-injected into DSH: every --dsw token',
         '   already resolves through these variables.',
@@ -738,15 +738,34 @@ window.__ModuleLoader__.load({
         '.mar-seg button{font:inherit;color:inherit;background:transparent;',
         '  border:1px solid var(--mar-line-strong);padding:8px 10px;cursor:pointer;',
         '  display:flex;align-items:center;gap:8px;}',
-        '.mar-seg button[aria-pressed="true"]{color:var(--mar-accent-ink);',
+        '.mar-seg button[aria-checked="true"]{color:var(--mar-accent-ink);',
         '  background:var(--mar-accent);border-color:var(--mar-accent);}',
         '.mar-seg button:focus-visible{outline:1px solid var(--mar-accent);outline-offset:2px;}',
         '.mar-seg .mar-chip{display:inline-flex;width:20px;height:12px;overflow:hidden;',
         '  border:1px solid currentColor;}',
         '.mar-seg .mar-chip i{display:block;width:50%;height:100%;}',
         '.mar-seg .mar-chip i:first-child{width:6px;}',
+        '/* the field switch — its OWN control, not a third segment. The pair below',
+        '   is a radio group that always carries exactly one of its two choices, so',
+        '   turning the animation off cannot un-pick a colour pair (and turning a',
+        '   pair on cannot start the animation). Squared, like every other control;',
+        '   the knob is the accent only while it is on. */',
+        '.mar-set-switch{margin:0 0 18px;}',
+        '.mar-switch{appearance:none;-webkit-appearance:none;flex:0 0 34px;width:34px;height:18px;',
+        '  margin:0;padding:0;position:relative;cursor:pointer;background:transparent;',
+        '  border:1px solid var(--mar-line-strong);}',
+        '.mar-switch::after{content:"";position:absolute;left:2px;top:2px;width:12px;height:12px;',
+        '  background:var(--mar-ink-tertiary);}',
+        '.mar-switch:checked{border-color:var(--mar-accent);background:var(--mar-wash-accent);}',
+        '.mar-switch:checked::after{left:18px;background:var(--mar-accent);}',
+        '.mar-switch:focus-visible{outline:1px solid var(--mar-accent);outline-offset:2px;}',
+        '/* density / breathing only describe the field, so they dim while it is off',
+        '   (the switch row itself never does). */',
+        '.mar-set-pane.mar-anim-off .mar-set-row:not(.mar-set-switch){opacity:.45;}',
         '.mar-set-row{display:flex;align-items:center;gap:12px;margin:0 0 14px;}',
         '.mar-set-row label{flex:0 0 88px;}',
+        '.mar-set-row input[type=range]{flex:1;accent-color:var(--mar-accent);min-width:0;}',
+        '.mar-set-row .mar-val{flex:0 0 58px;text-align:right;font-variant-numeric:tabular-nums;}',
         '/* the nav cells — OURS and THE HOST\'S — and the pane switch. Hover AND',
         '   selected are ours, because the host paints its own "active" cell the',
         '   panel colour and that reads as nothing. Both states are green, but in',
@@ -947,9 +966,11 @@ window.__ModuleLoader__.load({
       //      flips, and the UI ink flips with it — black ink on the white plate,
       //      light ink on the dark one (see .mar-bg-light in the stylesheet).
       //      The dark pair leaves DSH's palette completely alone.
-      //    * the pair and the field switch are SEPARATE state: 关闭动画 stops
-      //      drawing the field but keeps BG_STATE.scheme, so the UI stays white
-      //      in 主白 + 绿 (it used to drop back to the dark pairing).
+      //    * the pair and the field switch are SEPARATE state: the 背景动画
+      //      switch stops drawing the field but keeps BG_STATE.scheme, so the UI
+      //      stays white in 主白 + 绿 (it used to drop back to the dark pairing).
+      //      The pair buttons are a radio group — exactly one is always chosen —
+      //      and the switch is its own control, OFF by default.
       //    * it is a BACKGROUND, nothing else: fixed, first child of <body>,
       //      z-index 0, pointer-events:none. The only page surfaces it changes
       //      are the full-viewport containers marked `.mar-bg-clear` (see
@@ -962,7 +983,7 @@ window.__ModuleLoader__.load({
       //    * pair / density / speed are user settings, persisted in
       //      localStorage and surfaced in DSH's settings dialog under the
       //      「主题设置」 tab this file injects (mountSettingsTab below).
-      //  Knobs: BG_STATE.mode (off|light|dark), .scheme (light|dark), .cell,
+      //  Knobs: BG_STATE.anim (the field switch), .scheme (light|dark), .cell,
       //  .speed.
       //  The canvas carries the field colour itself (--mar-bg-field), so
       //  clearRect only wipes glyphs — the field is never repainted per frame.
@@ -976,7 +997,7 @@ window.__ModuleLoader__.load({
       //   field / ink   the field's own plate colour and the glyph colour
       //   light         the UI on top has to flip with it (see the light layer
       //                 in the stylesheet): white plate, black ink. It is what
-      //                 the 关闭动画 switch must NOT take away — see bgApplyMode.
+      //                 the 背景动画 switch must NOT take away — see bgApplyMode.
       //  There is no scrim ("veil") any more. It existed for one reason: 60%
       //  black over the old acid-green field was the only way to keep white ink
       //  legible, so the .mar-bg-clear containers took a wash. With the field
@@ -1003,23 +1024,33 @@ window.__ModuleLoader__.load({
 
       function bgNum(v, a, b) { return v < a ? a : (v > b ? b : v); }
 
-      // Read once at apply(); every later change goes through the seg handlers.
-      //   mode    which field is DRAWN: off | light | dark ('green' is the v1
-      //           name of the white pair and is migrated on read)
-      //   scheme  which colour PAIR the UI wears: light | dark. Kept even while
-      //           the field is off, so 关闭动画 cannot flip the UI back.
+      // Read once at apply(); every later change goes through the pane handlers.
+      //   anim    whether the field is DRAWN at all: its own switch, OFF by
+      //           default, so the theme is usable without the dot field. ('green'
+      //           and the off|light|dark triple are the v1/v2 stores, migrated
+      //           on read.)
+      //   scheme  which colour PAIR the UI wears: light | dark. Exactly one of
+      //           the two is always chosen (the pair buttons are a radio group),
+      //           and it is kept while the field is off, so the 背景动画 switch
+      //           cannot flip the UI back.
       function bgLoad() {
-        var out = { mode: 'dark', scheme: 'dark', cell: 16, speed: 0.55 };
+        var out = { anim: false, scheme: 'dark', cell: 16, speed: 0.55 };
         var raw = null;
         try { raw = (typeof window !== 'undefined' && window.localStorage) ? window.localStorage.getItem(BG_STORE_KEY) : null; } catch (e) { raw = null; }
         if (!raw) return out;
         var s = null;
         try { s = JSON.parse(raw); } catch (e) { s = null; }
         if (!s || typeof s !== 'object') return out;
-        if (s.mode === 'off' || s.mode === 'light' || s.mode === 'dark') out.mode = s.mode;
-        else if (s.mode === 'green') out.mode = 'light';   // v1: acid field -> white field
-        if (s.scheme === 'light' || s.scheme === 'dark') out.scheme = s.scheme;
-        if (out.mode !== 'off') out.scheme = out.mode;     // a stored pair wins over a stale one
+        // v2 stored ONE mode (off|light|dark) that doubled as the pair: 'off'
+        // carried no pair at all, which is exactly why turning the animation off
+        // forgot which UI to keep. Split it on read — the pair always survives,
+        // the field switch is its own boolean.
+        var pair = (s.scheme === 'light' || s.scheme === 'dark') ? s.scheme : null;
+        if (s.mode === 'light' || s.mode === 'dark') { out.anim = true; pair = pair || s.mode; }
+        else if (s.mode === 'green') { out.anim = true; pair = pair || 'light'; }  // v1: acid field -> white field
+        else if (s.mode === 'off') out.anim = false;
+        if (typeof s.anim === 'boolean') out.anim = s.anim;   // v3 wins over a migrated mode
+        if (pair) out.scheme = pair;
         if (typeof s.cell === 'number') out.cell = bgNum(Math.round(s.cell), 8, 48);
         if (typeof s.speed === 'number') out.speed = bgNum(s.speed, 0, 1.5);
         return out;
@@ -1045,9 +1076,9 @@ window.__ModuleLoader__.load({
       }
 
       function bgDraw(t) {
-        if (!bgCtx || BG_STATE.mode === 'off') return;
+        if (!bgCtx || !BG_STATE.anim) return;
         var g = bgCtx, cell = BG_STATE.cell;
-        var ink = BG_MODES[BG_STATE.mode].ink;
+        var ink = BG_MODES[BG_STATE.scheme].ink;
         g.clearRect(0, 0, bgW, bgH);
         g.font = '500 ' + Math.max(9, Math.round(cell * 0.8)) +
           'px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
@@ -1085,7 +1116,7 @@ window.__ModuleLoader__.load({
       }
 
       function bgStart() {
-        if (bgRaf || !bgCanvas || BG_STATE.mode === 'off') return;
+        if (bgRaf || !bgCanvas || !BG_STATE.anim) return;
         // reduced motion: no loop at all — one static frame still shows the field.
         // Same bail-out when there is no rAF (jsdom in the unit test).
         if (reducedMotion() || typeof window === 'undefined' || !window.requestAnimationFrame) {
@@ -1299,7 +1330,7 @@ window.__ModuleLoader__.load({
         if (bgKickRaf || typeof window === 'undefined' || !window.requestAnimationFrame) return;
         bgKickRaf = window.requestAnimationFrame(function () {
           bgKickRaf = 0;
-          if (BG_STATE.mode === 'off') return;
+          if (!BG_STATE.anim) return;
           bgMarkAdd(bgAnchorTargets());
           var lost = false, i;
           for (i = 0; i < bgCleared.length; i++) {
@@ -1388,20 +1419,21 @@ window.__ModuleLoader__.load({
       }
 
       function bgApplyMode() {
-        var on = BG_STATE.mode !== 'off';
-        var m = on ? BG_MODES[BG_STATE.mode] : null;
-        // The UI palette follows the chosen COLOUR PAIR, not the field switch.
-        // It used to be read off `m` (null once the field is off), so 关闭动画 in
-        // 主白 + 绿 tore the light layer off the page and left the dark palette
-        // behind — the report "关闭后会切换为主黑+绿". The pair is its own state
-        // (BG_STATE.scheme) and survives the switch.
+        var on = BG_STATE.anim;
+        // The UI palette follows the chosen COLOUR PAIR, never the field switch.
+        // It used to be read off the drawn field (null once that was off), so
+        // switching the animation off in 主白 + 绿 tore the light layer off the
+        // page and left the dark palette behind — the report "关闭后会切换为主黑+绿".
+        // The pair is its own state (BG_STATE.scheme) and survives the switch,
+        // which is also why the pair buttons are a radio group that can never
+        // end up with nothing selected.
         var ui = BG_MODES[BG_STATE.scheme] || BG_MODES.dark;
         if (on) body.classList.add('mar-bg-on'); else body.classList.remove('mar-bg-on');
         // no veil any more (see BG_MODES): the field runs through the chrome
         body.classList.remove('mar-bg-veil');
         if (ui.light) body.classList.add('mar-bg-light'); else body.classList.remove('mar-bg-light');
         syncThemePreference(ui.light);
-        body.style.setProperty('--mar-bg-field', m ? m.field : ui.field);
+        body.style.setProperty('--mar-bg-field', ui.field);
         if (bgCanvas) bgCanvas.style.display = on ? 'block' : 'none';
         bgMarkClear(!on);
         if (!on) { bgStop(); return; }
@@ -1830,11 +1862,13 @@ window.__ModuleLoader__.load({
         pane.className = 'mar-set-pane';
         pane.setAttribute('data-mar-pane', '1');
         pane.innerHTML =
-          '<h4>背景动画</h4>' +
-          '<div class="mar-seg" role="group" aria-label="背景配色">' +
-          '<button type="button" data-bg="off" aria-pressed="false">关闭背景动画</button>' +
-          '<button type="button" data-bg="light" aria-pressed="false">' + bgSegChip('light') + '主白 + 绿</button>' +
-          '<button type="button" data-bg="dark" aria-pressed="false">' + bgSegChip('dark') + '主黑 + 绿</button>' +
+          '<h4>主题设置</h4>' +
+          '<div class="mar-set-row mar-set-switch"><label for="mar-bg-anim">背景动画</label>' +
+          '<input type="checkbox" class="mar-switch" id="mar-bg-anim">' +
+          '<span class="mar-val" data-val="anim"></span></div>' +
+          '<div class="mar-seg" role="radiogroup" aria-label="背景配色">' +
+          '<button type="button" role="radio" data-pair="light" aria-checked="false">' + bgSegChip('light') + '主白 + 绿</button>' +
+          '<button type="button" role="radio" data-pair="dark" aria-checked="false">' + bgSegChip('dark') + '主黑 + 绿</button>' +
           '</div>' +
           '<div class="mar-set-row"><label for="mar-bg-cell">点阵密度</label>' +
           '<input type="range" id="mar-bg-cell" min="8" max="40" step="2">' +
@@ -1844,28 +1878,40 @@ window.__ModuleLoader__.load({
           '<span class="mar-val" data-val="speed"></span></div>';
 
         var seg = pane.querySelector('.mar-seg');
+        var animIn = pane.querySelector('#mar-bg-anim');
         var cellIn = pane.querySelector('#mar-bg-cell');
         var speedIn = pane.querySelector('#mar-bg-speed');
 
+        // 背景动画 is its own switch and NEVER touches the pair: stopping the
+        // field leaves the UI exactly as it is (this is the "关闭后会切换为
+        // 主黑+绿" report). Density / breathing only describe the field, so they
+        // dim while it is off but keep their values.
+        animIn.addEventListener('change', function () {
+          BG_STATE.anim = !!animIn.checked;
+          bgSave();
+          bgApplyMode();
+          syncPane(pane);
+        });
+
+        // The pair is a radio group: exactly one of the two is always chosen,
+        // and it changes the palette whether or not the field is drawn.
         seg.addEventListener('click', function (ev) {
           var b = ev.target;
           while (b && b !== seg) {
-            if (b.getAttribute && b.getAttribute('data-bg')) break;
+            if (b.getAttribute && b.getAttribute('data-pair')) break;
             b = b.parentNode;
           }
           if (!b || b === seg) return;
-          var next = b.getAttribute('data-bg');
+          var next = b.getAttribute('data-pair');
+          if (next !== 'light' && next !== 'dark') return;
           var prevPair = BG_STATE.scheme;
-          BG_STATE.mode = next;
-          // Picking a colour also picks the UI pair. 关闭动画 is the ONE choice
-          // that does not: it stops the field and leaves the pair (and therefore
-          // the whole UI) exactly where it is.
-          if (next !== 'off') BG_STATE.scheme = next;
+          if (next === prevPair) { syncPane(pane); return; }
+          BG_STATE.scheme = next;
           bgSave();
-          // The pour belongs to the colour PAIR, not to the field switch: 关闭动画
-          // repaints nothing, so there is nothing to pour and it stays instant.
-          if (BG_STATE.scheme !== prevPair) vtPour(bgApplyMode);
-          else bgApplyMode();
+          // The pour belongs to the colour PAIR, not to the field switch: the
+          // animation switch repaints nothing, so there is nothing to pour and
+          // it stays instant.
+          vtPour(bgApplyMode);
           syncPane(pane);
         });
         cellIn.addEventListener('input', function () {
@@ -1881,21 +1927,34 @@ window.__ModuleLoader__.load({
           syncPane(pane);
         });
         if (onClose) pane.__marClose = onClose;
+        // Paint the CURRENT state into the parked pane as well: it is built and
+        // hidden at mount time, so without this the first frame after the tab is
+        // clicked would show the markup defaults (both pairs unpressed) rather
+        // than the stored pair.
+        syncPane(pane);
         return pane;
       }
 
       function syncPane(pane) {
         if (!pane) return;
+        var animIn = pane.querySelector('#mar-bg-anim');
+        if (animIn) animIn.checked = !!BG_STATE.anim;
         var btns = pane.querySelectorAll('.mar-seg button');
         for (var i = 0; i < btns.length; i++) {
-          var on = btns[i].getAttribute('data-bg') === BG_STATE.mode;
-          btns[i].setAttribute('aria-pressed', on ? 'true' : 'false');
+          var on = btns[i].getAttribute('data-pair') === BG_STATE.scheme;
+          btns[i].setAttribute('aria-checked', on ? 'true' : 'false');
         }
         var cellIn = pane.querySelector('#mar-bg-cell');
         var speedIn = pane.querySelector('#mar-bg-speed');
-        if (cellIn) cellIn.value = String(BG_STATE.cell);
-        if (speedIn) speedIn.value = String(BG_STATE.speed);
-        var vals = { cell: BG_STATE.cell + ' px', speed: BG_STATE.speed.toFixed(2) };
+        if (cellIn) { cellIn.value = String(BG_STATE.cell); cellIn.disabled = !BG_STATE.anim; }
+        if (speedIn) { speedIn.value = String(BG_STATE.speed); speedIn.disabled = !BG_STATE.anim; }
+        if (BG_STATE.anim) pane.classList.remove('mar-anim-off');
+        else pane.classList.add('mar-anim-off');
+        var vals = {
+          anim: BG_STATE.anim ? '开' : '关',
+          cell: BG_STATE.cell + ' px',
+          speed: BG_STATE.speed.toFixed(2)
+        };
         var outs = pane.querySelectorAll('.mar-val');
         for (var k = 0; k < outs.length; k++) {
           var key = outs[k].getAttribute('data-val');
@@ -2450,7 +2509,7 @@ window.__ModuleLoader__.load({
         //   already runs guarantees the UI ends up matching the pair, and both writes
         //   are idempotent (setTheme is bounded by lastRequestedScheme).
         syncThemePreference((BG_MODES[BG_STATE.scheme] || BG_MODES.dark).light);
-        if (BG_STATE.mode !== 'off') { bgMarkClear(false); bgWatch(); }
+        if (BG_STATE.anim) { bgMarkClear(false); bgWatch(); }
       }
       if (typeof setInterval !== 'undefined') mosaicSweeper = setInterval(sweepReveals, 1200);
 
