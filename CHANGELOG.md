@@ -5,6 +5,36 @@
 次版本号 = 向后兼容的新功能；
 修订号 = 向后兼容的 bug 修复。
 
+## [0.4.1] - 2026-10-11
+
+**安装文档按实测重写。只改文档与版本号，运行时行为一个字节没动。**
+
+2026-10-11 在一台真实机器上照公开 README 走了一遍完整的第三方安装，发现原文档里三处
+与实际不符，逐条改掉，并把可复现的证据写进 [docs/INSTALL.md](docs/INSTALL.md)。
+
+### 修复
+- **文档：闸门的真实范围。** 原文说「只有 `dsh plugin` 一条路放行」，实测不成立 ——
+  `rejectElectronProfile()` 同样挡在 `plugin` 子命令前。桌面端自带 0.2.0-rc.2 写的是
+  `if (!manageDesktopProfile) rejectElectronProfile(plugin, options.profile)`，而
+  `manageDesktopProfile` 是 `runCli()` 的函数参数、默认 `false`，随包发布的代码里
+  **没有任何地方把它设成 `true`**（扫过 `app.asar` 里 296 个非 `node_modules` 的 JS，
+  无命中）；npm 全局 0.1.5-rc.1 则是无条件拒绝。新增按构建分列的可用性对照表，
+  并给出**不依赖 CLI 的全手工装法**。
+- **文档：pnpm 会把 `postinstall` 判成 ignored build。** pnpm 11 对未列入 profile 的
+  `pnpm-workspace.yaml` → `allowBuilds` 白名单的依赖不跑生命周期脚本，报
+  `ERR_PNPM_IGNORED_BUILDS` 并让 `dsh plugin … add` **以退出码 1 结束** —— 而依赖其实
+  已经装好，症状极具误导性。文档里"装完下一次启动就有全部效果"因此要先放行白名单；
+  放行不了的，说明 `shell-patch` 的第二条钩子路径会兜底。
+- **文档：人工打补丁找不到非标准安装目录。** 在普通 shell 里跑 `node shell-patch/auto.cjs`
+  时，自动发现只覆盖「桌面端子进程环境 / `process.execPath` / 上次缓存 / 平台常规目录」，
+  装在别的盘（例如 `D:\Software\DeepSeek_Desktop`）会直接报 `state: unresolved`；
+  必须 `--app <安装目录>`。已把解析顺序与这条实测补进 README 的安装步骤与本文档。
+- **文档：顺手修掉 `docs/INSTALL.md` 里指向自己的链接**（README 拆页时留下的残留），
+  并去掉一处把两代 dsh 机制混写的解释 —— `reconcilePlugins` 只存在于 0.1.1-rc.2 的
+  `plugin-9h8shc4d.js`，`runProfilePnpm` / `runPluginCommand` 只存在于 0.2.0-rc.2。
+  现在改成按当前构建的源码说话，并保留「不管哪一代，desktop 都不会被写 `bundles`」
+  这个实测结论。
+
 ## [0.4.0] - 2026-10-10
 
 **新增「任务完成动画」**：一轮任务正常结束时，在正常界面之上叠一层四拍收尾动画 ——

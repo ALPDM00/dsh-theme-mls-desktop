@@ -42,9 +42,20 @@
 > 用摘要识别版本，细节与安全模型见 [docs/SHELL-PATCH.md](docs/SHELL-PATCH.md)；
 > 不想要它就别装（主题其余部分照常工作）。
 
+> ⚠️ **`dsh plugin --profile desktop add …` 在较新的 dsh 上会被拒绝** —— 闸门在
+> `@deepseek-ai/dsh/lib/bin.js`，对 `desktop` 一律报
+> `error: profile "desktop" is managed exclusively by the Electron application`。
+> 桌面端自带那份（0.2.0-rc.2）写的是 `if (!manageDesktopProfile) rejectElectronProfile(...)`，
+> 而 `manageDesktopProfile` 是 `runCli()` 的函数参数、默认 `false`，**随包代码里没有任何地方
+> 把它设成 `true`**；npm 全局那份（0.1.5-rc.1）则是无条件拒绝。所以下面第 ① 步能不能跑，
+> 取决于你手上是哪份 dsh —— 完整对照、以及**不依赖 CLI 的全手工装法**见
+> [docs/INSTALL.md](docs/INSTALL.md)。**第 ② 步无论走哪条路都必需。**
+
 ```bash
 # ① 装插件本体（依赖、shell-patch/、client.js 全跟着进）
 dsh plugin --profile desktop add github:ALPDM00/dsh-theme-mls-desktop
+#    ⚠️ pnpm 会把本包的 postinstall 记成 "ignored build"（ERR_PNPM_IGNORED_BUILDS）
+#       并让命令以退出码 1 结束 —— 依赖其实已经装好了，这不是失败。
 
 # ② 让 desktop profile 真挂上这个 bundle
 #    —— desktop profile 的 CLI 不会自己写 `bundles`（上游行为，不是本包能改的）
@@ -57,10 +68,14 @@ node -e "
   fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n')
 "
 
-# ③ 启动桌面端一次（让它发现并打 app.asar），关掉，再启动 —— 就能看到效果
+# ③ 若壳补丁没自动打上，手工补一次
+#    —— 目录不是标准安装位置时必须显式给 --app，否则它找不到你的壳
+node node_modules/dsh-theme-mls-desktop/shell-patch/auto.cjs --app "<桌面端安装目录>"
+
+# ④ 启动桌面端一次，关掉，再启动 —— 就能看到效果
 ```
 
-第 ② 步为什么必需、`bundles` 里该写包名还是 `id`、以及装不上时怎么查，都在
+第 ② 步为什么必需、`bundles` 里该写包名还是 `id`、以及装不上时怎么逐项查，都在
 [docs/INSTALL.md](docs/INSTALL.md)。补丁的检查 / 还原：
 
 ```bash
