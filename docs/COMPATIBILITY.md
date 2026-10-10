@@ -1,14 +1,15 @@
 # 兼容性 —— DSH 主题 · Marathon（桌面版）
 
-> **本文件继承自纯浏览器的 `dsh-theme-marathon` 包、原本描述的是网页版。**
-> 桌面版有三处不同：
+> 本文件与网页版 [`dsh-theme-marathon`](https://github.com/ALPDM00/dsh-theme-marathon) 共享
+> 大部分宿主契约（token、服务、客户端加载器）。桌面版的差异只有三处：
 >
 > 1. `dsh.profile.bundles` 必须列出**包名** `dsh-theme-mls-desktop`；而
 >    `id: theme-mls-desktop` 那一行是本包 `cordis.patch.yml` **插入**组合树的行
->    （见 `README.md` §4 —— `dsh plugin add` **不会**替桌面 profile 写 `bundles`，
->    所以这是必需的手工步骤，漏了插件会静默不加载）；
-> 2. `index.js` **不是空壳**：它通过 `webserver/index-inject` 注入预插件期的
->    `<style>` 行，并在桌面端调度 shell 补丁（`shell-patch/auto.cjs`）。见 `README.md` §3/§4；
+>    （`dsh plugin add` **不会**替桌面 profile 写 `bundles`，所以这是必需的手工步骤，
+>    漏了插件会静默不加载 —— 见 [docs/INSTALL.md](INSTALL.md)）；
+> 2. `index.js` **不是空壳**：它通过 `webserver/index-inject` 注入预插件期的 `<style>` 行，
+>    并在桌面端调度 shell 补丁（`shell-patch/auto.cjs`）。见
+>    [docs/ARCHITECTURE.md](ARCHITECTURE.md) 与 [docs/SHELL-PATCH.md](SHELL-PATCH.md)；
 > 3. 另有四个效果需要把补丁打进 `<install>/resources/app.asar`（透明窗口、隐藏原生
 >    caption 按钮、首帧可透视、启动即最大化）。这一步现在是自动的，但**仅桌面端**。
 >
@@ -26,9 +27,13 @@
 | Web 服务 | `ctx.inject(['webServer'], …)` → `ctx.webServer.register({kind:'prefix', path, handler})` |
 | 会话事件流 | `ctx.on('session/event', (session, event))`、`ctx.on('session/disposed', …)` |
 | 转录锚点 | `[data-turn-tail="<轮次号>"]`（每轮结算块贴在这里；来自 `dsh-client-ui-chat` 的 `TurnTailNodeView`） |
-| 输入卡锚点 | `[class*="composerSeat"]`（启动标记 / 输入卡定位，已实测） |
+| 转录滚动区 | `[data-conversation-scroll]`（`dsh-client-ui-conversation` 的 `ConversationRoot` 写在转录滚动区上的语义属性）—— 任务完成动画的白色方框铺在"它减去输入卡那一条、再减去侧栏"之后的矩形里；兜底用 `[class*="_centerCol"]` |
+| 回合结束（任务完成动画的主判据） | ① DOM：转录里 **`[data-turn-tail]` 又追加了一个节点**，且**同一个转录**（上一次看到的尾巴节点仍在文档里）并且**这一轮先出现过 `[class*="_turnStatus"]`**（回合进行中指示器）；② DOM：`[class*="_turnStatus"]` 从有到无；③ 会话面 `ctx.get('sessions').binding(id).session` 的 `ConversationSnapshot.turnEnds` 增长（单调计数器）；④ 列表快照 `sessions.list` 的 `byId[id].running` 边沿（**只有宿主暴露 `list` 时才有**）。判据 ③④ 需要"当前会话 id"，而真机服务面**没有 `list`、也拿不到 id**（见下），所以 ①② 才是主判据 |
+| 回合"中断/报错"收尾 | 有会话 id 时读 `binding(id).session.getSnapshot().nodes` 末尾的 assistant `interrupted: true` / `turn-error` 节点，并拦下 `session.cancel()`；没有 id 时读 `[data-turn-tail]` 父元素里的「已中断 / 已停止」字样 |
+| **`sessions` 服务面（实测）** | 真机客户端 `ctx.get('sessions')` 是 `{ retain, using, retainInfo, refreshProjections, search, fork, scope, binding }` —— **没有 `list`**（`SessionListState` 是 ui-conversation 域自己的 store）。任何"没有 `list.subscribe` 就不装触发链"的写法都会让它永远不触发；也**拿不到"当前会话 id"**（DOM 里没有 `data-session*`），所以 `binding(id)` / `scope(id)` 无法自举 |
+| 输入卡锚点 | 启动标记的方框点阵按**类名 token 以 `_card` 结尾**在 composer 栈里就地找真卡片（现役构建 `RlGAzG_card`；`composerSeat` / `composerStack` / `composerHero` 只作兜底）—— `uV2eYG_*` 在当前 app.asar 里已完全不存在 |
 | 余额服务 | `ctx.get('deepseekAccount').getBalance(meta)` → 回落 `ctx.get('credentials').resolve('DEEPSEEK_API_KEY')` |
-| 会话持久化 | `ctx.sessionPersistence.readFrom(id, 0)`（回填"本功能上线前"的旧轮次，见 `README.md` §7） |
+| 会话持久化 | `ctx.sessionPersistence.readFrom(id, 0)`（回填"本功能上线前"的旧轮次，见 [docs/BILLING.md](BILLING.md)） |
 | 会话选中项 | `ctx.get('sessions').list.getSnapshot().current`（精确判断"客户端正在显示哪段对话"） |
 
 > **兼容闸门（0.2.x）**：宿主的 `evaluatePluginCompatibility` **只检查 `peerDependencies` 里

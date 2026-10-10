@@ -1,0 +1,38 @@
+<!-- ===========================================================================
+  dsh-theme-mls-desktop — 任务完成动画：DOM（payload 2/2，引擎是 engine-done.js）
+
+  与启动覆盖层同构：全部图形程序化绘制，不含任何外部素材，所以这个文件里
+  没有图片占位符，build.cjs 也不需要为它做 base64 替换。
+
+  层序（都在 #md-stage 里，靠 z-index 排）：
+    1 #md-scene   画布：反向红色 S 扫屏 → 矩阵像素定格 → 渐变为纯黑
+    2 #md-dots    画布：任务完成动画的白色点阵（透明底，浮在正常界面之上；
+                  墨色随配色翻转，见 done.css 的 --md-ink）
+    3 #md-banner-wrap  绿色横幅 + 八个角标线（角标线同样吃 --md-ink）
+    4 #md-tiles   逐块显示的**纯黑方块**：与「配色切换」同尺寸、同一套乱序，
+                  由 JS 按 mosaicOrder 逐块硬切隐藏（没有模糊/淡出），露出来的
+                  就是下面那层正常界面。它必须在点阵之上 —— 方块真的挡住点阵，
+                  逐块才把它放出来。
+
+  全程 pointer-events:none：关闭由 document 捕获阶段的 pointerdown / keydown
+  承担（见 engine-done.js），所以这一层既不会变成"吃掉那一次点击"的黑洞，
+  也不会吞掉用户真正要点的按钮。
+  =========================================================================== -->
+<div id="md-stage">
+  <canvas id="md-scene"></canvas>
+  <canvas id="md-dots"></canvas>
+
+  <div id="md-banner-wrap">
+    <i class="md-line md-line-h md-tl-h"></i>
+    <i class="md-line md-line-v md-tl-v"></i>
+    <i class="md-line md-line-h md-tr-h"></i>
+    <i class="md-line md-line-v md-tr-v"></i>
+    <i class="md-line md-line-h md-bl-h"></i>
+    <i class="md-line md-line-v md-bl-v"></i>
+    <i class="md-line md-line-h md-br-h"></i>
+    <i class="md-line md-line-v md-br-v"></i>
+    <div id="md-banner"><span id="md-banner-text">//RUN_COMPLETE</span></div>
+  </div>
+
+  <div id="md-tiles"></div>
+</div>

@@ -32,11 +32,9 @@ shell-patch/.auto-apply.lock
 *.bak-*
 client.js.bak-*
 src/*.bak-*
-
-# Empty placeholder directory that ships empty.
-# assets/screenshots/ is reserved for the README's image refs; add real shots
-# before re-enabling.
-assets/screenshots/
+# Reports written next to the source by the encoding-recovery scripts
+# (src/client.template.js.* — the real source has no suffix).
+src/client.template.js.*
 
 # Dev-only offline theme viewer (not consumed by anyone; the boot animation is
 # the real "preview"). Lives in the working tree only.

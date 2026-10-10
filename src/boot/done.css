@@ -1,0 +1,160 @@
+/* =============================================================================
+ * dsh-theme-mls-desktop — 任务完成动画（覆盖层样式）
+ * -----------------------------------------------------------------------------
+ * 与启动覆盖层同一套做法：所有选择器都挂在 #dshMarDoneHost 这个 id 之下
+ * （id 选择器在 `body.theme-marathon *` 那条 `border-radius:0!important` 之上
+ * 或之下都不受影响 —— 我们要的就是直角），并且这一层**永远**是
+ * pointer-events:none：关闭由 document 捕获阶段的 pointerdown/keydown 负责。
+ *
+ * 几何全部钉住内联或在这里，理由与 #dshMarBootHost 相同：宿主自己会给
+ * #root 里的元素做缩放（HUI 框实测 19558x8778px），覆盖层必须是一个
+ * viewport 大小的裁剪盒，不能变成一个巨型滚动区。
+ * ========================================================================== */
+
+#dshMarDoneHost {
+  position: fixed;
+  left: 0; top: 0;
+  width: 100%; height: 100%;
+  /* 比启动覆盖层低一档：启动动画期间绝不该出现完成动画，反过来也一样，
+     但真同时出现时启动动画要赢。 */
+  z-index: 2147482900;
+  background: transparent;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 180ms linear;
+  /* ④ 那一拍浮在**正常界面**上的墨色（白点阵 + 横幅四角的角标线）。深色配色下
+     是白；浅色配色（body.mar-bg-light）下必须翻成近黑 —— 否则白点会画在白色
+     界面上，等于没画。② 那一拍不吃这个变量：那底下是自铺的黑幕，两套配色都
+     读得清「白方框 + 白实心圆」。 */
+  --md-ink: #FFFFFF;
+}
+body.mar-bg-light #dshMarDoneHost { --md-ink: #0B0D0B; }
+#dshMarDoneHost.md-gone { opacity: 0; }
+
+#md-stage {
+  position: absolute;
+  left: 0; top: 0;
+  width: 100%; height: 100%;
+}
+
+#dshMarDoneHost canvas {
+  position: absolute;
+  left: 0; top: 0;
+  width: 100%; height: 100%;
+  display: block;
+  pointer-events: none;
+}
+/* 1) 扫屏 / 定格 / 渐黑 2) 白色点阵。点阵必须在方块之下，玻璃才磨得到它。 */
+#md-scene { z-index: 1; }
+#md-dots  { z-index: 2; }
+
+/* ---- 绿色横幅 --------------------------------------------------------- */
+/* 原稿（任务完成动画.html）用 flex 居中 + margin-bottom:40vh 把横幅抬到
+ * 视口中心之上 20vh；这里等价地写成 top: calc(50% - 20vh)，省掉一层 stage。 */
+#md-banner-wrap {
+  position: absolute;
+  left: 50%;
+  top: calc(50% - 20vh);
+  transform: translate(-50%, -50%);
+  width: min(850px, 90vw);
+  z-index: 3;
+  pointer-events: none;
+  opacity: 0;
+}
+#dshMarDoneHost.md-banner #md-banner-wrap { opacity: 1; }
+
+#md-banner {
+  width: 100%;
+  background-color: #C0FD04;
+  color: #000000;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-weight: 650;
+  letter-spacing: 8px;
+  font-size: min(70px, 8vw);
+  line-height: 1.15;
+  padding: 25px 0;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  box-sizing: border-box;
+  clip-path: inset(0 100% 0 0);
+  -webkit-clip-path: inset(0 100% 0 0);
+}
+/* 从左向右展开 —— 与原稿 @keyframes unfold 一致。 */
+#dshMarDoneHost.md-banner #md-banner {
+  animation: md-unfold 0.5s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+@keyframes md-unfold {
+  to {
+    clip-path: inset(0 0 0 0);
+    -webkit-clip-path: inset(0 0 0 0);
+  }
+}
+
+/* ---- 横幅四角的八根白色角标线 ------------------------------------------ */
+/* 原稿是 --thick:0.1px，那在 1x 屏上根本不落像素、在 2x 屏上只有 0.2 个设备
+ * 像素，读不出"角标"。这里给到 2px：形态（四角各一横一竖、向外伸出）与原稿
+ * 完全一致，只是真的看得见。 */
+.md-line {
+  position: absolute;
+  background-color: var(--md-ink);
+  opacity: 0;
+}
+#dshMarDoneHost.md-banner .md-line {
+  animation: md-line-in 0.4s ease 0.3s forwards;
+}
+@keyframes md-line-in { to { opacity: 1; } }
+
+.md-line-h { width: 35px;  height: 2px; }
+.md-line-v { width: 2px;    height: 35px; }
+
+.md-tl-h { top: 0;    left: -75px; }
+.md-tl-v { top: -75px; left: 0; }
+.md-tr-h { top: 0;    right: -75px; }
+.md-tr-v { top: -75px; right: 0; }
+.md-bl-h { bottom: 0; left: -75px; }
+.md-bl-v { bottom: -75px; left: 0; }
+.md-br-h { bottom: 0; right: -75px; }
+.md-br-v { bottom: -75px; right: 0; }
+
+@media (max-width: 720px) {
+  #md-banner { font-size: min(70px, 8vw); letter-spacing: 5px; padding: 16px 0; }
+  .md-line-h { width: 18px; }
+  .md-line-v { height: 18px; }
+  .md-tl-h, .md-bl-h { left: -32px; }
+  .md-tr-h, .md-br-h { right: -32px; }
+  .md-tl-v, .md-tr-v { top: -32px; }
+  .md-bl-v, .md-br-v { bottom: -32px; }
+}
+
+/* ---- 逐块显示的方块 ---------------------------------------------------- */
+/* 一块 = 视口里的一个 80px 方块（与主题"配色切换"那一拍的方块同尺寸）。
+ * 起始：**纯黑**，与上一拍铺满画布的黑幕逐像素接得上，所以换层时屏幕上没有
+ *       任何跳变。
+ * 翻开：JS（engine-done.js 的 openTiles）按 mosaicOrder 的乱序、在 520ms 内
+ *       逐块给这里加 `.md-off`，那一块就不再挡住下面的东西 —— **硬切**，
+ *       没有淡出、没有模糊、没有描边（用户 2026-10-10：不要玻璃质感，直接
+ *       逐块显示内容，与「黑白切换」同一套逻辑）。
+ *       时序由 JS 而不是 CSS 动画承担，所以复核脚本的 seek() 也是精确的。
+ */
+#md-tiles {
+  position: absolute;
+  left: 0; top: 0;
+  width: 100%; height: 100%;
+  z-index: 4;
+  pointer-events: none;
+}
+#md-tiles i {
+  position: absolute;
+  display: block;
+  background-color: #000000;
+}
+#md-tiles i.md-off { visibility: hidden; }
+
+/* 系统「减少动态效果」：引擎根本不会挂这一层（见 client.template.js 的
+ * marDoneReduced()），这里再兜一道，免得将来有人单独重放覆盖层。 */
+@media (prefers-reduced-motion: reduce) {
+  #md-banner { clip-path: none; -webkit-clip-path: none; }
+  .md-line { opacity: 1; animation: none; }
+}

@@ -372,6 +372,24 @@ async function waitFor(fn, ms) {
   // a pair must never start the field.
   const pane = panel.querySelector('.mar-set-pane');
   ok('settings pane is pre-built inside the dialog', !!pane);
+  // 2026-10-10: the pane is grouped under section headings, and the background
+  // switch sits DIRECTLY above its two knobs — they used to be separated by the
+  // whole completion-animation block and the colour pair.
+  {
+    const heads = pane ? Array.from(pane.querySelectorAll('.mar-set-head'))
+      .map((h) => String(h.textContent).trim()) : [];
+    ok('settings pane is grouped under section headings', 
+      heads.join('|') === '外观|背景动画|任务完成动画|每轮 Token 结算',
+      'headings: ' + heads.join('|'));
+    const bgRow = pane ? pane.querySelector('#mar-bg-anim').closest('.mar-set-row') : null;
+    ok('the background switch is followed immediately by its density / breathing knobs',
+      !!(bgRow && bgRow.nextElementSibling &&
+        bgRow.nextElementSibling.querySelector('#mar-bg-cell') &&
+        bgRow.nextElementSibling.nextElementSibling &&
+        bgRow.nextElementSibling.nextElementSibling.querySelector('#mar-bg-speed')));
+    ok('the pane keeps a title and a one-line subtitle',
+      !!(pane && pane.querySelector('h4') && pane.querySelector('.mar-set-sub')));
+  }
   const animIn = pane && pane.querySelector('#mar-bg-anim');
   const pairs = pane ? panel.querySelectorAll('.mar-seg button') : [];
   const pairOn = () => Array.from(pairs).filter((b) => b.getAttribute('aria-checked') === 'true');
@@ -396,6 +414,42 @@ async function waitFor(fn, ms) {
   ok('turning it back on stores {on:true} and does not disturb the background switch',
     JSON.parse(r.win.localStorage.getItem('mar.billing.v1')).on === true &&
     d.body.classList.contains('mar-bg-on') === false);
+  // 任务完成动画（2026-10-10）：又一个**独立**开关（默认开）+ 一行可改文案 + 预览
+  const doneIn = pane && pane.querySelector('#mar-done');
+  const doneText = pane && pane.querySelector('#mar-done-text');
+  const donePlay = pane && pane.querySelector('#mar-done-play');
+  const doneNote = pane && pane.querySelector('#mar-done-note');
+  ok('task-completion switch is its own control, ON by default',
+    !!doneIn && doneIn.type === 'checkbox' && doneIn.checked === true);
+  ok('the banner copy defaults to //RUN_COMPLETE and is editable',
+    !!doneText && doneText.type === 'text' && doneText.value === '//RUN_COMPLETE' &&
+    !!donePlay && !!doneNote);
+  doneIn.checked = false;
+  doneIn.dispatchEvent(new r.win.Event('change', { bubbles: true }));
+  ok('turning the completion animation off is stored under its own key',
+    JSON.parse(r.win.localStorage.getItem('mar.done.v1')).on === false &&
+    d.body.classList.contains('mar-bg-on') === false);
+  doneText.value = 'SHIP IT';
+  doneText.dispatchEvent(new r.win.Event('change', { bubbles: true }));
+  ok('the copy is stored', JSON.parse(r.win.localStorage.getItem('mar.done.v1')).text === 'SHIP IT');
+  doneText.value = '   ';
+  doneText.dispatchEvent(new r.win.Event('change', { bubbles: true }));
+  ok('a blank / whitespace-only copy falls back to //RUN_COMPLETE',
+    JSON.parse(r.win.localStorage.getItem('mar.done.v1')).text === '//RUN_COMPLETE' &&
+    doneText.value === '//RUN_COMPLETE');
+  // The preview is the only user-triggered mount. This jsdom runs with
+  // runScripts:'outside-only', so the injected engine never executes: the button
+  // must say WHY instead of looking dead, and it must not leave a hollow host.
+  donePlay.dispatchEvent(new r.win.Event('click', { bubbles: true }));
+  ok('a preview whose engine cannot run reports it and leaves no hollow host',
+    !d.getElementById('dshMarDoneHost') && /不可用/.test(doneNote.textContent));
+  ok('the pane reports whether the trigger is attached (user 2026-10-10)',
+    !!pane.querySelector('#mar-done-state') &&
+    /已就绪|未就绪|已关闭/.test(pane.querySelector('#mar-done-state').textContent));
+  doneIn.checked = true;
+  doneIn.dispatchEvent(new r.win.Event('change', { bubbles: true }));
+  ok('turning the completion animation back on stores {on:true}',
+    JSON.parse(r.win.localStorage.getItem('mar.done.v1')).on === true);
   // switch ON: the field starts, the pair does not move
   animIn.checked = true;
   animIn.dispatchEvent(new r.win.Event('change', { bubbles: true }));

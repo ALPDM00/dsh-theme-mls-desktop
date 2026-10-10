@@ -33,6 +33,14 @@ window.__ModuleLoader__.load({
     // template run without a build) the boot overlay simply does not mount.
     var BOOT_PAYLOAD = /*__BOOT_PAYLOAD__*/ null;
 
+    // Task-completion overlay payload (reverse red S sweep -> matrix marks ->
+    // black -> hard-cut tiles revealing the live UI + dot field + green banner),
+    // injected here at build time by scripts/build.cjs from src/boot/done.*
+// same contract as BOOT_PAYLOAD above. Null in a raw template run: the
+    // overlay then simply never mounts, and the trigger it would have served
+    // stays inert.
+    var DONE_PAYLOAD = /*__DONE_PAYLOAD__*/ null;
+
     function apply(ctx) {
       // ---- idempotency -----------------------------------------------------
       if (typeof window !== 'undefined' && window.__dshThemeMarathonApplied) return;
@@ -406,9 +414,9 @@ window.__ModuleLoader__.load({
         '}',
         '/* icons are fill:currentColor, and the "1天" age label sets its own',
         '   colour — both have to be forced onto the ink or they stay light grey */',
-        'body.theme-marathon [class*="_newSession"]:hover *,',
-        'body.theme-marathon [class*="_newSession"][class*="_active"] *,',
-        'body.theme-marathon [class*="_sessionRow"][class*="_selected"] *{',
+        'body.theme-marathon [class*="_newSession"]:hover,',
+        'body.theme-marathon [class*="_newSession"][class*="_active"],',
+        'body.theme-marathon [class*="_sessionRow"][class*="_selected"]{',
         '  color:var(--mar-accent-ink)!important;',
         '  fill:var(--mar-accent-ink)!important;',
         '}',
@@ -733,7 +741,16 @@ window.__ModuleLoader__.load({
         '  box-sizing:border-box;padding:26px 24px;overflow:auto;',
         '  background:transparent;color:inherit;',
         '  font-size:13px;line-height:1.6;}',
-        '.mar-set-pane h4{margin:0 0 14px;font-size:14px;font-weight:600;letter-spacing:.02em;}',
+        '.mar-set-pane h4{margin:0 0 4px;font-size:17px;font-weight:700;letter-spacing:.04em;}',
+        '.mar-set-pane .mar-set-sub{margin:0 0 24px;font-size:11px;opacity:.55;}',
+        '.mar-set-group{margin:0 0 24px;}',
+        '.mar-set-group:last-child{margin-bottom:0;}',
+        '.mar-set-head{display:flex;align-items:center;gap:8px;margin:0 0 12px;',
+        '  font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;}',
+        '.mar-set-head::before{content:"";flex:0 0 auto;width:9px;height:9px;',
+        '  background:var(--mar-accent);}',
+        '.mar-set-head::after{content:"";flex:1;height:1px;background:var(--mar-line-faint);}',
+        '.mar-set-row .mar-seg{margin:0;flex:1;}',
         '.mar-seg{display:flex;gap:8px;margin:0 0 22px;}',
         '.mar-seg button{font:inherit;color:inherit;background:transparent;',
         '  border:1px solid var(--mar-line-strong);padding:8px 10px;cursor:pointer;',
@@ -750,7 +767,7 @@ window.__ModuleLoader__.load({
         '   turning the animation off cannot un-pick a colour pair (and turning a',
         '   pair on cannot start the animation). Squared, like every other control;',
         '   the knob is the accent only while it is on. */',
-        '.mar-set-switch{margin:0 0 18px;}',
+        '.mar-set-switch{margin:0 0 10px;}',
         '.mar-switch{appearance:none;-webkit-appearance:none;flex:0 0 34px;width:34px;height:18px;',
         '  margin:0;padding:0;position:relative;cursor:pointer;background:transparent;',
         '  border:1px solid var(--mar-line-strong);}',
@@ -760,12 +777,27 @@ window.__ModuleLoader__.load({
         '.mar-switch:checked::after{left:18px;background:var(--mar-accent);}',
         '.mar-switch:focus-visible{outline:1px solid var(--mar-accent);outline-offset:2px;}',
         '/* density / breathing only describe the field, so they dim while it is off',
-        '   (the switch row itself never does). */',
-        '.mar-set-pane.mar-anim-off .mar-set-row:not(.mar-set-switch){opacity:.45;}',
-        '.mar-set-row{display:flex;align-items:center;gap:12px;margin:0 0 14px;}',
-        '.mar-set-row label{flex:0 0 88px;}',
+        '   (the switch row itself never does; neither do the task-completion rows,',
+        '   which have nothing to do with the background field). */',
+        '.mar-set-pane.mar-anim-off .mar-set-row:not(.mar-set-switch):not(.mar-set-done){opacity:.45;}',
+        '.mar-set-row{display:flex;align-items:center;gap:12px;margin:0 0 10px;}',
+        '/* 标签一律不换行：这行只有 8 个汉字（「每轮 Token 结算」），88px 的槽位',
+        '   会让它折成两行，读起来像排版事故。112px + nowrap 一次解决。',
+        '   开关行的 开/关 也不该被推进那个 58px 的定宽槽（不然它离开关很远 ——',
+        '   用户 2026-10-10）。范围条行的值保留定宽右对齐。 */',
+        '.mar-set-row label{flex:0 0 112px;white-space:nowrap;}',
         '.mar-set-row input[type=range]{flex:1;accent-color:var(--mar-accent);min-width:0;}',
         '.mar-set-row .mar-val{flex:0 0 58px;text-align:right;font-variant-numeric:tabular-nums;}',
+        '.mar-set-switch .mar-val{flex:0 0 auto;text-align:left;}',
+        '.mar-set-row input[type=text]{flex:1;min-width:0;font:inherit;color:inherit;',
+        '  background:transparent;border:1px solid var(--mar-line-strong);padding:4px 8px;}',
+        '.mar-set-row input[type=text]:focus{outline:1px solid var(--mar-accent);outline-offset:0;}',
+        '.mar-set-row button{font:inherit;color:inherit;background:transparent;cursor:pointer;',
+        '  flex:0 0 auto;padding:4px 10px;border:1px solid var(--mar-line-strong);}',
+        '.mar-set-row button:hover{border-color:var(--mar-accent);color:var(--mar-accent-text);}',
+        '.mar-set-row button:focus-visible{outline:1px solid var(--mar-accent);outline-offset:2px;}',
+        '.mar-set-note{min-height:14px;margin:-4px 0 6px;padding-left:124px;}',
+        '.mar-set-note span{font-size:11px;line-height:14px;opacity:.72;}',
         '/* the nav cells — OURS and THE HOST\'S — and the pane switch. Hover AND',
         '   selected are ours, because the host paints its own "active" cell the',
         '   panel colour and that reads as nothing. Both states are green, but in',
@@ -940,37 +972,36 @@ window.__ModuleLoader__.load({
         '    <style data-boot> is created at runtime inside #dshMarBootHost.) */',
 
         // ---- per-turn token settlement block ------------------------------
-        //   一次「任务结算」小纸条：挂在**每一轮已经结束**的轮次尾巴上
-        //   （DSH 自己的 [data-turn-tail="<turn>"]，见 dsh-client-ui-chat 的
-        //   TurnTailNodeView）。它是内容的一部分，跟着转录一起滚动、跟着会话一起
-        //   销毁，所以没有任何跨会话的展开状态需要维护。
-        //
+        //   一次「任务结算」小纸条：挂— *每一轮已经结— *的轮次尾巴上
+        //   （DSH 自己— [data-turn-tail="<turn>"]，见 dsh-client-ui-chat
+//   TurnTailNodeView）。它是内容的一部分，跟着转录一起滚动、跟着会话一
+//   销毁，所以没有任何跨会话的展开状态需要维护
+//
         //   尺寸与形状取自用户模板（token结算.html）：宽 268px、展开后整块 ≈240px 高；
-        //   绿条两侧各一个十字、绿条下方展开的信息面板与它**无缝拼接**（绿条下方
-        //   变直角、面板下方给圆角），绿条与灰条之间留 5px 间隙。
-        //   圆角由下面的 `body.theme-marathon .mlsb-*` 规则用 !important 顶出来 ——
-        //   §4.3 那条全站直角通配规则会让它变方，这里必须显式豁免（与启动动画里
-        //   那颗状态灯同一手法：多一个类，特异性压过通配规则）。
-        //
-        //   颜色全部来自主题 token（这个文件就是主题本身），英文用 Maratype，
-        //   数字用等宽栈。
-        '/* ---- per-turn token settlement ---- */',
-        // 出现动画（2026-10-09 用户）：纸条在轮次结束 1–2s 后才落地（宿主 /state 是轮询的），
-        // 所以给它一个**从中间向两端展开**的入场：clip-path 从「中间一条零宽的缝」长到整块。
-        // 用 clip-path 而不是 scaleX —— scaleX 会把卡片里的字一起压扁。
-        '@keyframes mlsb-reveal{',
+        //   绿条两侧各一个十字、绿条下方展开的信息面板与— *无缝拼接**（绿条下
+//   变直角、面板下方给圆角），绿条与灰条之间留 5px 间隙
+//   圆角由下面的 `body.theme-marathon .mlsb-*` 规则— !important 顶出— —
+//   §4.3 那条全站直角通配规则会让它变方，这里必须显式豁免（与启动动画
+//   那颗状态灯同一手法：多一个类，特异性压过通配规则）
+//
+        //   颜色全部来自主题 token（这个文件就是主题本身），英文用 Maratype
+//   数字用等宽栈—         '/* ---- per-turn token settlement ---- */',
+        // 出现动画— 026-10-09 用户）：纸条在轮次结— 1— s 后才落地（宿— /state 是轮询的），
+        // 所以给它一— *从中间向两端展开**的入场：clip-path 从「中间一条零宽的缝」长到整块
+// — clip-path 而不— scaleX —— scaleX 会把卡片里的字一起压扁
+'@keyframes mlsb-reveal{',
         '  from{clip-path:inset(0 50% 0 50%);}',
         '  to{clip-path:inset(0 0 0 0);}',
         '}',
-        //   ── 尺寸：只有一个旋钮 ──────────────────────────────────────────────
+        //   ── 尺寸：只有一个旋— ──────────────────────────────────────────────
         //   2026-10-09 用户："可以放大 0.5 倍左右，目前来看有点挤"。所有尺寸都写成
-        //   `calc(<原始值> * var(--mlsb-s))`，所以「再大一点/小一点」只改这一个数。
-        //   1.5 ⇒ 宽 402px、绿条 42px、明细行 33px、灰条 39px、圆角 9px、间隙 7.5px。
-        '.mlsb-turn{margin:12px auto 0;--mlsb-s:1.5;width:calc(268px * var(--mlsb-s));max-width:100%;',
+        //   `calc(<原始—  * var(--mlsb-s))`，所以「再大一— 小一点」只改这一个数
+//   1.5 — — 402px、绿— 42px、明细行 33px、灰— 39px、圆— 9px、间— 7.5px
+'.mlsb-turn{margin:12px auto 0;--mlsb-s:1.5;width:calc(268px * var(--mlsb-s));max-width:100%;',
         '  --mlsb-radius:calc(6px * var(--mlsb-s));--mlsb-gap:calc(5px * var(--mlsb-s));',
         '  font-family:var(--dsw-font-family);animation:mlsb-reveal .18s cubic-bezier(.2,.8,.2,1) both;}',
         // 2026-10-09（用户）：消息内居中 + 绿条上不放费用 + 两侧各一个十字；字体回默认
-        '.mlsb-turn-head{display:grid;grid-template-columns:calc(18px * var(--mlsb-s)) 1fr calc(18px * var(--mlsb-s));',
+'.mlsb-turn-head{display:grid;grid-template-columns:calc(18px * var(--mlsb-s)) 1fr calc(18px * var(--mlsb-s));',
         '  align-items:center;gap:calc(6px * var(--mlsb-s));width:100%;height:calc(28px * var(--mlsb-s));',
         '  padding:0 calc(9px * var(--mlsb-s));border:0;background:var(--mar-accent);color:var(--mar-accent-ink);',
         '  cursor:pointer;font:inherit;text-align:center;transition:border-radius .2s cubic-bezier(.2,.8,.2,1);}',
@@ -981,10 +1012,10 @@ window.__ModuleLoader__.load({
         '.mlsb-cross{font:400 calc(14px * var(--mlsb-s))/1 Arial,sans-serif;color:var(--mar-accent-ink);}',
         '.mlsb-cross.mlsb-left{justify-self:start;}',
         '.mlsb-cross.mlsb-right{justify-self:end;}',
-        // 展开/收起动画（2026-10-09 用户）：`display` 不能过渡，所以用模板那套
+        // 展开/收起动画— 026-10-09 用户）：`display` 不能过渡，所以用模板那套
         // `grid-template-rows:0fr → 1fr`（内层再包一层 min-height:0/overflow:hidden）：
-        // 收起时高度为 0 但仍在文档流里，于是高度与透明度都能平滑过渡。
-        '.mlsb-turn-body{display:grid;grid-template-rows:0fr;opacity:0;overflow:hidden;background:var(--mar-bg-panel);',
+        // 收起时高度为 0 但仍在文档流里，于是高度与透明度都能平滑过渡
+'.mlsb-turn-body{display:grid;grid-template-rows:0fr;opacity:0;overflow:hidden;background:var(--mar-bg-panel);',
         '  transition:grid-template-rows .2s cubic-bezier(.2,.8,.2,1),opacity .16s ease;}',
         '.mlsb-turn-body-inner{min-height:0;overflow:hidden;}',
         '.mlsb-turn.mlsb-open .mlsb-turn-body{grid-template-rows:1fr;opacity:1;}',
@@ -1006,14 +1037,13 @@ window.__ModuleLoader__.load({
         '.mlsb-turn-clock{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;',
         '  font-weight:700;letter-spacing:.04em;}',
         '.mlsb-turn-note{color:var(--mar-ink-tertiary);font-size:calc(11px * var(--mlsb-s));letter-spacing:.02em;}',
-        //   ⚠️ i 角标（暂时注释掉，2026-10-09 用户："任务用时不需要这个 i 和方框了，
-        //   相关代码先注释掉，万一后面需要再启动和修改"）。要恢复的话，把下面两行
+        //   ⚠️ i 角标（暂时注释掉— 026-10-09 用户— 任务用时不需要这— i 和方框了
+//   相关代码先注释掉，万一后面需要再启动和修— ）。要恢复的话，把下面两行
         //   和 buildTurnBlock() 里那行 appendChild(mlsbEl('span','mlsb-info','i')) 一起取消注释。
-        //   —— 它必须是圆的：`body.theme-marathon *{border-radius:0!important}` 会把它压成方块。
+        'body.theme-marathon *::after{border-radius:0!important;}',
         // '.mlsb-info{display:inline-grid;place-items:center;width:14px;height:14px;flex:none;',
         // '  border:1px solid currentColor;border-radius:50%!important;font:700 9px/1 Georgia,serif;}',
         // 'body.theme-marathon .mlsb-info{border-radius:50%!important;}',
-        //   —— 圆角：绿条（收起时四角圆 / 展开时下方变直角）+ 信息面板（下方圆）+ 灰条（四角圆）
         'body.theme-marathon .mlsb-turn-head{border-radius:var(--mlsb-radius)!important;}',
         'body.theme-marathon .mlsb-turn.mlsb-open .mlsb-turn-head{',
         '  border-radius:var(--mlsb-radius) var(--mlsb-radius) 0 0!important;}',
@@ -1099,9 +1129,9 @@ window.__ModuleLoader__.load({
       //      green pixels — "主白 + 绿 也要有点阵" was a field painting
       //      perfectly and visible nowhere.
       var BG_MODES = {
-        light: { field: '#FFFFFF', ink: '192,254,4', light: true },   // 主白 + 绿
-        dark:  { field: '#0B0D0B', ink: '192,254,4', light: false }   // 主黑 + 绿
-      };
+        light: { field: '#FFFFFF', ink: '192,254,4', light: true },   // 主白 +
+dark:  { field: '#0B0D0B', ink: '192,254,4', light: false }   // 主黑 +
+};
       var BG_STATE = bgLoad();
 
       var bgCanvas = null, bgCtx = null, bgMounted = false;
@@ -1340,10 +1370,10 @@ window.__ModuleLoader__.load({
       function bgPaintWalker(el, out, depth) {
         if (!el || el.nodeType !== 1 || depth > 9) return;
         if (bgModal(el) || bgLayer(el)) return;   // 不标记它，也不进它的子树
-        // 我们自己的每轮结算纸条：它是**内容**（转录的一部分），不是界面底板。
-        // 展开后它约 268x240，正好越过 bgPaints 的 200x200 底板门槛 ——
-        // 少了这一条，ASCII 背景模式下纸条会被清成透明（数字浮在网格上）。
-        if (el.hasAttribute && el.hasAttribute('data-mlsb-turn')) return;
+        // 我们自己的每轮结算纸条：它是**内容**（转录的一部分），不是界面底板
+// 展开后它— 268x240，正好越— bgPaints — 200x200 底板门槛 —
+// 少了这一条，ASCII 背景模式下纸条会被清成透明（数字浮在网格上）
+if (el.hasAttribute && el.hasAttribute('data-mlsb-turn')) return;
         if (bgPaints(el)) out.push(el);
         for (var i = 0; i < el.children.length; i++) {
           bgPaintWalker(el.children[i], out, depth + 1);
@@ -1362,8 +1392,8 @@ window.__ModuleLoader__.load({
         return list;
       }
 
-      // 打过标记的节点（用来发现"标记跟着旧节点被换掉了"）
-      var bgCleared = [];
+      // 打过标记的节点（用来发现"标记跟着旧节点被换掉—
+var bgCleared = [];
 
       function bgMarkAdd(list) {
         var i;
@@ -1408,12 +1438,12 @@ window.__ModuleLoader__.load({
         bgUnmarkSidebar();
       }
 
-      // DSH 换会话 / 进出会话都会重建侧栏与中列的根节点，而标记是挂在**节点**上的：
-      // 节点一换，新节点没有 .mar-bg-clear，点阵就被它的底色盖住，要等 1.2s 那趟
-      // 扫描才补回来 —— 用户看到的正是"切换的时候背景动画会消失再出现"。
-      // 所以 DOM 一动就补，分两档：
-      //   · 锚点那一趟（不读样式）→ 每个 DOM 变化批次都跑，节点被换掉时**下一帧**就补回
-      //   · 底板扫描那一趟（要读样式）→ 只在标记掉线后跑，且 400ms 内不重复
+      // DSH 换会— / 进出会话都会重建侧栏与中列的根节点，而标记是挂在**节点**上的
+// 节点一换，新节点没— .mar-bg-clear，点阵就被它的底色盖住，要等 1.2s 那趟
+      // 扫描才补回来 —— 用户看到的正— 切换的时候背景动画会消失再出—
+// 所— DOM 一动就补，分两档：
+      //   · 锚点那一趟（不读样式）→ 每个 DOM 变化批次都跑，节点被换掉— *下一— *就补
+//   · 底板扫描那一趟（要读样式）→ 只在标记掉线后跑，且 400ms 内不重复
       var bgObserver = null, bgKickRaf = 0, bgKickFullAt = 0;
 
       function bgKick() {
@@ -1441,18 +1471,17 @@ window.__ModuleLoader__.load({
         if (bgObserver) { try { bgObserver.disconnect(); } catch (e) {} }
         bgObserver = new MutationObserver(bgKick);
         bgObserver.__marHost = host;
-        // `attributes` 不是可选项。侧栏的 hero 态是靠 DSH 自己的 `_quietBars` 类保持
-        // 透明的，而**第一次** hover 会把那个类摘掉（缩起的 rail 展开，之后一直是展开
-        // 态，所以只发生一次）——侧栏根当场按自己的底色 rgb(11,13,11) 画成不透明。
-        // 这是一次**只有类变化、没有子节点变化**的重绘，旧的只订阅 childList 的观察器
+        // `attributes` 不是可选项。侧栏的 hero 态是— DSH 自己— `_quietBars` 类保
+// 透明的，— *第一— * hover 会把那个类摘掉（缩起— rail 展开，之后一直是展开
+        // 态，所以只发生一次）——侧栏根当场按自己的底色 rgb(11,13,11) 画成不透明
+// 这是一— *只有类变化、没有子节点变化**的重绘，旧的只订— childList 的观察器
         // 根本不响，只能等下一次碰巧有节点增删才被 bgKick 补上标记，用户看到的就是
-        // "鼠标第一次进侧栏，先变黑一下，然后又自己好了"。
         // 实测（headless Chrome + CDP 真的把指针移进去，逐帧采样侧栏根的 computed
-        // background）：只订阅 childList 时不透明窗口 **517ms**；加上类过滤后 **0ms**。
-        // 代价有上限：bgKick 本身被 bgKickRaf 做了 rAF 节流，一帧最多一趟锚点扫描
-        // （纯选择器、不读样式；读样式的底板扫描还要 lost + 400ms 两道闸），而
-        // attributes + attributeFilter 在 Chromium 侧只是按名字过滤。
-        bgObserver.observe(host, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+        // background）：只订— childList 时不透明窗口 **517ms**；加上类过滤— **0ms**
+// 代价有上限：bgKick 本身— bgKickRaf 做了 rAF 节流，一帧最多一趟锚点扫
+// （纯选择器、不读样式；读样式的底板扫描还要 lost + 400ms 两道闸），
+// attributes + attributeFilter — Chromium 侧只是按名字过滤
+bgObserver.observe(host, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
       }
 
       //   DSH'S OWN LIGHT/DARK SWITCH MUST AGREE WITH OURS.
@@ -1849,6 +1878,652 @@ window.__ModuleLoader__.load({
         bgMounted = false;
       }
 
+      // ---- task-completion animation --------------------------------------
+      // 触发、挂载与拆卸。四拍动画本身在 src/boot/engine-done.js（与启动动画
+      // 同一— payload 契约），这里只管"什么时候放、放完怎么—
+//
+      // 触发信号— *唯一权威— *：`@deepseek-ai/dsh-client-runtime`
+// `sessions.list`（SessionListState）里当前会话— `running`
+// 应用自己的回合状态标签、停止按钮、侧栏那— 跑完— 的绿点读的都
+// 这一份快照，所以不去监— spinner 或类名：那些带构建哈希、不是契约，
+      // 而且"出现了一— spinner"— 一个回合开始了"并不是同一件事
+//
+      // 只认边沿，不认电平。一个回合进行中快照会以每秒几十次的频率推送，
+      // 只有 true — false 的跳变才播；每个会话**第一个可读到的值记为基线并
+      // 静默**，所— 切进一个已经在跑的会话"不会误报"任务完成"
+//
+      // 用户主动中断不播：那一轮收尾的 assistant 节点在客户端
+      // ConversationSnapshot 上带 `interrupted: true`（界面上那枚"已停— 
+      // 标记的来源），失败收尾是 `turn-error` 节点 —— 两种都不— 任务完成"
+// 判据只看**倒数第一— * assistant / turn-error 节点：一轮中— steering
+      // 会留下一— interrupted 的中间步，但那一轮的最后一步是正常收尾的，
+      // 那种情况照样要播
+var DONE_STORE_KEY = 'mar.done.v1';
+      var DONE_TEXT_DEFAULT = '//RUN_COMPLETE';
+
+      function doneLoad() {
+        try {
+          var raw = (typeof window !== 'undefined' && window.localStorage)
+            ? window.localStorage.getItem(DONE_STORE_KEY) : null;
+          if (!raw) return { on: true, text: DONE_TEXT_DEFAULT };
+          var parsed = JSON.parse(raw);
+          return {
+            on: !(parsed && parsed.on === false),
+            text: (parsed && typeof parsed.text === 'string' && parsed.text.length)
+              ? parsed.text : DONE_TEXT_DEFAULT
+          };
+        } catch (e) { return { on: true, text: DONE_TEXT_DEFAULT }; }
+      }
+      function doneSave() {
+        try {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            window.localStorage.setItem(DONE_STORE_KEY, JSON.stringify(DONE_STATE));
+          }
+        } catch (e) {}
+      }
+      var DONE_STATE = doneLoad();
+      function doneEnabled() { return DONE_STATE.on !== false; }
+
+      // 尊重系统「减少动态效果」：整段跳过（这一拍没有静态形态可言，半成品
+      // 比不放更糟）。开关关掉时同样— 零开销"：不订阅、不建节点、不留定时器
+function marDoneReduced() {
+        return !!(typeof window !== 'undefined' && window.matchMedia &&
+          window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+      }
+
+      var doneCleanup = null;
+
+      function buildDone() {
+        if (doneCleanup) return true;
+        if (!DONE_PAYLOAD) return false;
+        if (marDoneReduced()) return false;
+        // 覆盖层几何与裁剪同样钉一份内联：宿主自己会给 #root 里的元素做巨
+// 缩放（HUI 框实— 19558x8778px），这一层必须永远是一— viewport 大小
+        // 的裁剪盒，不能变成一个巨型滚动区。pointer-events 始终— none —
+// 关闭由引擎在 document 捕获阶段承担（见 engine-done.js）
+var host = doc.createElement('div');
+        host.id = 'dshMarDoneHost';
+        host.style.cssText =
+          'position:fixed;left:0;top:0;width:100%;height:100%;z-index:2147482900;' +
+          'background:transparent;overflow:hidden;pointer-events:none;';
+        var st = doc.createElement('style');
+        st.setAttribute('data-done', '1');
+        st.textContent = DONE_PAYLOAD.css;
+        host.appendChild(st);
+        var tmp = doc.createElement('div');
+        tmp.innerHTML = DONE_PAYLOAD.html;
+        while (tmp.firstChild) host.appendChild(tmp.firstChild);
+        body.appendChild(host);
+
+        var removed = false;
+        function teardown() {
+          if (removed) return;
+          removed = true;
+          try { if (window.__mbDone) window.__mbDone.stop(); } catch (e) {}
+          window.__mbDoneFinish = null;
+          if (host.parentNode) host.parentNode.removeChild(host);
+          doneCleanup = null;
+        }
+        // 引擎在用户按下、淡— 180ms 之后回调这里 —— 由它把整层摘掉
+window.__mbDoneFinish = teardown;
+
+        var script = doc.createElement('script');
+        script.textContent = DONE_PAYLOAD.engine;
+        host.appendChild(script);
+
+        // 引擎— CSP 之类拦掉了：立刻摘掉，别留一个空壳（与启动覆盖层
+// `ran` 判定同一口径）
+if (!window.__mbDone) {
+          teardown();
+          return false;
+        }
+        doneCleanup = teardown;
+        return true;
+      }
+
+      // 返回 'ok' | 'off' | 'reduced' | 'unavailable' —— 设置页用它把
+      // "按钮点了没反应"翻译成一句人话。
+      function playDone(force) {
+        if (!force && !doneEnabled()) return 'off';
+        if (marDoneReduced()) return 'reduced';
+        if (!buildDone()) return 'unavailable';
+        try {
+          window.__mbDone.start({ text: DONE_STATE.text });
+        } catch (e) {
+          if (doneCleanup) doneCleanup();
+          return 'unavailable';
+        }
+        return 'ok';
+      }
+      function stopDone() { if (doneCleanup) doneCleanup(); }
+
+      var doneSessions = null;
+      var donePrev = {};        // sessionId -> 上一次读到的 running（列表快照）
+      var doneUnsub = null;
+      var donePending = null;   // 结算延迟的定时器
+      var donePokeTimer = null; // 等 sessions 服务的补挂定时器
+      var donePokeLeft = 0;
+      var doneDomTimer = null;  // 纯 DOM 判据的轮询
+var doneDomObserver = null;
+      var doneWrapped = {};     // sessionId -> 已经包过 cancel() 的那个会话面实例
+      var doneStopped = {};     // sessionId -> 本轮里用户按过停
+var doneFaceUnsub = null; // 正在显示的那个会话面（ConversationSnapshot）的订阅
+      var doneFaceId = null;
+      var doneTurnSeen = {};    // sessionId -> 最近读到的"已完成轮次"编号（单调）
+      var doneFaceRun = {};     // sessionId -> 会话面上一次读到的 running
+      var doneLast = null;      // { why } 最近一次判定的结果 —— 写进设置页那行小
+// 四个判据各自的实况（诊断用）：列表推送次— / 面推送次— / 门控次数 /
+      // 回合尾巴节点— / 回合指示器的最后状— / 最近几— 结束"是哪个判据发现的
+      var listPublishes = 0, facePublishes = 0, faceEdges = 0;
+      var domTailSeen = null, domStatusSeen = null, domHits = 0, domRenders = 0;
+      var domLastScope = null, domLastTail = null;  // 同一个转录的身份（挂载/切会话会换）
+      var domScopeNow = null;
+      // 回合尾巴判据的门：先看见"回合进行中"（`_turnStatus` 出现）才算数。
+      // 转录挂载历史时从没见过 running，于是绝不会把"铺历史"当成"刚结束一轮" ——
+      // 用户 2026-10-10：启动动画之后自己播了一次、切回旧会话又重复播。
+      var domTurnOpen = false;
+      var lastEnds = [];
+      var doneLogged = false;
+
+      // ---- 会话面：现取，绝不缓— -----------------------------------------
+      // DSH 的客户端服务是各插件自己 register 的，激活顺序不保证 —— 用户
+      // 2026-10-10 实测"预览能播、真触发不播"，根因就— apply() 那一
+// ctx.get('sessions') 还是空的：只取一次，订阅就再也不会挂上（预览
+// 需要服务，所以照样能播）
+function doneGet() {
+        try { return (ctx && typeof ctx.get === 'function') ? ctx.get('sessions') : null; }
+        catch (e) { return null; }
+      }
+
+      function installDone(sessions) {
+        // 这个构建的客户端 sessions 服务面没有 list（只有 binding / scope / retain），
+        // 所以不能再要求 list.subscribe；list 有就顺带订阅。
+        if (!sessions) return false;
+        if (typeof sessions.binding !== 'function' &&
+            !(sessions.list && typeof sessions.list.subscribe === 'function')) return false;
+        if (doneUnsub && doneSessions === sessions) return true;
+        if (doneUnsub) { try { doneUnsub(); } catch (e) {} doneUnsub = null; }
+        doneSessions = sessions;
+        donePrev = {};
+        doneStopped = {};
+        doneTurnSeen = {};
+        doneFaceRun = {};
+        doneLast = null;
+        lastEnds = [];
+        listPublishes = 0;
+        facePublishes = 0;
+        faceEdges = 0;
+        domTailSeen = null;
+        domStatusSeen = null;
+        domRenders = 0;
+        domTurnOpen = false;
+        domLastScope = null;
+        domLastTail = null;
+        if (sessions.list && typeof sessions.list.subscribe === 'function') {
+          doneUnsub = sessions.list.subscribe(doneOnList);
+          // 立刻读一次：把"打开页面时已经在跑的那个会话"记成基线而不是跳变
+          doneOnList();
+        }
+        syncDoneState();
+        return true;
+      }
+
+      // 补挂：现取一次，拿不到就— 400ms 再问一次（最— budget 次）
+function pokeDone(budget) {
+        if (installDone(doneGet())) { stopPoke(); return; }
+        if (budget) donePokeLeft = budget;
+        if (donePokeLeft <= 0 || donePokeTimer) return;
+        donePokeLeft--;
+        donePokeTimer = setTimeout(function () {
+          donePokeTimer = null;
+          pokeDone();
+        }, 400);
+      }
+      function stopPoke() {
+        if (donePokeTimer) { clearTimeout(donePokeTimer); donePokeTimer = null; }
+      }
+
+      // 首— ctx.inject：它会在服务就绪时回调（宿主半边— webServer 用的就是
+      // 同一个写法）。它不保证一定回调（老宿— / 依赖名不同），所以同时保
+// "现取 + 补挂"那条— —— 两条一起走
+function attachDone() {
+        try {
+          if (ctx && typeof ctx.inject === 'function') {
+            ctx.inject(['sessions'], function (sctx) {
+              var s = null;
+              try {
+                s = (sctx && sctx.sessions) ||
+                    (sctx && typeof sctx.get === 'function' ? sctx.get('sessions') : null);
+              } catch (e) { s = null; }
+              installDone(s);
+            });
+          }
+        } catch (e) { /* 老宿主没有 inject：走补挂 */ }
+        pokeDone(75);   // ≈30s
+        // — DOM 的两条判据并行跑（不依赖任何服务
+doneWatchDom();
+        // 12s 后打一行实况到 console：桌面端 DevTools 里能直接读到触发链的状
+if (!doneLogged) {
+          doneLogged = true;
+          setTimeout(function () { doneLog(doneStateText()); }, 12000);
+        }
+        return !!doneUnsub;
+      }
+
+      // ---- 用户按过停止吗？ -------------------------------------------------
+      // DSH 的停止按钮调会话面上— cancel()（ISession 上唯一的取消动词）。就
+// 包一层记一— —— 直取用户意图，比读收尾节点上— `interrupted` 标记
+// （后者是 projection 的产物，而且 ConversationSnapshot.nodes 未必带它）
+// 包装幂等，并且按**实例**记：会话面被重建时会重包
+function doneWrapCancel(id) {
+        if (!doneSessions || !id) return;
+        var face = null;
+        try {
+          var b = doneSessions.binding(id);
+          face = b && b.session;
+        } catch (e) { face = null; }
+        if (!face || typeof face.cancel !== 'function') return;
+        if (doneWrapped[id] === face) return;
+        var orig = face.cancel;
+        try {
+          face.cancel = function () {
+            // **只有这一轮真的在跑时按下— 停止"才算— *：有些收尾路径也会调
+            // cancel，那种情况下— doneStopped 记上会把"正常完成"一起吞掉
+if (doneRunning(id)) doneStopped[id] = true;
+            return orig.apply(this, arguments);
+          };
+          doneWrapped[id] = face;
+        } catch (e) { /* 冻结对象：那就只靠下面那两条快照判据 */ }
+      }
+
+      // ---- "刚刚结束了一— 的判— ------------------------------------------
+      // **不再只看 running 的边— *（那是上一版的判据，短任务会翻车：一轮可能在两次
+      // 快照推送之间就— true→false 走完，快照批量推送时就更看不到了 —— 用户
+      // 2026-10-10 怀— 任务时间太短"，正是这个）。改成看会话快照里那— *单调计数— *
+// ConversationSnapshot.turnEnds — Map<轮次—  seq>，每结束一轮就多一项；
+      // 只要它涨了，就说— 刚结束了一— ，中间态有没有被看到都不影响
+// 会话面（binding(id).session）才是权威的每会话视图：应用自己的回合状态标签读
+// 就是它，— running 也在它上面
+function doneTurnMark(snap) {
+        var ends = snap && snap.turnEnds;
+        var max = -1;
+        if (ends && typeof ends.forEach === 'function') {
+          ends.forEach(function (v, k) { if (k > max) max = k; });
+        }
+        return max;
+      }
+
+      function doneFaceOf(id) {
+        if (!doneSessions || !id || typeof doneSessions.binding !== 'function') return null;
+        try {
+          var b = doneSessions.binding(id);
+          return (b && b.session) || null;
+        } catch (e) { return null; }
+      }
+
+      // 盯住"正在显示的那个会— ：它的快照一变就判一次；换会话时换订阅
+function doneWatchFace(id) {
+        if (!id) {
+          if (doneFaceUnsub) { try { doneFaceUnsub(); } catch (e) {} }
+          doneFaceUnsub = null; doneFaceId = null;
+          return;
+        }
+        if (doneFaceId === id && doneFaceUnsub) return;
+        var face = doneFaceOf(id);
+        if (!face || typeof face.subscribe !== 'function') {
+          // 这个会话还没 staged：不— doneFaceId，下一次列表推送再
+if (doneFaceUnsub) { try { doneFaceUnsub(); } catch (e) {} doneFaceUnsub = null; }
+          doneFaceId = null;
+          return;
+        }
+        if (doneFaceUnsub) { try { doneFaceUnsub(); } catch (e) {} doneFaceUnsub = null; }
+        try {
+          doneFaceUnsub = face.subscribe(function () { doneOnFace(id); });
+          doneFaceId = id;
+        } catch (e) { doneFaceUnsub = null; doneFaceId = null; return; }
+        doneOnFace(id);
+      }
+
+      function doneOnFace(id) {
+        var face = doneFaceOf(id);
+        if (!face || typeof face.getSnapshot !== 'function') return;
+        var snap;
+        try { snap = face.getSnapshot(); } catch (e) { return; }
+        if (!snap) return;
+        facePublishes++;
+        var mark = doneTurnMark(snap);
+        var running = snap.running === true;
+        var prev = doneTurnSeen[id];
+        var prevRun = doneFaceRun[id];
+        doneFaceRun[id] = running;
+        if (prev === undefined) { doneTurnSeen[id] = mark; return; }   // 基线：静
+var why = null;
+        if (mark > prev) { doneTurnSeen[id] = mark; why = 'turnEnds'; }
+        else if (prevRun === true && running === false) why = 'faceEdge';
+        if (running) {
+          // 新一轮开跑了：把还没播完（或还没开播）的完成动画整段让位
+          if (prevRun !== true) doneStopped[id] = false;   // 上一轮的"按过停止"不跨轮
+          if (donePending) { clearTimeout(donePending); donePending = null; }
+          if (doneCleanup) stopDone();
+          if (!why) return;      // 只是又跑起来了，不是"刚结束了一轮" 
+        }
+        if (!why) return;
+        faceEdges++;
+        doneEndedRound(id, why);
+      }
+
+      // 四个判据最后都汇到这里：只有它决定"播不— 。四个判据互相独立，是为
+// 不管宿主给出哪一路信号（计数— / 会话— / 列表 / DOM），都能发现"刚结束一—
+      // 拿不到会话面时的中断判据：刚收尾的那一轮里若带"已中断 / 已停止"字样，
+      // 就当用户中断/报错收尾不播（标签文案随语言，中英都认）。只取回合尾巴往上
+      // 两层，不扫整页。
+      function doneDomInterrupted() {
+        try {
+          var el = doc.querySelector('[data-turn-tail]');
+          var scope = el ? (el.parentElement || el) : null;
+          var txt = scope ? String(scope.textContent || '') : '';
+          return /已中断|已停止|interrupted/i.test(txt);
+        } catch (e) { return false; }
+      }
+
+      function doneEndedRound(id, why) {
+        lastEnds.push({ id: id, why: why, at: Date.now() });
+        if (lastEnds.length > 8) lastEnds.shift();
+        if (id) {
+          if (id !== doneCurrentId()) { doneNote('刚结束的那轮不在当前显示的会话里（' + why + '）'); return; }
+          if (doneTurnBad(id)) { doneNote('那轮是停止 / 中断 / 报错收尾（' + why + '）'); return; }
+        } else if (why === 'turnTail' || why === 'turnStatus') {
+          if (doneDomInterrupted()) { doneNote('那轮是中断收尾（DOM 判据）'); return; }
+        } else {
+          doneNote('结束了，但拿不到会话 id');
+          return;
+        }
+        doneSchedule(why);
+      }
+
+      // 最近一次判定的结果 —— 设置页那行小字会带上它，于是"为什么没— 永远看得见
+// 同时往 console 打一行（桌面— DevTools 里能直接读）
+function doneNote(why) {
+        doneLast = { why: why, at: Date.now() };
+        syncDoneState();
+        doneLog(why);
+      }
+      function doneLog(msg) {
+        try {
+          if (typeof console !== 'undefined' && console && typeof console.info === 'function') {
+            console.info('[theme-mls] 任务完成动画：' + msg);
+          }
+        } catch (e) {}
+      }
+
+      // 那一轮是不是"中断 / 报错"收尾的？三条判据，任一条命中都不播
+//   — 本轮里用户按过停止（doneStopped）；
+      //   — 收尾节点— turn-error
+//   — 倒数第一— assistant 节点— interrupted— 已停— 标记的来源）
+function doneTurnBad(sessionId) {
+        if (!sessionId) return false;
+        if (doneStopped[sessionId]) return true;
+        var face = doneFaceOf(sessionId);
+        if (!face || typeof face.getSnapshot !== 'function') return false;
+        try {
+          var snap = face.getSnapshot();
+          var nodes = (snap && snap.nodes) || [];
+          for (var i = nodes.length - 1; i >= 0; i--) {
+            var n = nodes[i];
+            if (!n) continue;
+            if (n.kind === 'turn-error') return true;
+            if (n.kind === 'assistant') return n.interrupted === true;
+          }
+        } catch (e) {}
+        return false;
+      }
+
+      // 抽屉里那行小字：— 触发到底挂上没有、上一次为什么没— 变成可见的事实
+// 用户 2026-10-10 遇到的就— 预览能播、真触发不播"，而当时页面上没有任何
+      // 地方能看出订阅根本没挂上（后来又多了"短任— 这一种）
+function doneStateText() {
+        var head;
+        if (!doneEnabled()) head = '已关闭';
+        else if (doneUnsub) head = '触发已就绪（会话快照订阅 + 会话面已盯住）';
+        else if (doneDomTimer) head = '触发已就绪（回合收尾 DOM 判据：data-turn-tail / turnStatus）';
+        else head = '触发未就绪：等待 sessions 服务…';
+        return doneLast && doneLast.why ? head + ' · 最近：' + doneLast.why : head;
+      }
+      function syncDoneState() {
+        try {
+          var el = doc.getElementById('mar-done-state');
+          if (el) el.textContent = doneStateText();
+        } catch (e) {}
+      }
+
+      function doneCurrentId() {
+        try {
+          var snap = doneSessions && doneSessions.list && doneSessions.list.getSnapshot();
+          return (snap && snap.current) ? String(snap.current) : null;
+        } catch (e) { return null; }
+      }
+      // "还在跑吗"：以**会话— *上的 running 为准（应用自己的回合状态标签读的就
+// 它），列表快照只作兜— —— 两处不一致时以会话面为准
+function doneRunning(id) {
+        if (!id) return false;
+        var face = doneFaceOf(id);
+        if (face && typeof face.getSnapshot === 'function') {
+          try {
+            var s = face.getSnapshot();
+            if (s && typeof s.running === 'boolean') return s.running === true;
+          } catch (e) {}
+        }
+        if (!doneSessions || !doneSessions.list) return false;
+        try {
+          var snap = doneSessions.list.getSnapshot();
+          var row = snap && snap.byId ? snap.byId[id] : null;
+          return !!(row && row.running === true);
+        } catch (e) { return false; }
+      }
+
+      // 一轮结束后立刻又接上下一轮（队列输入、连续追问）的情况不少，那一拍不该先
+      // 铺一整屏再被下一轮打— —— 等一小会儿再确认一次：还在跑就整个不播
+// 已经在等的时— *不重置计— *（两条判据可能都命中同一次结束，别把等待越推越后）
+function doneSchedule(why) {
+        if (donePending) return;
+        donePending = setTimeout(function () {
+          donePending = null;
+          if (!doneEnabled()) { doneNote('开关已关闭'); return; }
+          // 拿不到会话 id（这个构建没有 sessions.list）时 DOM 判据照样播，
+          // 只跳过那些需要 id 的复查
+          var id = doneCurrentId();
+          if (id && doneRunning(id)) { doneNote('新一轮已经开跑，跳过（' + (why || '') + '）'); return; }
+          if (id && doneTurnBad(id)) { doneNote('那轮是停止 / 中断 / 报错收尾（' + (why || '') + '）'); return; }
+          if (doneCleanup) { doneNote('上一段还在播放，跳过'); return; }
+          var res = playDone();
+          doneNote(res === 'ok' ? '已播放（' + (why || '') + '）' :
+                   res === 'off' ? '开关已关闭' :
+                   res === 'reduced' ? '系统「减少动态效果」生效中' : '覆盖层不可用');
+        }, 350);
+      }
+
+      function doneOnList() {
+        if (!doneSessions || !doneSessions.list ||
+            typeof doneSessions.list.getSnapshot !== 'function') return;
+        var snap;
+        try { snap = doneSessions.list.getSnapshot(); } catch (e) { return; }
+        if (!snap) return;
+        listPublishes++;
+        var byId = snap.byId || {};
+        var ids = snap.ids || [];
+        var current = snap.current ? String(snap.current) : null;
+        // 正在显示的会话：— 备好"用户按了停止"的监听（幂等，按实例记）
+        //                 — 把会话面订阅指到它（"刚结束一— 的主判据
+if (current) {
+          doneWrapCancel(current);
+          doneWatchFace(current);
+        }
+        var seen = {};
+        for (var i = 0; i < ids.length; i++) {
+          var id = String(ids[i]);
+          seen[id] = true;
+          var row = byId[id];
+          if (!row) continue;
+          var running = row.running === true;
+          if (!(id in donePrev)) {
+            donePrev[id] = running;   // 基线：静默（切进一个已经在跑的会话不误报）
+            continue;
+          }
+          var was = donePrev[id];
+          if (was === running) continue;
+          donePrev[id] = running;
+          if (running) {
+            // 新一轮开始了：上一次的"按过停止"不再算数，并把还没播完（或还
+// 开播）的完成动画整段让— —— 不能— 任务完成"压在正在跑的任务上面
+doneStopped[id] = false;
+            if (donePending) { clearTimeout(donePending); donePending = null; }
+            if (doneCleanup) stopDone();
+            continue;
+          }
+          // 列表这一路的兜底判据：只看客户端正在显示的那个会
+if (!current || id !== current) continue;
+          doneEndedRound(id, 'listEdge');
+        }
+        for (var k in donePrev) { if (!seen[k]) delete donePrev[k]; }
+      }
+
+      // ---- 第四、第五道判据：纯 DOM ------------------------------------------
+      // 前三条都要宿主给出服— 快照；这两条只读页面，是"服务没就绪也能发现回合结— 
+      // 的最后一道。两个锚点都在本主题自己的兼容面上：
+      //   · `[data-turn-tail="<轮次>"]` —— 每轮收尾节点（计费纸条就是贴它上面的
+//     — docs/COMPATIBILITY.md），**新增一个就是刚结束一— *
+//   · `[class*="_turnStatus"]` —— 回合进行中指示器（本主题的样式表里就有它），
+      //     它被移除 = 回合结束
+// 只在"— 列表都没挂上"或者两条都拿不到时才真正起作用？不 —— 全部并行跑，
+      // 因为它们的成本只是每 400ms 一— querySelector，而漏判的代价是整段没播
+function doneCountTails() {
+        try { return doc.querySelectorAll('[data-turn-tail]').length; } catch (e) { return 0; }
+      }
+      function doneStatusOn() {
+        try { return !!doc.querySelector('[class*="_turnStatus"]'); } catch (e) { return false; }
+      }
+      // 转录（可能出现回合尾巴的那个容器）：首次挂载 / 切换会话 / 重绘会换掉它。
+      function doneDomScope() {
+        try {
+          var el = doc.querySelector('[data-conversation-scroll]');
+          if (el) return el;
+          var t = doc.querySelector('[data-turn-tail]');
+          return t ? (t.parentElement || t) : null;
+        } catch (e) { return null; }
+      }
+      function doneLastTail() {
+        try {
+          var l = doc.querySelectorAll('[data-turn-tail]');
+          return l.length ? l[l.length - 1] : null;
+        } catch (e) { return null; }
+      }
+      // 只认"**同一个转录里**新追加了一个回合尾巴"：
+      // ① 上次看到的尾巴还在文档里 → 没人把转录换掉，这就是一次追加；
+      // ② 还没有尾巴（这个会话还没结束过一轮）→ 只要容器还是同一个且还在文档里，
+      //    就算同一个转录（于是首次出现尾巴 = 真的结束了一轮）。
+      // 挂载 / 切会话 / 重绘都不满足这两条 —— 它们只更新基线。
+      function doneSameTranscript() {
+        if (domLastTail) {
+          try { return domLastTail.isConnected === true; } catch (e) { return false; }
+        }
+        if (!domLastScope) return false;
+        try { return domLastScope.isConnected === true && domLastScope === domScopeNow; } catch (e) { return false; }
+      }
+      function doneDomRebase() {
+        domTailSeen = doneCountTails();
+        domStatusSeen = doneStatusOn();
+        domScopeNow = doneDomScope();
+        domLastScope = domScopeNow;
+        domLastTail = doneLastTail();
+      }
+      function doneDomPoll() {
+        var tails = doneCountTails();
+        var on = doneStatusOn();
+        domScopeNow = doneDomScope();
+        var lastTail = doneLastTail();
+        if (domTailSeen === null) { doneDomRebase(); return; }   // 基线：第一次只记录
+        // "回合进行中"的上升沿开一次门（启动时已经在跑的那种不算，靠状态消失那条判据）
+        if (on === true && domStatusSeen === false) domTurnOpen = true;
+        var same = doneSameTranscript();
+        var tailGrew = same && domTurnOpen && tails > domTailSeen;
+        var statusLeft = same && domStatusSeen === true && on === false;
+        var had = !!(domLastScope || domLastTail);
+        domTailSeen = tails;
+        domStatusSeen = on;
+        domLastScope = domScopeNow;
+        domLastTail = lastTail;
+        if (!same) {
+          // 换了转录（首次挂载 / 切会话 / 重绘）：上一个尾巴已经不在了
+          domRenders++;
+          domTurnOpen = false;
+          if (had) doneLog('转录换了（挂载 / 切会话 / 重绘），不触发');
+          return;
+        }
+        if (tailGrew) domTurnOpen = false;
+        if (!tailGrew && !statusLeft) {
+          if (on) {
+            // 又跑起来了：让还没播完的完成动画让位
+            if (donePending) { clearTimeout(donePending); donePending = null; }
+            if (doneCleanup) stopDone();
+          }
+          return;
+        }
+        domHits++;
+        if (statusLeft) domTurnOpen = false;
+        doneEndedRound(doneCurrentId(), tailGrew ? 'turnTail' : 'turnStatus');
+      }
+      var doneDomQueue = 0;
+      function doneDomKick() {
+        if (doneDomQueue) return;
+        doneDomQueue = setTimeout(function () { doneDomQueue = 0; doneDomPoll(); }, 200);
+      }
+      function doneWatchDom() {
+        if (doneDomTimer) return;
+        try {
+          if (typeof MutationObserver === 'function') {
+            doneDomObserver = new MutationObserver(doneDomKick);
+            doneDomObserver.observe(doc.body, { childList: true, subtree: true });
+          }
+        } catch (e) { doneDomObserver = null; }
+        doneDomTimer = setInterval(doneDomPoll, 400);   // 属性/时序漏了也能发现
+        doneDomPoll();
+      }
+      function doneStopDom() {
+        if (doneDomTimer) { clearInterval(doneDomTimer); doneDomTimer = null; }
+        if (doneDomQueue) { clearTimeout(doneDomQueue); doneDomQueue = 0; }
+        if (doneDomObserver) { try { doneDomObserver.disconnect(); } catch (e) {} doneDomObserver = null; }
+      }
+
+      // 诊断用（DevTools — `__marDoneDebug()`）：触发链上每一步的实况
+try {
+        if (typeof window !== 'undefined') {
+          window.__marDoneDebug = function () {
+            return {
+              switchOn: doneEnabled(),
+              sessionsService: !!doneSessions,
+              subscribed: !!doneUnsub,
+              face: doneFaceId,
+              faceSubscribed: !!doneFaceUnsub,
+              pokeLeft: donePokeLeft,
+              prev: donePrev,
+              stopped: doneStopped,
+              turnSeen: doneTurnSeen,
+              faceRun: doneFaceRun,
+              last: doneLast,
+              mounted: !!doneCleanup,
+              // 四条判据的实况：哪条有信号一眼看—               listPublishes: listPublishes,
+              facePublishes: facePublishes,
+              faceEdges: faceEdges,
+              domTails: domTailSeen,
+              domStatus: domStatusSeen,
+              domHits: domHits,
+              domRenders: domRenders,
+              lastEnds: lastEnds
+            };
+          };
+        }
+      } catch (e) {}
+
       // ---- settings tab: 「主题设置」 -------------------------------------
       // DSH's settings dialog is a nav column + a content column. We append one
       // nav cell and, when it is chosen, cover the content column with our own
@@ -1953,37 +2628,112 @@ window.__ModuleLoader__.load({
         pane.setAttribute('data-mar-pane', '1');
         pane.innerHTML =
           '<h4>主题设置</h4>' +
-          '<div class="mar-set-row mar-set-switch"><label for="mar-billing">每轮 Token 结算</label>' +
-          '<input type="checkbox" class="mar-switch" id="mar-billing">' +
-          '<span class="mar-val" data-val="billing"></span></div>' +
-          '<div class="mar-set-row mar-set-switch"><label for="mar-bg-anim">背景动画</label>' +
-          '<input type="checkbox" class="mar-switch" id="mar-bg-anim">' +
-          '<span class="mar-val" data-val="anim"></span></div>' +
-          '<div class="mar-seg" role="radiogroup" aria-label="背景配色">' +
-          '<button type="button" role="radio" data-pair="light" aria-checked="false">' + bgSegChip('light') + '主白 + 绿</button>' +
-          '<button type="button" role="radio" data-pair="dark" aria-checked="false">' + bgSegChip('dark') + '主黑 + 绿</button>' +
+          '<p class="mar-set-sub">Marathon FUI · 主题配色与各项动画开关</p>' +
+          '<div class="mar-set-group">' +
+            '<div class="mar-set-head">外观</div>' +
+            '<div class="mar-set-row"><label>配色</label>' +
+            '<div class="mar-seg" role="radiogroup" aria-label="背景配色">' +
+            '<button type="button" role="radio" data-pair="light" aria-checked="false">' + bgSegChip('light') + '主白 + 绿</button>' +
+            '<button type="button" role="radio" data-pair="dark" aria-checked="false">' + bgSegChip('dark') + '主黑 + 绿</button>' +
+            '</div></div>' +
           '</div>' +
-          '<div class="mar-set-row"><label for="mar-bg-cell">点阵密度</label>' +
-          '<input type="range" id="mar-bg-cell" min="8" max="40" step="2">' +
-          '<span class="mar-val" data-val="cell"></span></div>' +
-          '<div class="mar-set-row"><label for="mar-bg-speed">呼吸速度</label>' +
-          '<input type="range" id="mar-bg-speed" min="0" max="1.5" step="0.05">' +
-          '<span class="mar-val" data-val="speed"></span></div>';
+          '<div class="mar-set-group">' +
+            '<div class="mar-set-head">背景动画</div>' +
+            '<div class="mar-set-row mar-set-switch"><label for="mar-bg-anim">启用</label>' +
+            '<input type="checkbox" class="mar-switch" id="mar-bg-anim">' +
+            '<span class="mar-val" data-val="anim"></span></div>' +
+            '<div class="mar-set-row"><label for="mar-bg-cell">点阵密度</label>' +
+            '<input type="range" id="mar-bg-cell" min="8" max="40" step="2">' +
+            '<span class="mar-val" data-val="cell"></span></div>' +
+            '<div class="mar-set-row"><label for="mar-bg-speed">呼吸速度</label>' +
+            '<input type="range" id="mar-bg-speed" min="0" max="1.5" step="0.05">' +
+            '<span class="mar-val" data-val="speed"></span></div>' +
+          '</div>' +
+          '<div class="mar-set-group">' +
+            '<div class="mar-set-head">任务完成动画</div>' +
+            '<div class="mar-set-row mar-set-switch"><label for="mar-done">启用</label>' +
+            '<input type="checkbox" class="mar-switch" id="mar-done">' +
+            '<span class="mar-val" data-val="done"></span></div>' +
+            '<div class="mar-set-row mar-set-done"><label for="mar-done-text">完成文案</label>' +
+            '<input type="text" id="mar-done-text" maxlength="48" spellcheck="false" ' +
+            'placeholder="' + DONE_TEXT_DEFAULT + '">' +
+            '<button type="button" id="mar-done-play">预览</button></div>' +
+            '<div class="mar-set-row mar-set-done mar-set-note"><span id="mar-done-note"></span></div>' +
+            '<div class="mar-set-row mar-set-done mar-set-note"><span id="mar-done-state"></span></div>' +
+          '</div>' +
+          '<div class="mar-set-group">' +
+            '<div class="mar-set-head">每轮 Token 结算</div>' +
+            '<div class="mar-set-row mar-set-switch"><label for="mar-billing">启用</label>' +
+            '<input type="checkbox" class="mar-switch" id="mar-billing">' +
+            '<span class="mar-val" data-val="billing"></span></div>' +
+          '</div>';
 
         var seg = pane.querySelector('.mar-seg');
         var animIn = pane.querySelector('#mar-bg-anim');
         var billIn = pane.querySelector('#mar-billing');
+        var doneIn = pane.querySelector('#mar-done');
+        var doneTextIn = pane.querySelector('#mar-done-text');
+        var donePlay = pane.querySelector('#mar-done-play');
+        var doneNoteEl = pane.querySelector('#mar-done-note');
         var cellIn = pane.querySelector('#mar-bg-cell');
         var speedIn = pane.querySelector('#mar-bg-speed');
 
         // 「每轮 Token 结算」：一个独立的开关（2026-10-09 用户要求加进主题设置）。
-        // 关掉 = 不再贴纸条、已有的立刻摘掉、也停止轮询计费接口；打开 = 立即拉一次。
-        if (billIn) {
+if (billIn) {
           billIn.addEventListener('change', function () {
             BILLING_STATE.on = !!billIn.checked;
             billingSave();
             billingApply();
             syncPane(pane);
+          });
+        }
+
+        // 「任务完成动画」：一个开— + 一行文— + 一个预览
+//   关掉 = 不订阅（watchDone 只在打开时挂）、不建节点、不留定时器
+//   正在播的那一段立刻收掉；打开 = 立刻接上会话快照（基线静默，不会
+        //   因为"打开开关时正好有个会话在跑"而误播）
+// 预览忽略开关本身（它就是拿来试的），但照样尊重系统「减少动态效果」，
+        // 并把"为什么没— 写进下面那行小字 —— 一个点了没反应的按钮比没有按钮
+        // 更糟
+if (doneIn) {
+          doneIn.addEventListener('change', function () {
+            DONE_STATE.on = !!doneIn.checked;
+            doneSave();
+            if (doneNoteEl) doneNoteEl.textContent = '';
+            if (doneEnabled()) attachDone(); else stopDone();
+            syncPane(pane);
+          });
+        }
+        if (doneTextIn) {
+          doneTextIn.addEventListener('change', function () {
+            var v = String(doneTextIn.value || '').replace(/\s+/g, ' ').trim();
+            DONE_STATE.text = v || DONE_TEXT_DEFAULT;
+            doneSave();
+            if (doneNoteEl) doneNoteEl.textContent = '';
+            syncPane(pane);
+          });
+        }
+        if (donePlay) {
+          donePlay.addEventListener('click', function () {
+            stopDone();
+            var result = playDone(true);
+            if (!doneNoteEl) return;
+            // 预览永远显示**触发链的实况**：这— 预览能播、真触发不播"的时候，
+            // 用户按一次预览就把诊断读出来了（用户 2026-10-10 连报两轮）
+var head =
+              result === 'reduced' ? '系统「减少动态效果」生效中，这一拍被跳过' :
+              result === 'unavailable' ? '完成动画覆盖层不可用（payload 缺失或被 CSP 拦下）' :
+              '';
+            var dbg = (typeof window !== 'undefined' && typeof window.__marDoneDebug === 'function')
+              ? window.__marDoneDebug() : null;
+            var live = dbg
+              ? '触发：' + (dbg.subscribed ? '服务已挂' : '服务未就绪') +
+                (dbg.faceSubscribed ? ' + 会话面已盯住' : '') +
+                '｜列表推送 ' + dbg.listPublishes + ' 次 · 会话面 ' + dbg.facePublishes +
+                ' 次（边沿 ' + dbg.faceEdges + '）· 回合尾 ' + dbg.domTails +
+                '｜最近：' + (dbg.last && dbg.last.why ? dbg.last.why : '还没有判定')
+              : '';
+            doneNoteEl.textContent = [head, live].filter(Boolean).join('　');
           });
         }
 
@@ -2056,13 +2806,20 @@ window.__ModuleLoader__.load({
         // 每轮 Token 结算：自己一个开关（与背景动画互不影响）
         var billIn = pane.querySelector('#mar-billing');
         if (billIn) billIn.checked = billingEnabled();
+        // 任务完成动画：开— + 文案（各一个，同样与背景动画互不影响）
+        var doneIn = pane.querySelector('#mar-done');
+        if (doneIn) doneIn.checked = doneEnabled();
+        var doneTextIn = pane.querySelector('#mar-done-text');
+        if (doneTextIn && doneTextIn !== doc.activeElement) doneTextIn.value = DONE_STATE.text;
+        syncDoneState();
         if (BG_STATE.anim) pane.classList.remove('mar-anim-off');
         else pane.classList.add('mar-anim-off');
         var vals = {
           anim: BG_STATE.anim ? '开' : '关',
           cell: BG_STATE.cell + ' px',
           speed: BG_STATE.speed.toFixed(2),
-          billing: billingEnabled() ? '开' : '关'
+          billing: billingEnabled() ? '开' : '关',
+          done: doneEnabled() ? '开' : '关'
         };
         var outs = pane.querySelectorAll('.mar-val');
         for (var k = 0; k < outs.length; k++) {
@@ -2558,8 +3315,8 @@ window.__ModuleLoader__.load({
           layer.appendChild(box);
         }
 
-        // nothing laid out (board measured mid-transition, columns collapsed) —
-        // leave the flag set so we do not thrash, next open replays it
+        // nothing laid out (board measured mid-transition, columns collapsed)
+// leave the flag set so we do not thrash, next open replays it
         if (!layer.firstChild) return;
 
         board.appendChild(layer);
@@ -2608,8 +3365,8 @@ window.__ModuleLoader__.load({
       function sweepReveals() {
         sweepSettingsPanel();
         sweepBoardIntro();
-        // 轮次尾巴是新渲染出来的 → 每次巡扫都补一次结算纸条（拿不到数据时是 no-op）
-        billingTick();
+        // 轮次尾巴是新渲染出来— — 每次巡扫都补一次结算纸条（拿不到数据时— no-op
+billingTick();
         //   Re-assert the scheme every tick. The write at apply() time is provably
         //   correct and provably sticks when it runs (measured: setting
         //   body[data-ds-dark-theme] turned the rail ink near-white within 1.5s and
@@ -2625,27 +3382,26 @@ window.__ModuleLoader__.load({
       if (typeof setInterval !== 'undefined') mosaicSweeper = setInterval(sweepReveals, 1200);
 
       // ---- per-turn token settlement ---------------------------------------
-      //   每一轮**已经结束**的任务，在它的轮次尾巴上贴一张结算小纸条：花了多少钱、
-      //   四桶怎么分、命中率多少、这轮跑了多久。
-      //
+      //   每一— *已经结束**的任务，在它的轮次尾巴上贴一张结算小纸条：花了多少钱
+//   四桶怎么分、命中率多少、这轮跑了多久
+//
       //   为什么贴在轮次尾巴上（而不是像上一版那样浮在输入框上方）：
-      //     · 它是**那一轮的注脚**，跟着转录一起滚动 —— 用户滚动时位置不变，
-      //       因为位置本来就由转录决定；
-      //     · 切会话 = 转录整块换掉 = 纸条跟着消失，不存在"展开状态跨会话残留"；
-      //     · DSH 自己在每轮结尾已经画了动作行（复制/分支/用量），我们贴在它前面，
-      //       读起来就是"任务结束 → 结算 → 动作"。
-      //
+      //     · 它是**那一轮的注脚**，跟着转录一起滚— —— 用户滚动时位置不变，
+      //       因为位置本来就由转录决定
+//     · 切会— = 转录整块换掉 = 纸条跟着消失，不存在"展开状态跨会话残留"
+//     · DSH 自己在每轮结尾已经画了动作行（复— 分支/用量），我们贴在它前面，
+      //       读起来就— 任务结束 — 结算 — 动作"
+//
       //   锚点是 DSH 自己的语义属性 `[data-turn-tail="<turn>"]`
-      //   （dsh-client-ui-chat 的 TurnTailNodeView；比哈希类名稳），
-      //   数据来自主题 Host 半边的 `/dsh-mls-billing/state`。
-      var BILLING_ENDPOINT = '/dsh-mls-billing/state';
+      //   （dsh-client-ui-chat — TurnTailNodeView；比哈希类名稳）
+//   数据来自主题 Host 半边— `/dsh-mls-billing/state`
+var BILLING_ENDPOINT = '/dsh-mls-billing/state';
       var BILLING_POLL_MS = 2000;
-      // 只给"最近结束"的轮次补纸条：页面重载后不会把一屏历史轮次都贴上。
       // 会话匹配已经是**精确的**（见 billingDisplayedSessionId），所以这里只剩"别翻太旧"。
       var BILLING_FRESH_MS = 7 * 24 * 60 * 60 * 1000;
       var BILLING_STORE_KEY = 'mar.billing.v1';
       var BILLING_ROWS = [
-        ['消耗 Token', 'total', 1],
+        ['消费 Token', 'total', 1],
         ['输入 Token', 'input', 0],
         ['输出 Token', 'output', 0],
         ['缓存命中 Token', 'hit', 0],
@@ -2655,11 +3411,11 @@ window.__ModuleLoader__.load({
         ['计费状态', 'status', 1]
       ];
       var billingState = null;
-      var billingOpen = {};        // turn -> true；块随转录销毁，所以这份状态天然不跨会话
-      var billingTimer = null;
+      var billingOpen = {};        // turn -> true；块随转录销毁，所以这份状态天然不跨会
+var billingTimer = null;
 
       // 开关（主题设置里的「每轮 Token 结算」）：默认开，持久化在 localStorage。
-      function billingLoad() {
+function billingLoad() {
         try {
           var raw = (typeof window !== 'undefined' && window.localStorage)
             ? window.localStorage.getItem(BILLING_STORE_KEY) : null;
@@ -2679,9 +3435,9 @@ window.__ModuleLoader__.load({
       function billingEnabled() { return BILLING_STATE.on !== false; }
 
       // 精确拿到「客户端当前显示的那个会话」：DSH 的 sessions 服务里 `list.current`
-      // 就是持久化的选中项（每个 session 作用域的面板都键在它上面）。有了它，
-      // 「看着 A 会话、后台在跑 B 会话」时不会把 B 的数字贴到 A 的尾巴上。
-      var billingSessions = null;
+      // 就是持久化的选中项（每个 session 作用域的面板都键在它上面）。有了它
+// 「看着 A 会话、后台在— B 会话」时不会— B 的数字贴— A 的尾巴上
+var billingSessions = null;
       try {
         billingSessions = (ctx && typeof ctx.get === 'function') ? ctx.get('sessions') : null;
       } catch (e) { billingSessions = null; }
@@ -2754,18 +3510,17 @@ window.__ModuleLoader__.load({
         var head = mlsbEl('button', 'mlsb-turn-head');
         head.type = 'button';
         head.setAttribute('aria-expanded', 'false');
-        // 用户 2026-10-09：绿条上不放费用，只留标题；左右各一个**黑色十字**做装饰。
-        // 十字同时兼任展开指示（与模板一致：展开时两边一起变减号）。
-        var crossLeft = mlsbEl('span', 'mlsb-cross mlsb-left', '+');
+        // 2026-10-09（用户）：消息内居中 + 绿条上不放费用 + 两侧各一个十字；字体回默认
+var crossLeft = mlsbEl('span', 'mlsb-cross mlsb-left', '+');
         var title = mlsbEl('span', 'mlsb-turn-title', 'TOKEN USAGE');
         var crossRight = mlsbEl('span', 'mlsb-cross mlsb-right', '+');
         head.appendChild(crossLeft);
         head.appendChild(title);
         head.appendChild(crossRight);
         var body = mlsbEl('div', 'mlsb-turn-body');
-        // 内层包一层：`grid-template-rows:0fr` 需要一个 min-height:0/overflow:hidden 的行盒，
-        // 它才是被压成 0 高度的那个；行本身留在里面，展开时高度平滑长出来。
-        var bodyInner = mlsbEl('div', 'mlsb-turn-body-inner');
+        // `grid-template-rows:0fr → 1fr`（内层再包一层 min-height:0/overflow:hidden）：
+        // 它才是被压成 0 高度的那个；行本身留在里面，展开时高度平滑长出来
+var bodyInner = mlsbEl('div', 'mlsb-turn-body-inner');
         var values = {};
         for (var i = 0; i < BILLING_ROWS.length; i++) {
           var row = mlsbEl('div', 'mlsb-row');
@@ -2783,9 +3538,9 @@ window.__ModuleLoader__.load({
         var clock = mlsbEl('span', null, '--:--');
         clock.setAttribute('data-mlsb', 'turn-clock');
         right.appendChild(clock);
-        // i 角标：用户 2026-10-09 要求先去掉（"任务用时不需要这个 i 和方框了"）。
-        // 需要时取消注释即可（样式里对应的两行也一起取消注释）。
-        // right.appendChild(mlsbEl('span', 'mlsb-info', 'i'));
+        // i 角标：用— 2026-10-09 要求先去掉（"任务用时不需要这— i 和方框了"）
+// 需要时取消注释即可（样式里对应的两行也一起取消注释）
+// right.appendChild(mlsbEl('span', 'mlsb-info', 'i'));
         foot.appendChild(right);
         root.appendChild(head);
         root.appendChild(body);
@@ -2828,10 +3583,8 @@ window.__ModuleLoader__.load({
       }
 
       /**
-       * 把纸条贴到轮次尾巴上。
-       * 贴的位置是**动作行之前**（复制/分支那行），读作「任务结束 → 结算 → 动作」；
-       * 找不到动作行就追加到末尾（两种都不会破坏 React 自己管理的节点引用）。
-       */
+       * 把纸条贴到轮次尾巴上—        * 贴的位置— *动作行之— *（复— 分支那行），读作「任务结— — 结算 — 动作」；
+       * 找不到动作行就追加到末尾（两种都不会破坏 React 自己管理的节点引用）—        */
       function billingAttach(host, block) {
         var actions = host.lastElementChild;
         if (actions && actions !== block && /_actions/.test(String(actions.className || ''))) {
@@ -2842,15 +3595,15 @@ window.__ModuleLoader__.load({
       }
 
       function billingTick() {
-        // 开关关掉 → 摘干净并退出（巡扫每 1.2s 调一次，这里必须最先判断）
+        // 开关关— — 摘干净并退出（巡扫— 1.2s 调一次，这里必须最先判断）
         if (!billingEnabled()) {
           if (doc.querySelector('[data-mlsb-turn]')) billingDetachAll();
           return;
         }
         if (!billingState) return;
-        // 优先用**客户端选中的那个会话**；拿不到选择（老宿主/服务缺席）才退回
-        // "最近有账的那个会话"。这一步是"重启后当前这段对话也能贴上"的关键。
-        var displayed = billingDisplayedSessionId();
+        // 优先— *客户端选中的那个会— *；拿不到选择（老宿— 服务缺席）才退
+// "最近有账的那个会话"。这一步是"重启后当前这段对话也能贴— 的关键
+var displayed = billingDisplayedSessionId();
         var session = null;
         if (displayed) {
           var list = billingState.sessions || [];
@@ -2866,7 +3619,7 @@ window.__ModuleLoader__.load({
         var now = Date.now();
         for (var i = 0; i < turns.length; i++) {
           var turn = turns[i];
-          // 只结算**已结束**的轮次：任务没结束就没有"本轮用时"可言
+          // 只结— *已结— *的轮次：任务没结束就没有"本轮用时"可言
           if (!turn.closed) continue;
           if (now - Number(turn.endedAt || 0) > BILLING_FRESH_MS) continue;
           var host = doc.querySelector('[data-turn-tail="' + turn.turn + '"]');
@@ -2882,13 +3635,13 @@ window.__ModuleLoader__.load({
 
       function billingFetch() {
         if (typeof fetch !== 'function') return;
-        if (!billingEnabled()) return;      // 开关关掉就不打扰宿主
-        // 页面在后台时不轮询：桌面端最小化时省电，也不产生无意义请求
-        if (doc.hidden) return;
+        if (!billingEnabled()) return;      // 开关关掉就不打扰宿
+// 页面在后台时不轮询：桌面端最小化时省电，也不产生无意义请
+if (doc.hidden) return;
         // 把「我正在显示哪个会话」带过去：宿主若发现这段对话还没有逐轮数据
-        // （本功能上线之前跑过的轮次），会就地回填一次再返回 —— 于是重启后
-        // 当前这段对话也能立刻贴上纸条，而不是只有新跑的轮次才有。
-        var displayed = billingDisplayedSessionId();
+        // （本功能上线之前跑过的轮次），会就地回填一次再返回 —— 于是重启
+// 当前这段对话也能立刻贴上纸条，而不是只有新跑的轮次才有
+var displayed = billingDisplayedSessionId();
         var url = BILLING_ENDPOINT + (displayed ? '?session=' + encodeURIComponent(displayed) : '');
         fetch(url, { cache: 'no-store' })
           .then(function (response) { return response.ok ? response.json() : null; })
@@ -2931,6 +3684,16 @@ window.__ModuleLoader__.load({
 
       buildBoot();
       bgMount();
+      // 任务完成动画：先挂上触发链（会话服务可能还没 register，attachDone
+// 等它）；真正播不播还要过开关与「减少动态效果」两道闸（见 doneSchedule /
+      // playDone）
+attachDone();
+      // 重连会重放列表基线，重新确认一次订阅还活着（服务实例被换掉时重挂）
+      try {
+        if (ctx && typeof ctx.on === 'function') {
+          ctx.on('connection/reset', function () { pokeDone(15); });
+        }
+      } catch (e) {}
 
       // ---- dispose (plugin unload) ---------------------------------------
       // Every step is isolated, because a dispose is only correct as a WHOLE.
@@ -2947,11 +3710,25 @@ window.__ModuleLoader__.load({
         var steps = [
           function () { if (bootCleanup) bootCleanup(); },
           function () { if (typeof window !== 'undefined') window.__mbBootDone = null; },
-          // per-turn token settlement: 停掉轮询、摘掉所有纸条、丢掉缓存的快照。
-          // 纸条本身挂在转录内部（转录由 DSH 管理），这里按属性兜底清一遍，
-          // 免得主题被热禁用时留下几张无主的纸条。
+          // per-turn token settlement: 停掉轮询、摘掉所有纸条、丢掉缓存的快照
+// 纸条本身挂在转录内部（转录由 DSH 管理），这里按属性兜底清一遍，
           function () { if (billingTimer) { clearInterval(billingTimer); billingTimer = null; } },
           function () { billingState = null; },
+          // task-completion animation: 退订会话快照与会话面、停掉补挂、清掉结算延迟、摘掉覆盖层
+          function () { if (doneUnsub) { try { doneUnsub(); } catch (e) {} doneUnsub = null; } },
+          function () { if (doneFaceUnsub) { try { doneFaceUnsub(); } catch (e) {} } doneFaceUnsub = null; doneFaceId = null; },
+          function () { stopPoke(); donePokeLeft = 0; },
+          function () { doneStopDom(); },
+          function () { if (donePending) { clearTimeout(donePending); donePending = null; } },
+          function () {
+            donePrev = {}; doneWrapped = {}; doneStopped = {}; doneTurnSeen = {};
+            doneFaceRun = {}; doneLast = null; lastEnds = []; doneSessions = null;
+            domTailSeen = null; domStatusSeen = null; domLastScope = null; domLastTail = null;
+          },
+          function () {
+            if (typeof window !== 'undefined') window.__marDoneDebug = null;
+          },
+          function () { stopDone(); },
           function () {
             var blocks = doc.querySelectorAll('[data-mlsb-turn]');
             for (var b = 0; b < blocks.length; b++) {
@@ -3004,7 +3781,8 @@ window.__ModuleLoader__.load({
           // canvas (bgTeardown lost its handle, or the node was re-created), and
           // any of the body classes bgTeardown would have removed.
           function () {
-            var strays = [doc.getElementById('dshMarBootHost'), doc.getElementById('mar-ascii-bg')];
+            var strays = [doc.getElementById('dshMarBootHost'), doc.getElementById('mar-ascii-bg'),
+                          doc.getElementById('dshMarDoneHost')];
             for (var s = 0; s < strays.length; s++) {
               if (strays[s] && strays[s].parentNode) strays[s].parentNode.removeChild(strays[s]);
             }

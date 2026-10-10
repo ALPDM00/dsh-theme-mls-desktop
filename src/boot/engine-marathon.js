@@ -103,14 +103,16 @@
       // （真机取证 .generated/probe-bgwho.cjs：active 相位侧栏根只剩 _root）。
       // 所以兜底一定是 _sidebarCol 本身 —— 两个相位都在，矩形都是整列。
       sidebar:  ['[class*="_quietBars"]', '[class*="_railIn"]', '[class*="_sidebarCol"]'],
-      // 输入框：这两个旧锚点都不对。
-      //  hero 相位下 composerHero/composerStack 是**同一个**外层 div，比卡片高 92px
-      //  且左右各宽 16px —— 方框于是盖在一段空白上；
-      //  打开会话后 composerHero 直接不存在，composerStack 变成整列宽 1310 的条带
-      //  （卡片只有 780 宽）—— 方框横跨半个屏幕，这就是"对话框下移了"看到的现象。
-      // DSH 自己的输入框是 uV2eYG_card（uV2eYG_root 是它的居中容器，打开会话后同样
-      // 铺满整列，只用它仍会盖住卡片两侧的空白），故按 卡片 → 根 → 栈 → 外层 取第一个
-      // 可用的。真机数据：hero 卡片 780x118@y471，active 卡片 780x94@y854。
+      // 输入框：这张表保留历史顺序（uV2eYG_* 是旧构建里的卡片与其居中容器），
+      //  但**现役构建里 `uV2eYG` 一个字节都没有**（全量搜 app.asar：0 命中），
+      //  所以实际命中的一直是 composerStack / composerHero —— 那是**整段条带**：
+      //  比卡片左右各宽一圈留白、高出一整块（hero 实测 903x264，卡片只有 780x118），
+      //  方框因此铺到卡片之外（"超出了应有的区域"）；打开会话后这条带子一路顶到
+      //  中栏左沿（x≈276，正是侧栏右沿），方框于是与左侧栏的十字贴在一起/压进去。
+      //  真正的卡片在现役构建里叫 `RlGAzG_card`（ui-conversation），由 composerRect()
+      //  按"类名 token 以 `_card` 结尾"在 composer 栈里就地量出来（fileCard /
+      //  cardWorkspaceTrigger 这类干扰项因此被排除）；下面这张表只作兜底。
+      //  真机数据：hero 卡片 780x118@y471，active 卡片 780x94@y854。
       composer: ['[class*="uV2eYG_card"]', '[class*="uV2eYG_root"]',
                  '[class*="composerStack"]', '[class*="composerHero"]']
     },
@@ -598,17 +600,63 @@
     return fallback;
   }
 
+  // 在 scope 子树里找"类名 token 以 `_card` 结尾"并且真的量得到的元素。
+  // 两趟与 pickRect 同口径：真可见的优先，都没有才退回"藏着但量得到"的
+  // （DSH 在 hero -> active 的 settling 相位把 composerSeat 停在 visibility:hidden）。
+  function cardIn(scope) {
+    if (!scope || !scope.querySelectorAll) return null;
+    var els = scope.querySelectorAll('[class*="_card"]');
+    var fallback = null;
+    for (var i = 0; i < els.length; i++) {
+      var cls = els[i].className;
+      if (typeof cls !== 'string') continue;   // SVG 的 className 是 SVGAnimatedString
+      var tok = cls.split(/\s+/), hit = false;
+      for (var j = 0; j < tok.length; j++) {
+        if (/_card$/.test(tok[j])) { hit = true; break; }
+      }
+      if (!hit) continue;
+      var r = rectOf(els[i]);
+      if (!r) continue;
+      if (!r.hidden) return r;
+      if (!fallback) fallback = r;
+    }
+    return fallback;
+  }
+
+  // 输入框矩形：先在 composer 栈里找**真卡片**（现役构建 RlGAzG_card，780 宽），
+  // 找不着才退回旧的整段条带锚点（composerStack / composerHero）。
+  // 2026-10-10（用户）：重启后输入框在底部时，方框点阵压在左侧栏的十字上；
+  // 根因就是条带锚点比卡片宽出一圈，左侧整列方框落到侧栏矩形里。
+  function composerRect() {
+    var r = cardIn(document.querySelector('[class*="composerStack"]')) ||
+            cardIn(document.querySelector('[class*="composerHero"]'));
+    if (r) return r;
+    return pickRect('composer');
+  }
+
   // 选择器全部落空时回退到上一帧量到的矩形
   // （DSH 侧栏在指针进入时会摘掉 _quietBars，那一帧不该整块消失）
   function anchorRect(key) {
-    var r = pickRect(key);
+    var r = key === 'composer' ? composerRect() : pickRect(key);
     if (r) lastRect[key] = r; else r = lastRect[key];
     return r;
   }
 
+  // 落点是否落在某个矩形里（用来划定两块标记各自的地盘，见 drawComposerBox）
+  function inRect(x, y, r) {
+    return !!r && x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1;
+  }
+
+  // 落点连同自身半径 hw 是否**碰到**矩形 r —— 比 inRect 严一档：判的是符号的
+  // 实体（含线宽），不是中心点。侧栏那侧必须用这一档：中心点差一格时，方框的边
+  // 仍会探进侧栏、压在十字臂尖上（实测 overlay 场景 3 个格子正是这样漏过去的）。
+  function hitsRect(x, y, hw, r) {
+    return !!r && x + hw > r.x0 && x - hw < r.x1 && y + hw > r.y0 && y - hw < r.y1;
+  }
+
   // 十字铺在侧栏矩形内：落点取全局 12px 网格的**格心**（与迷宫点阵同一套网格）
-  function drawSidebarCrosses(alpha) {
-    var r = anchorRect('sidebar');
+  function drawSidebarCrosses(alpha, rect) {
+    var r = rect || anchorRect('sidebar');
     if (!r) return;
     var gs = CFG.CELL_SIZE;
     var step = gs * CFG.UI_CROSS_STEP;
@@ -629,9 +677,16 @@
   // 输入框被**一片小方框**铺满：与侧栏十字**同一套网格、同一档尺寸与线宽**，
   // 只是把形状从"+"换成小方框（用户口径：与旁边的十字逻辑一样）。
   // 不是一个大框套在外面（描边），也不是一整块实心填充。
-  function drawComposerBox(alpha) {
-    var r = anchorRect('composer');
+  // 2026-10-10（用户）：重启后输入框落在底部时，方框会与左侧栏的十字重叠一部分、
+  // 且铺到输入框之外。两处一起收口：
+  //   ① 矩形改用**真卡片**（见 composerRect，条带锚点只作兜底）；
+  //   ② 落点先和侧栏矩形对一次，连符号实体（含线宽）碰到侧栏的整格**直接丢弃**
+  //      —— 十字留住自己的地盘，方框绝不会压进侧栏（窗口再窄、侧栏展开压住中栏也一样）；
+  //   ③ 只有整格都留在卡片矩形内的点才画，方框不再探出卡片边界。
+  function drawComposerBox(alpha, rect, avoid) {
+    var r = rect || anchorRect('composer');
     if (!r) return;
+    var bar = avoid || anchorRect('sidebar');
     var p = CFG.UI_BOX_PAD;
     var x0 = r.x0 - p, y0 = r.y0 - p, x1 = r.x1 + p, y1 = r.y1 + p;
     if (x1 - x0 < 2 || y1 - y0 < 2) return;
@@ -651,10 +706,14 @@
     ctx.beginPath();
     var n = 0;
     for (var y = gy; y <= y1; y += step) {
+      // 整格（含线宽）必须落在卡片矩形内，否则整行/整列跳过
+      if (y - half - lw < y0 || y + half + lw > y1) continue;
       for (var x = gx; x <= x1; x += step) {
         n++;
         if (CFG.UI_CROSS_DENSITY < 1 &&
             rand(n * 12.9898 + 78.233) > CFG.UI_CROSS_DENSITY) continue;
+        if (x - half - lw < x0 || x + half + lw > x1) continue;  // 不探出卡片
+        if (hitsRect(x, y, half + lw, bar)) continue;           // 侧栏的地盘留给十字
         ctx.rect(x - half, y - half, half * 2, half * 2);
       }
     }
@@ -921,8 +980,11 @@
       var markA = clamp((t - CFG.MARK_AT) / CFG.UI_MARK_IN, 0, 1)
                 * (1 - clamp(fadeT * CFG.UI_MARK_LEAD, 0, 1));
       if (markA > 0.02) {
-        drawSidebarCrosses(markA * CFG.UI_MARK_ALPHA);
-        drawComposerBox(markA * CFG.UI_MARK_ALPHA);
+        // 两块标记各自量一次：方框那边要拿侧栏矩形做减法（见 drawComposerBox）
+        var markSidebar = anchorRect('sidebar');
+        var markComposer = anchorRect('composer');
+        drawSidebarCrosses(markA * CFG.UI_MARK_ALPHA, markSidebar);
+        drawComposerBox(markA * CFG.UI_MARK_ALPHA, markComposer, markSidebar);
       }
     }
 

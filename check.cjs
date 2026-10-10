@@ -109,6 +109,174 @@ else {
   // nothing defined — the overlay then only left via the 16s watchdog)
   if (src.includes('__mbMarathonDone')) fail('stale __mbMarathonDone callback name still present');
   else ok('no stale __mbMarathonDone callback');
+  // ---- task-completion overlay (payload 2/2) --------------------------------
+  // The overlay travels as its OWN JSON payload inside client.js
+  // (keys css/html/engine, after the boot payload's css/html/marathon/intro).
+  // Pull it out and UNESCAPE it, so the guards below read the real source instead
+  // of a JSON-escaped copy — that escaping is why the boot-mark guards further
+  // down still have to write `\\?` in their patterns. Scoping also matters the
+  // other way round: the boot engine legitimately owns UI_CROSS_STEP / UI_BOX_*
+  // for its own 24px mark grids, so "the done engine has no such knobs" can only
+  // be asserted against the done engine's own text.
+  let doneCss = '', doneSrc = '';
+  {
+    const pick = (key, last) => {
+      const re = new RegExp('"' + key + '":"((?:[^"\\\\]|\\\\.)*)"', 'g');
+      const hits = [];
+      let m;
+      while ((m = re.exec(src)) !== null) hits.push(m[1]);
+      if (!hits.length) return '';
+      const raw = last ? hits[hits.length - 1] : hits[0];
+      try { return JSON.parse('"' + raw + '"'); } catch (e) { return ''; }
+    };
+    doneSrc = pick('engine', true);
+    if (doneSrc.indexOf('#dshMarDoneHost') !== -1) {
+      doneCss = pick('css', true);
+      if (doneCss.indexOf('#dshMarDoneHost') === -1) doneCss = pick('css', false);
+    }
+  }
+  if (!doneSrc || !doneCss) fail('completion payload (DONE_PAYLOAD css/engine) is not embedded in client.js');
+  else {
+    if (!src.includes('dshMarDoneHost')) fail('completion host id missing');
+    else ok('completion host #dshMarDoneHost present');
+    if (!src.includes('#md-scene') || !src.includes('#md-dots') ||
+        !src.includes('#md-tiles') || !src.includes('#md-banner-text')) fail('completion payload DOM (md-scene/md-dots/md-tiles/md-banner-text) missing');
+    else ok('completion payload DOM embedded');
+    if (src.includes('/*__DONE_PAYLOAD__*/')) fail('completion placeholder still present in built client.js');
+    else ok('no completion placeholder remains');
+    if (!doneSrc.includes('window.__mbDone') || !doneSrc.includes('window.__mbDoneReady')) fail('completion engine (__mbDone) missing from the payload');
+    else ok('completion engine embedded');
+    // ① the sweep must be the BOOT S REVERSED, with the same coefficients. The
+    //    reversed build is literally the zone loop counting down (zone2 R→L first,
+    //    zone0 R→L last) — assert that shape, not a comment about it.
+    if (!/for \(var zz = CFG\.ZONES - 1; zz >= 0; zz--\)/.test(doneSrc)) fail('the completion sweep does not build its zones in reverse order');
+    else if (!/var dir = \(zz === 1\) \? 1 : -1;/.test(doneSrc)) fail('the reversed S does not flip the middle zone back to L→R');
+    else if (!/RED_RISE:\s*180/.test(doneSrc) || !/RED_HOLD:\s*400/.test(doneSrc) || !/RED_EXIT:\s*280/.test(doneSrc)) fail('the completion sweep does not keep the boot red-sweep coefficients');
+    else ok('reverse S sweep: zones counted down, middle zone flipped, boot coefficients kept');
+    // ② ONE lattice, FOUR symbols, ONE size — sized to match the boot animation's
+    //    marks (user 2026-10-10: "矩阵似乎有些太大了…与启动动画里蓝扫的大小类似").
+    //    Earlier rounds: a 12px cell with 8px glyphs was too dense ("现在的矩阵密集，
+    //    且排列不规范"), then a 12px glyph on 24px was too big. Now: 24px lattice,
+    //    8.16px glyph — the boot's own UI_CROSS_SCALE.
+    //    The gate is the CELL, not the glyph: a cell belongs to the turf holding
+    //    it whole, so the four turfs leave each other a full cell of empty slots
+    //    instead of the grid being pulled inward.
+    if (!doneSrc.includes('function drawMatrix')) fail('the matrix painter (drawMatrix) is missing');
+    // The matrix is deliberately the SAME pixel size as the boot animation's marks
+    // (user 2026-10-10: "矩阵似乎有些太大了…与启动动画里蓝扫的大小类似"): both sit on the
+    // same 24px lattice and both take 0.34 of it (= 8.16px), with the boot's own
+    // line-width formula max(0.9, size × 0.20).
+    else if (!/UI_CELL:\s*24/.test(doneSrc) || !/UI_GLYPH_SCALE:\s*0\.34/.test(doneSrc) ||
+             !/UI_LINE_MIN:\s*0\.9/.test(doneSrc) || !/UI_LINE_SCALE:\s*0\.20/.test(doneSrc))
+      fail('the matrix no longer matches the boot marks (24px cell × 0.34 = 8.16px glyph, line width max(0.9, size×0.20))');
+    else if (!/UI_CROSS_SCALE:\s*0\.34/.test(src) || !/UI_CROSS_STEP:\s*2/.test(src))
+      fail('the boot animation\'s marks no longer use 0.34 on a 2-cell step — the two animations would stop matching');
+    else if (!/var lw = Math\.max\(CFG\.UI_LINE_MIN, size \* CFG\.UI_LINE_SCALE\);/.test(doneSrc))
+      fail('the matrix does not derive its line width from the glyph size (the boot does)');
+    else if (!/UI_DOT_SCALE:\s*0\.\d+/.test(doneSrc)) fail('the blank-turf dot has no size knob (UI_DOT_SCALE)');
+    else if (/UI_CROSS_STEP|UI_CROSS_SCALE|UI_BOX_SCALE|UI_BOX_PAD|UI_DOT_R|UI_GLYPH:/.test(doneSrc)) fail('the old per-turf mark grids are back — the matrix must be one lattice of one size');
+    // EVERY cell carries a glyph: no "won't fit, leave it empty" gate, because that
+    // leaves visible seams between turfs (user 2026-10-10: "矩阵之间有明显的分界线…
+    // 整个画面都是一个矩阵，不要哪里有空缺").
+    else if (/glyphFits|insideRect|hitsRect/.test(doneSrc)) fail('the per-cell fit gate is back — it leaves empty cells along the UI boundaries');
+    else if (!/var turf = turfAt\(x, y, rects\);/.test(doneSrc)) fail('the matrix does not assign every cell by its centre');
+    else if (!/for \(var y = gs \/ 2; y <= H \+ gs \/ 2; y \+= cell\)/.test(doneSrc)) fail('the cell loop does not cover the whole viewport');
+    else if (!/function regionMarkAlpha[\s\S]{0,600}?\(t - r\.holdEnd\) \/ CFG\.MARK_IN/.test(doneSrc)) fail('the matrix does not light up panel by panel behind the red sweep');
+    else ok('completion marks: 24px lattice (网格符号测试.html values), every cell filled, matrix follows the sweep');
+    // the four turfs map to the four symbols the request named, at that one size
+    if (!/TURF_SIDEBAR = 1, TURF_COMPOSER = 2, TURF_TRANSCRIPT = 3/.test(doneSrc)) fail('the four completion turfs are not declared');
+    else if (!/turf === TURF_SIDEBAR \? 0[\s\S]{0,140}?TURF_COMPOSER \? 1[\s\S]{0,140}?TURF_TRANSCRIPT \? 2 : 3/.test(doneSrc)) fail('the four turfs do not map onto the four symbol kinds');
+    else if (!/g\.moveTo\(px - half, py\); g\.lineTo\(px \+ half, py\)/.test(doneSrc)) fail('the sidebar turf is not a cross');
+    else if (!/g\.rect\(px - half, py - half, half \* 2, half \* 2\)/.test(doneSrc)) fail('the box turfs are not rectangles');
+    else if (!/g\.arc\(px, py, dotR, 0, TAU\)/.test(doneSrc)) fail('the blank turf is not a solid dot');
+    else if (!/k === 0 \|\| k === 1[\s\S]{0,140}?strokeStyle = CFG\.colorRed/.test(doneSrc)) fail('the sidebar / input-card turfs are not the red pair');
+    else if (!/k === 2[\s\S]{0,140}?strokeStyle = CFG\.colorPlateInk/.test(doneSrc)) fail('the transcript turf is not the ink pair');
+    else ok('completion marks: 侧栏红十字 / 输入框红方框 / 输出区墨方框 / 空白墨实心圆（同一 12px 尺寸）');
+    // the input-card / transcript anchors must survive a CSS-module rehash
+    if (!/\[class\*="_card"\]/.test(doneSrc) || !doneSrc.includes("'[data-conversation-scroll]'")) fail('completion anchors are not hash-proof (card token / conversation-scroll)');
+    else ok('completion anchors are hash-proof (…_card token + [data-conversation-scroll])');
+    // ③ the fade to black + a real BLACK HOLD, and the three canvas layers must be
+    //    painted 黑底 → 矩阵 → 红块 in that order (so the matrix lights up *behind*
+    //    the red as the sweep passes, instead of being wiped by it).
+    if (!/BLACK_FADE/.test(doneSrc) || !/TILES_AT/.test(doneSrc) || !/BLACK_HOLD/.test(doneSrc)) fail('the black beat (BLACK_FADE → BLACK_HOLD → TILES_AT) is missing');
+    else if (!/CFG\.TILES_AT\s*=\s*CFG\.BLACK_AT \+ CFG\.BLACK_FADE \+ CFG\.BLACK_HOLD/.test(doneSrc)) fail('the flat-black hold is not part of the timeline');
+    else if (!/drawSweepBack\(t\);[\s\S]{0,80}?drawMatrix\(t, rects, 1 - fade\);[\s\S]{0,80}?drawSweepRed\(t\);/.test(doneSrc)) fail('the canvas layers are not 黑底 → 矩阵 → 红块');
+    else if (!/CFG\.BLACK_AT\s*=\s*CFG\.MARK_DONE \+ CFG\.MARK_HOLD/.test(doneSrc)) fail('the marks no longer hold before the fade (MARK_DONE / MARK_HOLD)');
+    else ok('black beat: 黑底→矩阵→红块 layered, MARK_DONE hold, BLACK_FADE + BLACK_HOLD');
+    // ④ HARD-CUT tiles revealing the live UI (user 2026-10-10: "不要玻璃质感的方块了,
+    //    直接改为逐块显示内容即可,与黑白切换的那套逻辑类似"). So: the same 80px size and
+    //    the same mosaic order as the colour-pair pour, driven from JS (one `md-off`
+    //    per tile), and NO frosted pane left behind.
+    if (!/mosaicOrder/.test(doneSrc)) fail('the reveal tiles do not reuse the colour-pair mosaic order');
+    else if (!/REVEAL_TILE:\s*80/.test(doneSrc)) fail('the reveal knob is missing (REVEAL_TILE)');
+    else if (!/TILE_SIZE:\s*5/.test(doneSrc)) fail('the field tile size (TILE_SIZE: 5) was clobbered — the reveal knob must not reuse that name');
+    else if (/glass|backdrop-filter/i.test(doneSrc) || /glass|backdrop-filter/i.test(doneCss)) fail('glass panes are back — the reveal must be plain hard-cut tiles');
+    else if (!/function openTiles[\s\S]{0,600}?className = 'md-off'/.test(doneSrc)) fail('the reveal tiles are not flipped one by one from JS');
+    else if (!/function dropTiles/.test(doneSrc)) fail('the reveal tiles are never taken down again');
+    else if (!doneCss.includes('#md-tiles i.md-off')) fail('the .md-off tile state has no CSS');
+    else if (!doneCss.includes('#C0FD04')) fail('the completion banner lost its green');
+    else ok('tile reveal: 80px hard-cut tiles, mosaic order, JS-driven (md-off), no glass');
+    // ⑤ BOTH palettes. The dot field rides on top of the LIVE UI, so its ink has to
+    //    follow the colour pair — a white dot on the white palette is no dot at all.
+    if (!/--md-ink:\s*#FFFFFF/.test(doneCss) || !/body\.mar-bg-light #dshMarDoneHost\s*\{\s*--md-ink:\s*#0B0D0B;?\s*\}/.test(doneCss)) fail('the completion overlay does not flip its ink with the light palette');
+    else if (!/function liveInk[\s\S]{0,600}?--md-ink/.test(doneSrc)) fail('the dot field does not read --md-ink');
+    else ok('completion ink follows the colour pair (--md-ink flips on body.mar-bg-light)');
+    // The overlay must NEVER swallow the dismissing press: it stays
+    // pointer-events:none and listens on document in the CAPTURE phase (so a
+    // stopPropagation in a menu cannot strand it) — the endfield 雷霆大字 lesson.
+    if (!/pointer-events:\s*none/.test(doneCss) || !doneSrc.includes("addEventListener('pointerdown', onDismiss, true)")) fail('the completion overlay can swallow the dismissing press (pointer-events / capture listener)');
+    else ok('completion overlay stays click-through (pointer-events:none + capture-phase dismissal)');
+  }
+  // trigger: displayed-session RUNNING EDGE **plus a monotone turn counter**,
+  // stopped/interrupted/errored ends out, and the subscription must be able to
+  // ARRIVE LATE — the client session service is registered by another plugin, so
+  // reading ctx.get('sessions') once inside apply() silently wires nothing (user
+  // 2026-10-10: 预览能播、真触发不播). ctx.inject(['sessions'], …) is the idiom
+  // the host half already uses for webServer; the poke loop is the belt.
+  // The counter matters: a SHORT turn can go true→false between two snapshot
+  // pushes (batched publishes), so an edge-only trigger never sees it — the user
+  // suspected exactly that ("是不是因为任务时间太短了"). ConversationSnapshot
+  // .turnEnds is monotone, so a missed intermediate state cannot hide the end.
+  // The live client `sessions` face has NO `list` (binding/scope/retain/… only —
+  // verified through Cordis Inspect against the running client). If installDone
+  // demands list.subscribe again, the whole trigger chain silently never attaches;
+  // that WAS the user's bug ("预览能播、真任务不播"), so it gets its own block and an
+  // exact shape to match, not a loose "mentions binding somewhere" test.
+  {
+    const at = src.indexOf('function installDone(sessions)');
+    const block = at < 0 ? '' : src.slice(at, at + 800);
+    if (!block) fail('the completion trigger has no installDone()');
+    else if (!/if \(!sessions\) return false;/.test(block)) fail('installDone no longer accepts a face-only sessions service');
+    else if (/!sessions\.list/.test(block.split('if (sessions.list')[0] || '')) fail('installDone insists on sessions.list again — the live client face has no list, so the trigger would never attach');
+    else if (!/typeof sessions\.binding !== 'function'/.test(block)) fail('installDone does not fall back to the sessions face (binding)');
+    else ok('completion trigger: installDone accepts the live face-only sessions service');
+  }
+  if (!src.includes('mar.done.v1') || !src.includes('function doneOnList') ||
+      !src.includes('function doneTurnBad') || !src.includes('function doneSchedule') ||
+      !src.includes('function doneWrapCancel')) fail('the completion trigger (doneOnList/doneTurnBad/doneSchedule/doneWrapCancel) is missing');
+  else if (!src.includes("ctx.inject(['sessions']") || !src.includes('function pokeDone') ||
+      !src.includes('function installDone')) fail('the completion trigger cannot attach late (ctx.inject / pokeDone / installDone)');
+  else if (!src.includes('function doneWatchFace') || !src.includes('function doneOnFace') ||
+      !src.includes('function doneFaceOf')) fail('the completion trigger does not watch the displayed session face');
+  // The live client `sessions` face has NO `list` (binding/scope/retain/… only —
+  // verified through Cordis Inspect). If installDone demands list.subscribe again,
+  // the whole trigger chain silently never attaches: that WAS the user's bug.
+  else if (!src.includes('function doneDomInterrupted') || !/why === 'turnTail'/.test(src)) fail('the id-free DOM trigger path (turnTail / doneDomInterrupted) is missing');
+  // A DOM trigger that fires on "the tail count grew" treats a transcript MOUNT
+  // (and every session switch) as a finished turn: the animation played by itself
+  // right after the boot animation, and revisiting a session replayed it
+  // (user 2026-10-10). It has to be "the SAME transcript gained a tail", and a tail
+  // only counts once a turn has actually been seen running.
+  else if (!src.includes('function doneSameTranscript') ||
+      !/domLastTail\.isConnected === true/.test(src)) fail('the DOM trigger lost the "same transcript gained a tail" rule (a mount / session switch would replay the animation)');
+  else if (!/on === true && domStatusSeen === false\) domTurnOpen = true;/.test(src)) fail('the DOM tail trigger lost its "a turn was running" gate (mounting history would play)');
+  else if (!src.includes('function doneTurnMark') || !src.includes('snap.turnEnds') ||
+      !src.includes('doneTurnSeen')) fail('the completion trigger has no monotone turn-end counter (short turns would be missed)');
+  else if (!src.includes('doneStopped[sessionId]') ||
+      !src.includes("if (n.kind === 'turn-error') return true;") ||
+      !src.includes('return n.interrupted === true;')) fail('the completion trigger does not suppress stopped / interrupted / errored turn ends');
+  else if (!src.includes('marDoneReduced')) fail('the completion overlay does not respect prefers-reduced-motion');
+  else ok('completion trigger: late-attaching list + session-face subscription, monotone turn counter, stop/interrupt/error suppression');
   // UI reveal (2026-09-20, revised on request): the plate — blue field + black
   // slabs + red sweep — now stays opaque end to end, and the ONE reveal beat is
   // the final cross-fade: render() erases the whole plate uniformly
@@ -544,6 +712,26 @@ else {
              !eng.includes('if (!r.hidden) return r;')) {
     fail('pickRect lost its two-pass visible-first pick');
   } else ok('boot marks hug the real input card, with a sidebar anchor that survives opening a session');
+
+  // ---- boot marks: the box grid must hug the CARD, never the rail ------------
+  //    (2026-10-10; user: "重启后输入框在底部时，红色方框会与红色十字重叠一部分，
+  //    超出了应有的区域"). Two independent causes, both pinned here:
+  //      * `uV2eYG` does not exist anywhere in the current app.asar (full-archive
+  //        scan: 0 hits), so the box grid had always been falling through to
+  //        composerStack / composerHero — a 903x264 band around a 780x118 card
+  //        (measured off boot3-frame-029: crosses x[0..276] full height, boxes
+  //        out to x=1381 and 264 tall). The card is now found by class token
+  //        (RlGAzG_card today, i.e. any token ending in `_card`) inside that stack;
+  //      * a window below the 1024 breakpoint with the sidebar expanded over the
+  //        centre column puts the band underneath the rail, so every box cell that
+  //        lands in the sidebar rect is dropped — the crosses keep their own ground.
+  if (!eng.includes('function cardIn(scope)') || !eng.includes('function composerRect()')) {
+    fail('the composer mark no longer resolves the real input card (cardIn/composerRect) — the 903x264 band anchor is back');
+  } else if (!eng.includes('if (hitsRect(x, y, half + lw, bar)) continue;') || !eng.includes('function hitsRect(x, y, hw, r)')) {
+    fail('the composer mark no longer subtracts the sidebar rect by glyph extent — a box on the boundary still laps over the crosses');
+  } else if (!/function drawComposerBox\(alpha, rect, avoid\)/.test(eng)) {
+    fail('drawComposerBox lost its rect/avoid arguments — the two marks would be measured twice per frame and could disagree');
+  } else ok('boot marks: boxes hug the real input card and never enter the rail');
 
   // ---- boot S-path: cross-zone overlap so the red sweep hides the 1px seam ----
   //    (2026-10-02; user: "后续的S型蓝色和红色动画之间应该是无缝的，在上中下结构里是无缝的")
