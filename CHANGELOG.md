@@ -5,6 +5,55 @@
 次版本号 = 向后兼容的新功能；
 修订号 = 向后兼容的 bug 修复。
 
+## [0.4.2] - 2026-10-11
+
+**修「任务完成动画」一次都播不出来，以及计费便签认错会话。** 同一个根因：客户端读了
+一个**宿主根本没有的字段** —— 会话列表快照的 `current`。源码里它被**三处各自独立**
+读取，全部恒为 null。
+
+### 修复
+- **`snap.current` 不存在。** 宿主 0.2.0-rc.2 的列表快照
+  （`@deepseek-ai/dsh-api-session-controller` 的 `createSnapshotStore`）只有
+  `ids` / `byId` / `phase` / `projectionsBySession` 四项。三处读取分别是：
+  - `doneCurrentId()`：原先 `(snap && snap.current) ? ... : null` 恒为 null，于是
+    会话面 `doneWatchFace(current)` 从不执行（**会话面永不订阅**）、
+    `doneWrapCancel()` 从不包装。
+  - `doneOnList()` 里**另有一份独立副本** `var current = snap.current ? ... : null`，
+    它不调用 `doneCurrentId()` —— 列表的下降沿被
+    `if (!current || id !== current) continue` 全数吞掉，`doneEndedRound()` 一次都
+    调不到。**这是动画播不出来的直接原因。**
+  - `billingDisplayedSessionId()`（每轮 token 结算便签认「当前显示的会话」）：
+    `billingTick()` 因此退到「最近有账的那个会话」，会把别的会话的数字贴到当前会话
+    的尾巴上；`billingFetch()` 也不再带 `?session=`，宿主不会为当前这段对话回填
+    历史账，重启后旧轮次贴不上便签。
+
+  2026-10-11 在真实安装上取 `__marDoneDebug()` 实测：`face: null`、
+  `faceSubscribed: false`、`facePublishes: 0`、`lastEnds: []`，而
+  `stopped: {<本会话>: false}` 恰好证明列表**看到了**开跑——结束那一步全被吞掉。
+
+  三处统一改为宿主自己的算法：`byId` 里 `retainedBy.mainView > 0` 的那一个
+  （DSH 客户端自身有 8 处这么写）。保留 `snap.current` 以兼容真给了该字段的老宿主。
+- **顺带去掉 `billingDisplayedSessionId()` 里那次性的 `ctx.get('sessions')` 抓取。**
+  服务的注册顺序不保证，抓到 null 就永久失效 —— 完成动画那半边 2026-10-10 已经踩过
+  同一个坑。现在每次现取。
+- **`doneStateText()` 报假绿灯。** 原先只要有列表订阅就显示"会话面已盯住"，并不检查
+  `doneFaceId`；正是这句话把排查往"触发链没问题"的方向带偏了一整轮。现在如实区分
+  "会话面未订上 —— 当前会话认不出来"。
+- **纯 DOM 兜底判据在虚拟滚动下恒失灵。** 老判据只看上一个尾巴节点的 `isConnected`，
+  而 `dsh-client-ui-chat` 的 virtualizer 会回收/重建尾巴节点，`isConnected` 就无规律
+  地翻假——实测 `domRenders` 涨 23 次而 `domHits` 恒为 0。改为「容器没变 + 基线当时
+  的会话身份没变」，切会话仍能被识别为换转录；容器认不出来时才退回那条老判据。
+- **`src/client.template.js` 里一处换行被吃掉的损坏。** `__marDoneDebug()` 的
+  `listPublishes:` 整行被并进了上一行注释里，于是诊断输出里一直没有这个字段
+  （对照实测输出：其它字段按字母序齐全，唯独缺它）。已修复。
+
+### 诊断
+- `__marDoneDebug()` 新增 `domSession`（转录基线建立时的"当前会话" id）。
+
+### 教训
+- 同一个事实在源码里被读了三遍（`doneCurrentId()` / `doneOnList()` / 计费半边），
+  修一处不够。发版前应当直接 `grep` 那个字段名，而不是只顺着调用链看。
+
 ## [0.4.1] - 2026-10-11
 
 **安装文档按实测重写。只改文档与版本号，运行时行为一个字节没动。**

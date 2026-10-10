@@ -2018,6 +2018,7 @@ var doneFaceUnsub = null; // 正在显示的那个会话面（ConversationSnapsh
       var domTailSeen = null, domStatusSeen = null, domHits = 0, domRenders = 0;
       var domLastScope = null, domLastTail = null;  // 同一个转录的身份（挂载/切会话会换）
       var domScopeNow = null;
+      var domScopeSession = void 0;  // 转录基线建立时的"当前会话" id（切会话就换转录）
       // 回合尾巴判据的门：先看见"回合进行中"（`_turnStatus` 出现）才算数。
       // 转录挂载历史时从没见过 running，于是绝不会把"铺历史"当成"刚结束一轮" ——
       // 用户 2026-10-10：启动动画之后自己播了一次、切回旧会话又重复播。
@@ -2284,7 +2285,12 @@ function doneTurnBad(sessionId) {
 function doneStateText() {
         var head;
         if (!doneEnabled()) head = '已关闭';
-        else if (doneUnsub) head = '触发已就绪（会话快照订阅 + 会话面已盯住）';
+        // 列表订阅挂上 ≠ 会话面也盯上了：两者失效的后果完全不同，不能报假绿灯。
+        // 2026-10-11：这句原先只看 doneUnsub，于是 doneFaceId 为 null 时照样显示
+        // "会话面已盯住"，把排查往"触发链没问题"的方向带偏了一整轮。
+        else if (doneUnsub) head = doneFaceId
+          ? '触发已就绪（会话快照订阅 + 会话面已盯住）'
+          : '触发已就绪（会话快照订阅）；会话面未订上 —— 当前会话认不出来';
         else if (doneDomTimer) head = '触发已就绪（回合收尾 DOM 判据：data-turn-tail / turnStatus）';
         else head = '触发未就绪：等待 sessions 服务…';
         return doneLast && doneLast.why ? head + ' · 最近：' + doneLast.why : head;
@@ -2296,10 +2302,31 @@ function doneStateText() {
         } catch (e) {}
       }
 
+      // "客户端正在显示的那个会话"是哪个？
+      //
+      // **不能读 `snap.current` —— 这个字段不存在。** 宿主 0.2.0-rc.2 的列表快照
+      // （`@deepseek-ai/dsh-api-session-controller` 的 `createSnapshotStore`）只有
+      // `ids` / `byId` / `phase` / `projectionsBySession` 四项。原先那句
+      // `(snap && snap.current) ? ... : null` 于是在这版宿主上**恒为 null**，而调用
+      // 方有三处依赖它 —— 会话面 `doneWatchFace(current)` 从不执行、列表的下降沿被
+      // `if (!current || id !== current) continue` 全数吞掉、`doneWrapCancel()` 也
+      // 从不包装。结果：动画一次都播不出来，而设置页那行小字还写着"会话面已盯住"。
+      //
+      // 正确的求法与宿主自己一致：当前会话是 `byId` 里 `retainedBy.mainView > 0`
+      // 的那一个 —— DSH 客户端自己就有 8 处这么写（`dsh-client-ui-layout` 拿它做
+      // 窗口标题、`dsh-client-ui-workspace` 拿它当 mainSessionId，等等）。保留
+      // `snap.current` 只是为兼容真给了这个字段的老宿主。
       function doneCurrentId() {
         try {
           var snap = doneSessions && doneSessions.list && doneSessions.list.getSnapshot();
-          return (snap && snap.current) ? String(snap.current) : null;
+          if (!snap) return null;
+          if (snap.current) return String(snap.current);
+          var rows = snap.byId || {};
+          for (var key in rows) {
+            var row = rows[key];
+            if (row && row.retainedBy && row.retainedBy.mainView > 0) return String(key);
+          }
+          return null;
         } catch (e) { return null; }
       }
       // "还在跑吗"：以**会话— *上的 running 为准（应用自己的回合状态标签读的就
@@ -2351,7 +2378,10 @@ function doneSchedule(why) {
         listPublishes++;
         var byId = snap.byId || {};
         var ids = snap.ids || [];
-        var current = snap.current ? String(snap.current) : null;
+        // **别在这儿再读一次 `snap.current`：宿主没有这个字段**（详见 doneCurrentId()）。
+        // 这里原先有一份独立副本，于是即便 doneCurrentId() 修好了，列表这条判据照样
+        // 因为 current 恒为 null 而把下降沿全部跳过 —— 动画还是播不出来。
+        var current = doneCurrentId();
         // 正在显示的会话：— 备好"用户按了停止"的监听（幂等，按实例记）
         //                 — 把会话面订阅指到它（"刚结束一— 的主判据
 if (current) {
@@ -2417,17 +2447,28 @@ function doneCountTails() {
           return l.length ? l[l.length - 1] : null;
         } catch (e) { return null; }
       }
-      // 只认"**同一个转录里**新追加了一个回合尾巴"：
-      // ① 上次看到的尾巴还在文档里 → 没人把转录换掉，这就是一次追加；
-      // ② 还没有尾巴（这个会话还没结束过一轮）→ 只要容器还是同一个且还在文档里，
-      //    就算同一个转录（于是首次出现尾巴 = 真的结束了一轮）。
-      // 挂载 / 切会话 / 重绘都不满足这两条 —— 它们只更新基线。
+      // 只认"**同一个转录里**新追加了一个回合尾巴"。判据（2026-10-11 升级）：
+      //   ① **容器**：转录容器还是同一个、还挂在文档里；
+      //   ② **会话身份**：基线建立时的"当前会话" id 没变 —— 切会话一定换转录，
+      //      用会话身份判最稳；
+      //   ③ 容器认不出来时，退回"上次看到的尾巴还在文档里"这个更弱的判据。
+      //
+      // 为什么不继续用"只看尾巴节点 isConnected"那条老判据：对话区是**虚拟滚动**
+      // （`dsh-client-ui-chat` 的 virtualizer），尾巴节点会被回收/重建，于是
+      // `isConnected` 会无规律地翻假，整条兜底判据随之失灵。2026-10-11 实测：
+      // `domRenders` 涨了 23 次而 `domHits` 恒为 0 —— 一次都没命中过。
       function doneSameTranscript() {
+        var id = doneCurrentId();
+        try {
+          if (domLastScope && domLastScope === domScopeNow && domLastScope.isConnected === true) {
+            if (domScopeSession === void 0) return true;   // 还没记过身份：先认
+            return domScopeSession === id;
+          }
+        } catch (e) { /* 落到下面那条弱判据 */ }
         if (domLastTail) {
           try { return domLastTail.isConnected === true; } catch (e) { return false; }
         }
-        if (!domLastScope) return false;
-        try { return domLastScope.isConnected === true && domLastScope === domScopeNow; } catch (e) { return false; }
+        return false;
       }
       function doneDomRebase() {
         domTailSeen = doneCountTails();
@@ -2435,6 +2476,7 @@ function doneCountTails() {
         domScopeNow = doneDomScope();
         domLastScope = domScopeNow;
         domLastTail = doneLastTail();
+        domScopeSession = doneCurrentId();
       }
       function doneDomPoll() {
         var tails = doneCountTails();
@@ -2511,10 +2553,12 @@ try {
               faceRun: doneFaceRun,
               last: doneLast,
               mounted: !!doneCleanup,
-              // 四条判据的实况：哪条有信号一眼看—               listPublishes: listPublishes,
+              // 四条判据的实况：哪条有信号一眼看—
+              listPublishes: listPublishes,
               facePublishes: facePublishes,
               faceEdges: faceEdges,
               domTails: domTailSeen,
+              domSession: domScopeSession,
               domStatus: domStatusSeen,
               domHits: domHits,
               domRenders: domRenders,
@@ -3434,20 +3478,32 @@ function billingLoad() {
       var BILLING_STATE = billingLoad();
       function billingEnabled() { return BILLING_STATE.on !== false; }
 
-      // 精确拿到「客户端当前显示的那个会话」：DSH 的 sessions 服务里 `list.current`
-      // 就是持久化的选中项（每个 session 作用域的面板都键在它上面）。有了它
-// 「看着 A 会话、后台在— B 会话」时不会— B 的数字贴— A 的尾巴上
-var billingSessions = null;
-      try {
-        billingSessions = (ctx && typeof ctx.get === 'function') ? ctx.get('sessions') : null;
-      } catch (e) { billingSessions = null; }
-
+      // 「客户端当前显示的那个会话」是哪个？
+      //
+      // **不能读 `snap.current` —— 这个字段不存在**（完整说明见 doneCurrentId()）。
+      // 宿主 0.2.0-rc.2 的列表快照只有 ids / byId / phase / projectionsBySession 四项，
+      // 所以原先 `(snap && snap.current) ? ... : null` **在这版宿主上恒为 null**，
+      // 于是这个函数的两个调用方每次都走「退到最近有账的那个会话」那条 fallback：
+      //   · billingTick()：看着 A 会话、后台在跑 B 会话时，会把 B 的数字贴到 A 的尾巴上；
+      //   · billingFetch()：不再带 `?session=`，宿主就不会为当前这段对话回填历史账，
+      //     重启后旧轮次贴不上便签。
+      // 现在与宿主自己的算法一致：byId 里 `retainedBy.mainView > 0` 的那一个。
+      //
+      // 顺带去掉原来那次性的 `ctx.get('sessions')` 抓取：服务的注册顺序不保证，
+      // 抓到 null 就永久失效（完成动画那半边 2026-10-10 已经踩过同一个坑）。这里每次现取。
       function billingDisplayedSessionId() {
         try {
-          if (!billingSessions || !billingSessions.list) return null;
-          var snap = typeof billingSessions.list.getSnapshot === 'function'
-            ? billingSessions.list.getSnapshot() : null;
-          return (snap && snap.current) ? String(snap.current) : null;
+          var sessions = (ctx && typeof ctx.get === 'function') ? ctx.get('sessions') : null;
+          if (!sessions || !sessions.list || typeof sessions.list.getSnapshot !== 'function') return null;
+          var snap = sessions.list.getSnapshot();
+          if (!snap) return null;
+          if (snap.current) return String(snap.current);
+          var rows = snap.byId || {};
+          for (var key in rows) {
+            var row = rows[key];
+            if (row && row.retainedBy && row.retainedBy.mainView > 0) return String(key);
+          }
+          return null;
         } catch (e) { return null; }
       }
 
