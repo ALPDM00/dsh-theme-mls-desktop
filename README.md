@@ -1,6 +1,6 @@
 # dsh-theme-mls-desktop
 
-> **Marathon 风格的 FUI / 编辑排印故障主题** —— [`deepseekHarness`](https://github.com/deepseek-ai) **桌面端（Electron）** 专版。
+> **Marathon 风格的 FUI / 编辑排印故障主题** —— **deepseekHarness 桌面端（Electron）** 专版。
 >
 > 真的透明冷启动、反向 S 扫描的收尾动画、内置每轮 token 结算。
 > **全部图形由插件在运行时程序化生成**，不含任何 Bungie / Marathon 的版权素材。

@@ -1,0 +1,10 @@
+# 统一按 LF 存储，避免在 Windows 上出现"整文件都改了"的假 diff。
+* text=auto eol=lf
+
+# 二进制素材不要做行尾转换。
+*.png binary
+*.otf binary
+*.zip binary
+
+# 构建产物也是文本，但由脚本生成，冲突时以重新构建为准。
+client.js -diff
