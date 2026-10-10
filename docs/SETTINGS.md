@@ -35,7 +35,7 @@
 
 组内行距 10px、组间 24px；小字与输入框左对齐（124px = 标签列 + 间隙）。
 改结构就改 `src/client.template.js` 的 `buildPane()` 与 `.mar-set-*` / `.mar-set-head` 那组 CSS；
-`selftest` 里有三条断言盯着"分组标题的顺序"与"开关紧贴它的参数行"，别把顺序改乱。
+开发期的自检里有三条断言盯着"分组标题的顺序"与"开关紧贴它的参数行"，改顺序时别把它们改乱。
 
 | 想改什么 | 改哪里 |
 | --- | --- |
@@ -49,7 +49,7 @@
 | 完成动画的线宽 / 线帽 | `CFG.UI_LINE_MIN` / `UI_LINE_SCALE`（线宽 = `max(UI_LINE_MIN, 符号边长 × UI_LINE_SCALE)`，与启动动画标记同一条公式）与 `UI_LINE_CAP` / `UI_LINE_JOIN` |
 | 完成动画的黑屏时长 | `src/boot/engine-done.js` 的 `CFG.BLACK_FADE`（矩阵淡出）与 `CFG.BLACK_HOLD`（纯黑静置） |
 | 完成动画的开关与文案 | 设置页「任务完成动画」那两行；存储键 `mar.done.v1` |
-| 完成动画的触发判据 | `src/client.template.js` 的 `/* ---- task-completion animation ---- */` 段（`doneOnFace` 看 `turnEnds` 计数器、`doneOnList` 看 running 边沿、`doneTurnBad` 判停止/中断/报错、`doneSchedule` 收尾复查） |
+| 完成动画的触发判据 | `src/client.template.js` 的 `/* ---- task-completion animation ---- */` 段（DOM 判据 `doneDomPoll` / `doneSameTranscript` / `doneDomInterrupted`，会话面与列表判据 `doneOnFace` / `doneOnList`，收尾复查 `doneSchedule`） |
 | 主题配色/组件 | `src/client.template.js`（改完必须 `npm run build`） |
 | 结算块的宽度/行高/色 | `src/client.template.js` 的 `/* ---- per-turn token settlement ---- */` 段（见 [docs/BILLING.md](BILLING.md)） |
-| 价目表 / 峰谷规则 / 法定节假日 | `billing/pricing.mjs`（改完 `npm run test:billing`） |
+| 价目表 / 峰谷规则 / 法定节假日 | `billing/pricing.mjs` |

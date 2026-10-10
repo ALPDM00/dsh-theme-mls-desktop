@@ -306,7 +306,7 @@ DSH 把侧栏每条会话行命名为 `…_title`、每个面板顶命名为 `�
   所以原稿 `任务完成动画.html` 的 `#04060a` 底色、暗角（vignette）与扫描线
   （scanlines）**都不搬** —— 不透明的底会把界面盖住，暗角/扫描线会把界面压暗。
 - **不要玻璃质感**（用户 2026-10-10 明确否决）：④ 的方块是纯黑硬切，与「配色切换」
-  那一套"逐块变色"同逻辑。`check.cjs` 里有守卫：payload 里再出现 `backdrop-filter`
+  那一套"逐块变色"同逻辑。有静态守卫：payload 里再出现 `backdrop-filter`
   就是回归。方块由 **JS 按时间线**驱动（不是 CSS 动画），所以复核脚本的 `seek()` 也精确。
 - **矩阵的"统一"+"填满"+"同尺寸"是硬约束**：四个地盘共用同一个 **24px 晶格**、同一个符号尺寸
   （格距 × 0.34 = 8.16px，与启动动画标记一致），而且**每一格都有符号** —— 按**格心**归属，
@@ -331,7 +331,7 @@ DSH 把侧栏每条会话行命名为 `…_title`、每个面板顶命名为 `�
 
 触发、关闭、设置项与复核方式见 [docs/COMPLETION.md](COMPLETION.md)；
 设置页结构见 [docs/SETTINGS.md](SETTINGS.md)。
-像素级判据见 `.generated/verify-done.cjs`（无头 Chromium，按真机几何搭假 DSH DOM）。
+像素级判据见 （开发期探针）（无头 Chromium，按真机几何搭假 DSH DOM）。
 
 
 ---
@@ -532,7 +532,7 @@ body.theme-marathon [data-sidebar-collapsed] [data-dsh-part="sidebar-entry"] > s
   方块是瞬时的，所以**整段 0.341s 走完**，之后整层自移除（0.541s）
 - **面板内容不淡入**：两列（`nav` / `content`）不带任何动画，方块清掉时文字已经在那里。
   曾经给它们挂过一条 0.45s 的 `opacity .15 → 1`，观感变成"整个对话框在淡入"，
-  而不是"方块擦出来"，已删除且加了断言防回归（`check.cjs` / 单测各一条）
+  而不是"方块擦出来"，已删除且加了断言防回归（静态守卫 + 单测各一条）
 - `prefers-reduced-motion: reduce` 时整层不挂（CSS 与 JS 双重保护）
 
 **0.5 秒的预算怎么来的**（改任何一个常量都要重算这两行）：
@@ -626,7 +626,7 @@ body.theme-marathon [data-sidebar-collapsed] [data-dsh-part="sidebar-entry"] > s
 矩形本身耗时 = 0（到点即没）
 ```
 
-两处衔接是要点，`check.cjs` 都硬校验：
+两处衔接是要点，都有静态守卫硬校验：
 **绿框必须在第一块离开前就位**（`FRAME_AT + .16 ≤ BLOCK_AT`），
 **绿框必须在第 4 块离开的同一帧开始退**（`LAST_AT == BLOCK_AT + 3×STEP`）。
 
@@ -649,7 +649,7 @@ body.theme-marathon [data-sidebar-collapsed] [data-dsh-part="sidebar-entry"] > s
 `BOARD_BLOCK_TURN` 就是「1-2-4-3」本身：它不是"第几拍"，而是
 **"第 b 拍轮到哪个格子"**，格子按行优先编号 `0=左上 1=右上 2=左下 3=右下`。
 `[0,1,3,2]` 读出来就是左上、右上、**右下**、左下。
-想换顺序只改这四个数字，其余不用动（`check.cjs` 会核对上面那两条衔接式与 `SPAN ≤ 2`）。
+想换顺序只改这四个数字，其余不用动（静态守卫会核对上面那两条衔接式与 `SPAN ≤ 2`）。
 
 > **四个走过的弯路，别再回去**：
 > ① 最初把准星和绿框**只做了一份、盖在整块看板上** —— 需求是每列一份；
@@ -658,7 +658,7 @@ body.theme-marathon [data-sidebar-collapsed] [data-dsh-part="sidebar-entry"] > s
 > ③ 再之后把矩形填成**列自己的颜色** —— 等于隐形，需求是看得见的四个矩形；
 > ④ 曾经用 `--mar-out-at` 让**整层淡出**收尾 —— 参考文件是"绿框跟着第 4 块一起退"，
 >    没有整层淡出这一拍。
-> 四条都写成了回归断言（`check.cjs` 的 "no per-card / per-strip / per-board leftovers"、
+> 四条都写成了回归断言（静态守卫的 "no per-card / per-strip / per-board leftovers"、
 > "the four rectangles contrast with the tab"；单测的 "one intro block per 选项卡 (all five)"、
 > "each tab is 4 rectangles + 1 frame, and nothing per-card"）。
 
@@ -670,7 +670,7 @@ body.theme-marathon [data-sidebar-collapsed] [data-dsh-part="sidebar-entry"] > s
 > 调试提示：动画全程只有 1.9s，**按墙钟时间截图必然对不上** ——
 > 抓图本身要几十到两百毫秒，抓到的往往是"下一拍"。可靠办法只有一个：
 > 把整层的动画 `pause()` 之后设 `currentTime = 毫秒数`，画面就是那一拍的静止画面，
-> 采样和截图都变成确定性的（见 `.generated/verify-col2.cjs`）。
+> 采样和截图都变成确定性的（见 （开发期探针））。
 > `currentTime` 把 delay 也算在内，所以 `currentTime = 1500` 就是"动画开始后第 1.50 秒"。
 
 > **探针失败会留下上一次的 JSON。** 真机服务没起来时，探针 3 秒后放弃、进程 FATAL 退出，
@@ -811,7 +811,7 @@ body.theme-marathon [data-sidebar-collapsed] [data-dsh-part="sidebar-entry"] > s
 - 另加两条不含截图噪声的断言：clip 里"已翻格数"**单调不回退**（clip 是直接读的，与合成无关）；
   收尾前最后一帧必须几乎翻满（≥24/25）。
 
-脚本 `.generated/probe-vtm5.cjs`（采集）+ `.generated/probe/_vtm5diff.py`（判定），实测：
+用开发期探针逐帧采集 + 离线判定，实测：
 
 | t(ms) | 已翻 | 旧格 | 新格 | 旧格离旧参照的最大距离 |
 | ----- | ---- | ---- | ---- | ---------------------- |
@@ -851,7 +851,7 @@ body.theme-marathon [data-sidebar-collapsed] [data-dsh-part="sidebar-entry"] > s
 > 是 headless 取证的假象，不是实机表现。
 > 另外 8ms 采样器本身会把这段撑到 ~510ms，所以量耗时时必须开安静档。
 
-回归断言：`check.cjs` 正向断言（旧快照钉住、`mar-vt-mosaic` 限定在 `mar-vt-on`、
+回归断言：静态守卫的正向断言（旧快照钉住、`mar-vt-mosaic` 限定在 `mar-vt-on`、
 `vtClipFor` 的零面积塌缩与 `M/H/V/H/Z` 五命令、`Math.round(...) ± 1` 的 1px 外扩、
 `vtBuildFrames` 内 `mosaicOrder(total)`、`steps(1,end)`、`MOSAIC_HEAD + i`、
 `vtDuration` = `(25 - 3) × 0.0155`、每点击注入 + 收尾移除、**禁止 `setTimeout(vtPourFinish`**、
@@ -900,63 +900,17 @@ dsh plugin --profile web remove dsh-theme-marathon
 
 ```bash
 node scripts/build.cjs         # 生成 client.js（把 Maratype + boot payload 内联）
-node check.cjs                 # 静态：清单 / 契约 / 无设置抽屉 / 无铭牌层 / 调色板 /
-                               #       左栏点灯规则 / 通配直角 / 马赛克 / 收起态侧栏行 /
-                               #       看板入场（2×2 象限 / 绿框两条衔接式 / 2s 预算 /
-                               #       不得回到每卡矩形、每列横条、整层淡出）
-node test/plugin.test.cjs      # jsdom：加载契约 + 旧键失效 + dispose +
-                               #        马赛克挂载/清理/重播/顺序确定性/0.5s 预算 +
-                               #        看板入场（5 列各一套 4 块+1 框、准星随块、
-                               #        1-2-4-3、绿框与第 4 块同帧、五列同拍、重播）（84 项）
 ```
 
-要看**真实界面**（不要只看代码推断）：
+改动之后，本机的开发期校验脚本会来一遍（**不随本仓库发布**，见 README「仓库内容」）：
+静态清单/契约/反模式断言、jsdom 的行为回归，以及**真实浏览器**里的
+"覆盖完整性 / 真实 DOM 解析值 / 启动动画挂载与自移除 / 冻结时间轴逐拍采样 + 定帧截图"。
+设计语言里的每一条硬规则（直角通配的豁免、马赛克预算、看板入场顺序、视口转场的两条衔接式…）
+都有对应的断言，而且断言都做过**变异反证**：把源码改坏，确认它真的会红。
 
-```bash
-# 1) 覆盖完整性：DSH dark 主题里还没被覆盖的 alias/specific token
-node .generated/list-uncovered.cjs
-
-# 2) 真实 DOM：调色板解析值 / 浅色漏网 / 标题阴影 / HUD 与抽屉是否真的没了
-node .generated/verify-final.cjs http://127.0.0.1:3080/ final
-
-# 3) 启动动画是否照常挂载并自移除（默认不带 reduced-motion）
-node .generated/probe-boot.cjs   http://127.0.0.1:3080/ boot
-
-# 4) 品牌锁定吃的是哪个 token
-node .generated/probe-logo.cjs   http://127.0.0.1:3080/ logo
-
-# 5) 上一轮：绿底控件的三种状态 + 设置马赛克（含"关掉再打开是否重播"）
-node .generated/verify-green.cjs  http://127.0.0.1:3080/
-node .generated/verify-green2.cjs http://127.0.0.1:3080/
-
-# 6) 左栏三态（真鼠标悬停）+ 全站直角扫描 + 马赛克 0.5s 预算 + boot 状态灯豁免
-node .generated/verify-round3.cjs http://127.0.0.1:3080/
-
-# 7) 设置面板内容**不得**淡入：连采 nav / content 两列的 opacity 与动画条数
-node .generated/verify-nofade.cjs http://127.0.0.1:3080/
-
-# 8) 方块**不得**各自做动画：连采还亮着的格子数 + 所有格子的 computed transform
-node .generated/verify-tileoff.cjs http://127.0.0.1:3080/
-
-# 9) 收起态侧栏图标对齐 + 看板入场（每列：黑板→准星→绿框→象限块 1-2-4-3）
-node .generated/verify-board.cjs  http://127.0.0.1:3080/
-
-# 10) **冻结时间轴**逐拍采样 + 定帧截图（本轮判据出自这里，含像素采样）
-#     注意看退出码：探针 FATAL 时 vcol2.json 还是上一次那份，会被误读成本次结果
-node .generated/verify-col2.cjs   http://127.0.0.1:3080/
-
-# 11) 量参考文件本身：Downloads/index.html 的编排（绿框/四块/准星尺寸）
-node .generated/probe-ref.cjs
-
-# 12) 原生启动屏：整段启动期逐帧采样（glyphFrames 必须为 0）+ 失败卡闸门
-node .generated/probe-native-boot.cjs http://127.0.0.1:3080/
-
-# 13) 本页面自己画的头几帧（screencast，不是"navigate 后马上截一张"）
-node .generated/probe-first-frame.cjs http://127.0.0.1:3080/ ff 10
-```
-
-> 起真机：`node node_modules/@deepseek-ai/dsh/lib/bin.js web --no-open`
-> （`127.0.0.1:3080`；探针要求服务确实在跑，否则只会拿到上一次的 JSON）
+要看**真实界面**（不要只看代码推断）：这些校验都是**无头 Chromium + 真实 DOM** 做的——
+接上本机跑着的页面，采样解析后的 token 值、连采动画帧数、用 `Page.startScreencast` 取首帧，
+需要时**冻结时间轴**逐拍采样并定帧截图。所有探针脚本都是开发期工具，**不随本仓库发布**。
 
 判据（本轮新增）：
 
@@ -977,7 +931,7 @@ node .generated/probe-first-frame.cjs http://127.0.0.1:3080/ ff 10
 - 矩形：`background` = **`rgb(11,13,11)`（`--mar-bg-void`，比列深）**、名称 `mar-tile-out`、时长 **0s**、
   `animationDelay` 按格子（左上/右上/左下/右下）是 **1.50 / 1.58 / 1.74 / 1.66**
 - 绿框：`border 2px rgb(192,254,4)`、`box-sizing:border-box`、`inset:0`（贴选项卡四边）
-- **冻结时间轴**（`pause()` + `currentTime = t`，见 `.generated/verify-col2.cjs`）
+- **冻结时间轴**（`pause()` + `currentTime = t`，见 （开发期探针））
   逐拍采样每列 4 块的不透明度（左上 右上 左下 右下）：
 
   ```
@@ -1009,7 +963,7 @@ node .generated/probe-first-frame.cjs http://127.0.0.1:3080/ ff 10
 - 服务端返回的 `index.html` 里，`<head>` 紧跟其后就是我们的 `<style>`
   （在 `__ModuleLoader__` 脚本与所有 `<link rel=stylesheet>` **之前**）：
   `GET /` → 断言 body 里含 `data-dsh-boot-spinner` 且它出现在第一个 `<script>` 之前
-- 真机逐 rAF 采样整段启动期（`.generated/probe-native-boot.cjs`，
+- 真机逐 rAF 采样整段启动期（（开发期探针），
   采样器由 `Page.addScriptToEvaluateOnNewDocument` 在**任何页面脚本之前**装上）：
   - `log.glyphFrames === 0`、`log.firstGlyph === null` → 原生卡片（HARNESS + 转圈）**一帧都没被画出来**
   - `log.first.plateBg === 'rgb(11, 13, 11)'`、`log.first.htmlBg === 'rgb(11, 13, 11)'`、
@@ -1018,7 +972,7 @@ node .generated/probe-first-frame.cjs http://127.0.0.1:3080/ ff 10
 - 同一探针在**真实引擎**里跑 `:has()` 闸门：
   `gate.loading.cardDisplay === 'none'`（带 `[data-dsh-boot-spinner]` → 藏）
   且 `gate.failed.cardDisplay === 'block'`（DSH 加载失败时 spinner 被换掉 → **失败卡必须照常显示**）
-- 首帧颜色只认 `Page.startScreencast` 推出的帧（`.generated/probe-first-frame.cjs`）：
+- 首帧颜色只认 `Page.startScreencast` 推出的帧（（开发期探针））：
   本页面上屏的第一帧若是白的，那是 Chrome 给空文档画的底色 —— 拿全暗的本地页面对照，
   第一帧同样白，加 `color-scheme` meta 也无效。**别把"navigate 后马上截图"当首帧证据。**
 

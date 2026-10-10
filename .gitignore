@@ -39,3 +39,11 @@ src/client.template.js.*
 # Dev-only offline theme viewer (not consumed by anyone; the boot animation is
 # the real "preview"). Lives in the working tree only.
 preview.html
+
+# 开发期的校验与测试脚本：只在本机保留，不随公开仓库发布（见 README「仓库内容」）。
+# 它们不参与运行，删掉也不影响主题功能。
+/check.cjs
+/selftest.cjs
+/test/
+/shell-patch/selftest.cjs
+/shell-patch/tests.cjs

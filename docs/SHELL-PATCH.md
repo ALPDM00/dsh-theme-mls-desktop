@@ -169,34 +169,20 @@ node shell-patch/revert.cjs                                    # 从备份还原
   摘要随 payload **自动变化**，所以不存在"改了代码忘了改版本号"这种事：
   改了 payload 而没 revert，安装检查一定红。
 
-改补丁后请跑：
+改补丁后请在同一台机器上重跑开发期的校验（**校验脚本不随本仓库发布**，见 README
+「仓库内容」）：
 
-```bash
-npm run verify:patch      # 23 项：结构自洽 / 守卫文本 / stale 规则 / 摘要身份 /
-                          # 对干净包整体重放 / 改后文件仍能解析 / 实装包是本修订 /
-                          # 宿主安全（加载 shell-patch/ 不得关掉 asar）
-npm run verify:auto       # 47 项：安装目录发现 / 状态探测 / auto.cjs 的每一条决策
-                          # （跳过、应用、拒绝、修复、锁、总开关）/ 宿主钩子
-```
+- 静态复核：结构自洽 / 守卫文本 / stale 规则 / 摘要身份 / 对干净包整体重放 /
+  改后文件仍能解析 / 实装包是本修订 / 宿主安全（加载 `shell-patch/` 不得关掉 asar）；
+- 自动化复核：把 `auto.cjs` 的真源码放进临时 harness 里跑，只把 `target.cjs` /
+  `apply.cjs` / `revert.cjs` 三个边界换成桩，逐条验证它的决策
+  （安装目录发现、状态探测、跳过 / 应用 / 拒绝 / 修复 / 锁 / 总开关）；
+- 两者都配了**变异反证**：把断言逐个改坏（只改临时副本，不改工作区），要求每一条都真的变红。
+  断言必须**能失败**才有意义 —— 这一层曾经抓出过一个真缺口：`probeShell` 对 macOS 布局
+  （`Resources/app.asar`）的处理原先没有任何断言覆盖，现在补上了。
 
-`verify:auto` 是"自动化这一步本身"的回归网。它把 `auto.cjs` 的真源码放进一个临时
-harness 里跑，只把 `target.cjs` / `apply.cjs` / `revert.cjs` 三个边界换成桩，
-所以断言的是真正会发布的那套决策。断言必须**能失败**才有意义，所以还有一个证伪脚本
-（`<工作区>/.workbuddy/tmp/falsify-auto-apply.py`）：19 个变异逐个注入，要求每一条都
-把对应的断言变红。它**只改临时副本**——第一版是就地改再还原，结果被中途打断，
-留下一个变异让之后每次都红在错误的地方（并且看着像别的原因）。
-
-它顺带证伪出一个真缺口：`probeShell` 对 macOS 布局（`Resources/app.asar`）的处理
-原先没有任何断言覆盖；现在 `verifyApp` 和 `probeShell` 各断言一次。
-
-`verify:patch` 新增的 3 项"宿主安全"断言同样做过证伪
-（`<工作区>/.workbuddy/tmp/falsify-host-safety.sh`）：把 `process.noAsar = true`
-加回 `lib/asar.cjs` 后，`verify:patch` 的 2 条静态断言和 `verify:auto` 的宿主钩子断言
-都必须变红；再往 `index.js` 里加一条指向 `HOST_LOADED` 之外的 require，
-"覆盖完整"那条必须变红。三次变异全部被抓住，基线为绿。
-
-`verify:patch` 的对**干净包**的那一半需要一份未打补丁的 `app.asar` 备份。
-现在它**自己找**：先 `resolveApp()` 定位这台机器上的桌面端，再取
+静态复核里对着**干净包**的那一半需要一份未打补丁的 `app.asar` 备份，它**自己找**：
+先 `resolveApp()` 定位这台机器上的桌面端，再取
 `<app>/resources/app.asar.dsh-theme-marathon.bak`（即 `apply.cjs` 提交前留下的那份）。
 也可以用 `--archive <path>` 或环境变量 `DSH_DESKTOP_ASAR_STOCK` 显式指定。
 

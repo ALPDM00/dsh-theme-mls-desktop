@@ -96,21 +96,19 @@ npm run patch:revert    # 用 pristine 备份还原 app.asar
 | [docs/ASSET_POLICY.md](docs/ASSET_POLICY.md) | 资产政策：灵感 vs 抄袭、随包发布的东西、字体责任边界 |
 | [CHANGELOG.md](CHANGELOG.md) | 逐版本变更（含每条改动的原因与实测结论） |
 
-## 开发与验证
+## 仓库内容
 
-```bash
-npm run build          # 由 src/ 组装出 client.js（产物，请勿直接编辑）
-npm run check          # 静态守卫：契约、锚点、CSS 不变量、反模式
-npm run selftest       # 设置页 / 主题类名 / 存储键等 100+ 项断言
-npm test               # 同上（plugin.test.cjs 的入口）
-npm run test:done      # 任务完成动画（jsdom：触发链、动画时间线、dispose）
-npm run verify:boot    # 启动动画引擎的几何与时间线
-npm run test:billing   # 计费四件套（定价 / 汇总 / 账本 / 宿主路由）
-npm run verify:patch   # 壳补丁（真 app.asar 夹具）
-```
+本仓库只放**运行这个主题需要的东西** + 说明文档：
 
-`check.cjs` 里的每条守卫都有对应的**变异反证**（把源码改坏，确认守卫真的会红），
-所以"守卫绿"是有意义的。改动 `src/` 之后**必须**跑一次 `npm run build`。
+- 运行所需：`index.js`（宿主半）、`client.js`（浏览器半产物）、`cordis.patch.yml`、
+  `billing/`、`shell-patch/`、`assets/`、`postinstall.cjs`；
+- 源码：`src/`（`client.template.js` 是主题本体，`src/boot/*` 是启动动画；`client.js` 由
+  `npm run build` 从它们组装出来，**请勿直接编辑产物**）；
+- 文档：`README.md`、`CHANGELOG.md`、`docs/`；
+- 改动 `src/` 之后必须跑一次 `npm run build`。
+
+> 开发期的静态校验、jsdom 测试与像素复核脚本（`check.cjs` / 本机自检 / `test/` 等）
+> **不随本仓库发布**；它们只在本机用来守住上面这些契约，删掉不影响主题功能。
 
 ## 项目结构
 
@@ -124,7 +122,6 @@ src/
 billing/                计费半侧：host / fold / pricing / ledger
 shell-patch/            桌面壳补丁：发现安装、apply / revert / verify / inspect
 scripts/build.cjs       组装 client.js
-test/                   测试与像素复核
 docs/                   上表那些文档
 assets/                 启动图像与字体（见资产政策）
 ```

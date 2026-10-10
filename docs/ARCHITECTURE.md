@@ -33,29 +33,18 @@
 │   ├── lib/real-fs.cjs     Electron 的 `original-fs`：绕开 asar 包装而**不动全局开关**
 │   ├── lib/asar.cjs        零依赖 asar 读写（Pickle 头 / 打包 / 解包）
 │   └── patches.cjs         补丁条目 + 修订摘要（单一真相源）
-├── check.cjs               静态校验（含大量回归断言）
-└── test/                   jsdom 测试（plugin 101 + boot-engine + dispose 28 +
-                            shell-patch 23 + auto-apply 47；后两者直接驱动
-                            shell-patch/ 里的真源码，只把边界换成桩）
+└── assets/                 启动图像与字体（构建时 base64 内联）
 ```
 
 ## 构建与自测
 
 ```bash
-npm run build        # src/* -> client.js
-npm run check        # 静态校验
-npm test             # jsdom 主题测试（113 项）
-npm run verify:boot  # 启动引擎测试
-npm run verify:patch # 桌面壳补丁集测试（23 项，见 [docs/SHELL-PATCH.md](SHELL-PATCH.md)）
-npm run verify:auto  # 壳补丁自动化测试（47 项，见 [docs/SHELL-PATCH.md](SHELL-PATCH.md)/[docs/INSTALL.md](INSTALL.md)）
-npm run patch:check  # 这台机器上的桌面壳现在是什么状态（不改任何文件）
-npm run test:dispose      # 插件停用/启用回归（28 项）
-npm run test:billing      # 计费引擎：价目表/峰谷、事件折叠、账本、宿主装配（38 项）
-npm run test:billing-ui   # 每轮结算块的 jsdom 回归（17 项，见 [docs/BILLING.md](BILLING.md)）
+npm run build         # src/* -> client.js（产物，请勿直接编辑）
+npm run patch:check   # 这台机器上的桌面壳现在是什么状态（不改任何文件）
+npm run patch:revert  # 用 pristine 备份还原 app.asar
 ```
 
-`npm test` / `npm run verify:boot` 需要 `jsdom`（`devDependencies`，目录已在 `.gitignore` 中）。
-`verify:patch` / `verify:auto` 都**自己找**这台机器上的桌面端安装（走 `target.cjs`
-的 `resolveApp()`，和补丁本身用的是同一条发现链），再从旁边那份
-`app.asar.dsh-theme-marathon.bak` 取"干净包"。装在哪台机器就能在哪台机器上跑全文；
-真的一台都没装时，依赖安装的那几条**报 SKIP 并写明原因**，不会假装通过。
+> 开发期的静态校验、jsdom 测试与像素复核脚本（`check.cjs` / 本机自检 / `test/` 等）
+> **不随本仓库发布**（见 README「仓库内容」）。本机保留着它们，用来守住契约、锚点与动画的
+> 几何/时间线；其中静态校验的每条守卫都有对应的**变异反证**（把源码改坏，确认守卫真的会红），
+> 所以"守卫绿"是有意义的。改动 `src/` 之后**必须**跑一次 `npm run build`。

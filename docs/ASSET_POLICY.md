@@ -24,20 +24,21 @@
 | 启动覆盖层 CSS（`src/boot/boot.css`） | 程序化 + base64 内联图；无版权素材 | MIT |
 | 启动覆盖层图像（`assets/boot/green-logo.png`、`blue-pixel.png`、`invert-blue-pixel.png`） | 把 DeepSeek 公司品牌标记程序化重绘为 PNG，用于启动转场 | DeepSeek 品牌标记 —— 合理引用；**不是** Bungie / Marathon |
 | ~~FUI 字符（准星、角标、数据牌）~~ | 已于 2026-09-18 随铭牌层一起移除 | MIT |
-| `Maratype.otf` | **用户提供**的装饰字体 | **须由用户自行厘清权利** —— 见 §3 |
+| `Maratype.otf` | 启动覆盖层的装饰字体，**由维护者随包分发**，以保证所有人渲染一致 | 见 §3（权利与下架承诺） |
 | `design-language.md`、`README.md` | 本项目编写的文档 | MIT |
 
-## 3. Maratype 字体 —— 责任边界
+## 3. Maratype 字体 —— 随包分发与下架承诺
 
-`Maratype.otf` 由**最终用户**为个人使用而提供。插件在构建时
-（`scripts/build.cjs`）把它以 base64 data-URI 内联，因此运行时不发起任何网络请求。
+`Maratype.otf` 是启动覆盖层用的装饰字体，**由维护者直接放进本仓库随包分发**
+（`assets/fonts/Maratype.otf`），这样每个装到这个主题的人看到的启动动画都一致。
+插件在构建时（`scripts/build.cjs`）把它以 base64 data-URI 内联，因此运行时不发起任何网络请求。
 
-- 插件作者**不主张**对 Maratype 的所有权；
-- 若 Maratype **未**获准再分发，用户必须：
-  1. 让它**不出现在任何公开分发**里（把 `assets/fonts/Maratype.otf` 排除在发布之外），或
-  2. 换成自己有分发许可的字体（例如某个 OFL 字体），或
-  3. 删掉字体、接受 `ui-monospace, monospace` 回落；
-- 没有字体时构建照样成功：`@font-face` 只是解析到回落字体栈。
+- 维护者不对 Maratype 主张任何所有权，也不声称自己签发了它的再分发许可；
+- **若你对该字体享有权利并认为这里的再分发不妥**，请在仓库里开 issue，
+  维护者会在 14 天内移除它并改发回落方案（见 §5）；
+- 移掉字体后**构建照样成功**：`@font-face` 只会解析到回落字体栈 `ui-monospace, monospace`，
+  启动覆盖层的版式不受影响（只是字面不同）；
+- 想自己排掉它：删掉 `assets/fonts/Maratype.otf`（并把它从 `package.json` 的 `files` 里去掉）。
 
 ## 4. 发布与市场
 

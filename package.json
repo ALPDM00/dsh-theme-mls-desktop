@@ -7,16 +7,6 @@
   "main": "index.js",
   "scripts": {
     "build": "node scripts/build.cjs",
-    "check": "node check.cjs",
-    "selftest": "node selftest.cjs",
-    "test": "node test/plugin.test.cjs",
-    "test:dispose": "node test/dispose.test.cjs",
-    "test:billing": "node --test test/billing-pricing.test.mjs test/billing-fold.test.mjs test/billing-ledger.test.mjs test/billing-host.test.mjs",
-    "test:billing-ui": "node test/billing-ui.test.cjs",
-    "verify:boot": "node test/boot-engine.test.cjs",
-    "test:done": "node test/done-engine.test.cjs",
-    "verify:patch": "node --no-warnings --experimental-vm-modules test/shell-patch.test.cjs",
-    "verify:auto": "node test/auto-apply.test.cjs",
     "postinstall": "node postinstall.cjs",
     "patch": "node shell-patch/auto.cjs",
     "patch:check": "node shell-patch/auto.cjs --check",
@@ -74,9 +64,6 @@
     "@deepseek-ai/cordis": {
       "optional": true
     }
-  },
-  "devDependencies": {
-    "jsdom": "^30.0.1"
   },
   "repository": {
     "type": "git",
