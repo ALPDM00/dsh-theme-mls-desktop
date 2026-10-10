@@ -5,6 +5,76 @@
 
 ---
 
+## 〇、如果你让 AI 代装（在 DSH 会话里）
+
+越来越多的人是**把仓库链接丢给自己的 AI，让它装**。这条路在这台机器上实测会连撞五道墙，
+其中两道是结构性的（不是"再试一次就好"）。先看这张表，能省一整轮排查：
+
+| # | 关卡 | 实测结果 | 属于谁 |
+| --- | --- | --- | --- |
+| 1 | 拿到仓库 | `web_fetch` 抓 `github.com` / `raw.githubusercontent.com` 报 `resolves to a non-public IP address` | 网络环境 |
+| 2 | 调用 `dsh` | 命中 `dsh.ps1`，默认执行策略报 `无法加载文件…禁止运行脚本`（`npm.ps1` 同理） | 环境 / 写法 |
+| 3 | `dsh plugin --profile desktop add …` | **被闸门拒绝，exit 1**（详见第一节） | 宿主闸门 |
+| 4 | 手工补 `bundles`（第四节，**必需**） | **`EPERM: operation not permitted`** + `[sandbox: file access denied under workspace-write mode]` | 会话沙箱 |
+| 5 | 取包本体 | `git clone` → `schannel: AcquireCredentialsHandle failed: SEC_E_NO_CREDENTIALS` | git 后端 |
+
+第 3 与第 4 是致命的：第 ① 步被拒之后，本文第四节说"无论走哪条路都必需"，
+而**第四节恰恰是最先死的一步**，且死的时候报的是与插件无关的 `EPERM`。
+
+### 唯一走得通的取包通道：node 抓 codeload tarball
+
+关键对比：**git 的 schannel 建不起 TLS，但 node 自己的网络栈是好的。**
+
+```bash
+# node 能连通 registry（对本包返回 404 = 未发布到 npm，不是网络不通）
+node -e "fetch('https://registry.npmjs.org/dsh-theme-mls-desktop').then(r=>console.log(r.status))"
+
+# 所以直接抓 GitHub 的 tar.gz（走镜像绕开 github.com 直连）：
+node -e "
+  fetch('https://gh-proxy.com/https://codeload.github.com/ALPDM00/dsh-theme-mls-desktop/tar.gz/refs/heads/main')
+    .then(r => r.arrayBuffer())
+    .then(b => require('fs').writeFileSync('mls.tar.gz', Buffer.from(b)))
+"
+tar -xzf mls.tar.gz     # 实测 454,892 字节，解出 44 个文件 / 1,188,203 字节，与仓库一致
+```
+
+⚠️ **`web_fetch` 顶不上这条路**：它只返回解码后的文本，`.png` / `.otf` 这类二进制资产拿不到，
+而本主题的启动图和字体全在其中。**tarball 是 AI 侧唯一能完整落地的通道。**
+
+### 权限：第 ② ③ 步注定要离开会话沙箱
+
+会话沙箱默认只让写会话工作区，而 `$DSH_HOME` 在它外面。所以：
+
+- 把包装进 `$DSH_HOME/profiles/desktop/node_modules/` —— 需要授权；
+- 改 `$DSH_HOME/profiles/desktop/package.json` 的 `bundles` —— 需要授权；
+- 打 `app.asar` 壳补丁 —— 需要更大授权，改的还是正在运行的壳。
+
+**AI 卡在 `EPERM` 上不是它做错了，是缺一次用户批准。** 看到 `EPERM` / `file access denied`
+就该停下来问用户，而不是换个写法硬闯。
+
+### 顺带一条：别用 `pnpm add <这个 tarball URL>`
+
+2026-10-11 实测，插件管理器把依赖写成
+`dsh-theme-mls-desktop@https://gh-proxy.com/https://codeload.github.com/…/tar.gz/refs/heads/main`
+之后，pnpm 反复报：
+
+```
+[WARN] GET https://gh-proxy.com/…/tar.gz error (ERR_PNPM_TARBALL_INTEGRITY). Will retry in 10 seconds.
+[WARN] GET https://gh-proxy.com/…/tar.gz error (ERR_PNPM_TARBALL_INTEGRITY). Will retry in 1 minute.
+dsh: pnpm printed nothing for 600000ms and was terminated
+```
+
+镜像来回重打包，字节不稳定 → 校验和对不上，最后卡满 10 分钟被终止。
+**要装 tarball 就自己 `tar -xzf` 解进 `node_modules`（第二节路径），别把它当 pnpm 依赖 spec。**
+
+### 本地开发用 `link:`
+
+改本机代码时，profile 里写 `link:D:/PythonCode/ma/dsh-theme-mls-desktop213` 最省事：pnpm 只建
+链接，改完 `npm run build` 后重启就能看到。注意 `link:` 依赖**不跑生命周期脚本**，
+所以壳补丁只能靠插件加载时的钩子兜底（见第五节）。
+
+---
+
 ## 一、先看这一节：`dsh plugin` 未必给你走
 
 `@deepseek-ai/dsh/lib/bin.js` 里对 `profile === "desktop"` 有一道闸门：
@@ -64,6 +134,10 @@ Run "pnpm approve-builds" to pick which dependencies should be allowed to run sc
 `dsh` 会把 pnpm 的非零退出码原样透出（`dsh: pnpm failed in profile directory …`）。
 但这时去看 profile：`dependencies` 已经有了、`pnpm-lock.yaml` 已更新、`node_modules` 里
 也能看到包。**唯一被拦下的是 `postinstall`** —— 也就是壳补丁那一步。
+
+⚠️ 如果 `pnpm-workspace.yaml` 的 `allowBuilds` 里留下的是一行
+`…: set this to true or false`（pnpm 的待决占位符），说明 `pnpm approve-builds` 从没被走完，
+`postinstall` 一次都没跑过 —— 这不影响主题，只影响壳补丁的"装完即生效"。
 
 想让它真的跑起来（装完第一次启动就带壳效果），二选一：
 
@@ -161,6 +235,14 @@ node <那个 dsh 安装>/node_modules/@deepseek-ai/dsh/lib/bin.js --profile desk
 `ERR_PNPM_IGNORED_BUILDS`），`link:` 依赖也**不跑**生命周期脚本。两条都不需要用户知道
 `shell-patch/` 的存在。
 
+补丁**只改三处**（2026-10-11 用游标逐文件比对补丁前后的 `app.asar` 得到）：
+
+| 文件 | 改动 |
+| --- | --- |
+| `dsh/node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html` | 注入首帧脚本（825 → 3328 字节）：置 `data-dsh-desktop`、把透明与隐藏 caption 移交给主题的 `data-mar-boot`，并保证 15 秒后一定交还窗口 |
+| `lib/main.js` | 透明窗口 / 隐藏原生 caption / 启动即最大化 |
+| `lib/preload-app.cjs` | 暴露 `window.dshDesktopBootChrome` 桥 |
+
 ### 手工打补丁
 
 ```bash
@@ -226,3 +308,51 @@ node node_modules/dsh-theme-mls-desktop/shell-patch/auto.cjs --check --app "<桌
 ⚠️ 本包的**启动动画**没有 UI 开关。不想要冷启动揭幕就只能停用插件；停用/启用已做过
 回归（卸载/重挂载回归）。这里说的**不是**设置里的「主题设置」页 ——
 那一页有「背景动画」独立开关（默认关闭）+ 主白+绿 / 主黑+绿 互斥配色，和网页版一字不差。
+
+---
+
+## 八、卸载与残留：为什么"卸载了动画还在放"
+
+先说结论：**卸载会把磁盘清干净，但不会把主题从正在运行的窗口里拔掉 —— 要重载/重启。**
+
+### 卸载后磁盘上是什么样（2026-10-11 实测）
+
+| 检查点 | 结果 |
+| --- | --- |
+| `profiles/desktop/package.json` 的 `dependencies` / `bundles` | 都没有本包 ✅ |
+| `profiles/desktop/node_modules/dsh-theme-mls-desktop` | 已删除 ✅（`link:` 装法只删链接，不动开发目录） |
+| 启动时拼出的 `profiles/desktop/cordis.yml` | 没有本包 ✅ |
+| `storages/mls-billing-ledger.json`（宿主半的计费账本） | 最后一次写入停在卸载前，之后不再更新 ✅ |
+
+也就是说：**宿主半确实随卸载下线了。**
+
+### 但客户端半还活着
+
+已经注入页面的那一份**客户端代码活在渲染进程里**，卸载动作不会把它从 DOM/JS 里摘走。
+于是：宿主半已经不在写账本了，**收尾动画却还照放** —— 一直放到窗口重载。
+
+实测时间线（同一台机器）：
+
+```
+03:39:22  账本最后一次写入（宿主半还活着）
+03:40:05  桌面端进程启动（此时插件仍装，客户端半被注入页面）
+03:42:52  卸载：package.json / cordis.yml / node_modules 全部清干净
+03:53:04  又一次 pnpm 操作卡在 tarball 完整性校验，等满 600s 被终止
+  之后    「任务完成动画」仍然照放 ← 症状
+```
+
+### 处理办法
+
+1. **刷新页面 / 重启桌面端** —— 客户端半才会真正消失，动画随之停止。
+2. 重启后若还有动静，那与插件残留无关：`shell-patch` 仍留在 `app.asar` 里。
+   它只影响透明 / 原生按钮 / 启动最大化，**不含**收尾动画，`npm run patch:revert` 还原即可。
+   判断方法：`npm run patch:check` 只报告、不改动。
+
+### 不影响功能的残留（介意可手删）
+
+- `node_modules/.package-map.json` 与 `pnpm-workspace.yaml` 的 `allowBuilds` 里可能还留着一行
+  包名 —— pnpm 的记账文件，**不是"仍然启用"**；
+- `node_modules/.removed-<name>-<日期>/` —— 某些卸载路径会把包改名留下而不是删掉，
+  它不在 `bundles` 里就不会被加载，但占空间；
+- `$DSH_HOME/storages/mls-billing-ledger.json` —— 本主题的计费账本（逐日 / 逐会话 / 逐轮），
+  卸载不会删它。

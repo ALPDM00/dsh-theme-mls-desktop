@@ -5,6 +5,47 @@
 次版本号 = 向后兼容的新功能；
 修订号 = 向后兼容的 bug 修复。
 
+## [0.4.3] - 2026-10-11
+
+**安装与卸载文档按实测补墙。只改文档与版本号，运行时行为一个字节没动。**
+
+### 文档
+- **README 安装节重写。** `dsh plugin --profile desktop add …` 从"第 ① 步"降级为
+  "**别用**" —— 它在桌面端自带的 0.2.0-rc.2 与 npm 全局的 0.1.5-rc.1 上**都是**死路
+  （前者靠无人置 `true` 的 `manageDesktopProfile`，后者无条件拒绝），且报错不提任何替代
+  路径。替换为不依赖 CLI 的三步：**node 抓 codeload tarball → 解进 `node_modules` →
+  补 `bundles`**。
+- **README 新增「卸载」节。** 卸载会把磁盘清干净，但**不会把主题从正在运行的窗口里拔掉**，
+  详见下面那条实测结论。
+- **`docs/INSTALL.md` 新增第〇节「如果你让 AI 代装（在 DSH 会话里）」。** 把"把链接丢给自己
+  的 AI 让它装"这条路实测会撞的五道关列成表：github 直连不通 / PowerShell 执行策略挡
+  `dsh.ps1`（`npm.ps1` 同理）/ `desktop` 闸门 / 会话沙箱写 `$DSH_HOME` 报 `EPERM` /
+  `git clone` 的 schannel 建不起 TLS。并给出**唯一走得通的取包通道**：node 抓 `codeload`
+  的 `tar.gz`（实测 454,892 字节，`tar -xzf` 解出 44 文件 / 1,188,203 字节，与仓库一致）。
+  同一节还点明 `web_fetch` 顶不上这条路 —— 它只返回文本，`.png` / `.otf` 拿不到。顺带记下
+  本地开发用 `link:` 的注意事项（不跑生命周期脚本）。
+- **`docs/INSTALL.md` 新增第八节「卸载与残留」。**
+- **`docs/INSTALL.md` 第五节补上壳补丁的确切改动面。** 用游标逐文件比对补丁前后的
+  `app.asar`，改动**只有三处**：`dsh-web-frontend/dist/index.html`（825 → 3328 字节，
+  首帧脚本 + 把透明移交给主题的 `data-mar-boot`）、`lib/main.js`、`lib/preload-app.cjs`。
+- **`docs/INSTALL.md` 第二节补一句**：`allowBuilds` 里若留下 `set this to true or false`
+  占位符，说明 `pnpm approve-builds` 从没走完、`postinstall` 一次都没跑过。
+
+### 实测结论（本轮新增两条）
+- **卸载后动画还在放，不是残留配置。** 2026-10-11 实测：卸载后
+  `package.json` 的 `dependencies` / `bundles`、`cordis.yml`、`node_modules/` 三处全部干净，
+  宿主半的计费账本 `storages/mls-billing-ledger.json` 最后一次写入停在卸载之前且不再更新
+  —— **但「任务完成动画」仍然照放**。原因是**已经注入页面的客户端半活在渲染进程里**，
+  卸载只改磁盘配置，不会把它从 DOM/JS 里摘走；**刷新页面 / 重启桌面端即消失**。
+  以后遇到"卸载了还有动静"先按这条判，别去翻 `bundles`。
+- **别把这个 tarball URL 当 pnpm 依赖 spec。** 插件管理器把依赖写成
+  `dsh-theme-mls-desktop@https://gh-proxy.com/…/tar.gz/refs/heads/main` 之后，pnpm 反复报
+  `ERR_PNPM_TARBALL_INTEGRITY`（镜像来回重打包，字节不稳定 → 校验和对不上），最后
+  `dsh: pnpm printed nothing for 600000ms and was terminated`。要装 tarball 就自己
+  `tar -xzf` 解进 `node_modules`。
+
+---
+
 ## [0.4.2] - 2026-10-11
 
 **修「任务完成动画」一次都播不出来，以及计费便签认错会话。** 同一个根因：客户端读了

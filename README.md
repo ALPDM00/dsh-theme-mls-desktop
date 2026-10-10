@@ -42,23 +42,37 @@
 > 用摘要识别版本，细节与安全模型见 [docs/SHELL-PATCH.md](docs/SHELL-PATCH.md)；
 > 不想要它就别装（主题其余部分照常工作）。
 
-> ⚠️ **`dsh plugin --profile desktop add …` 在较新的 dsh 上会被拒绝** —— 闸门在
-> `@deepseek-ai/dsh/lib/bin.js`，对 `desktop` 一律报
-> `error: profile "desktop" is managed exclusively by the Electron application`。
-> 桌面端自带那份（0.2.0-rc.2）写的是 `if (!manageDesktopProfile) rejectElectronProfile(...)`，
-> 而 `manageDesktopProfile` 是 `runCli()` 的函数参数、默认 `false`，**随包代码里没有任何地方
-> 把它设成 `true`**；npm 全局那份（0.1.5-rc.1）则是无条件拒绝。所以下面第 ① 步能不能跑，
-> 取决于你手上是哪份 dsh —— 完整对照、以及**不依赖 CLI 的全手工装法**见
-> [docs/INSTALL.md](docs/INSTALL.md)。**第 ② 步无论走哪条路都必需。**
+> ⚠️ **别用 `dsh plugin --profile desktop add …` —— 它在这两代 dsh 上都是死路。**
+> 闸门在 `@deepseek-ai/dsh/lib/bin.js`，对 `desktop` 一律报
+> `error: profile "desktop" is managed exclusively by the Electron application`，
+> 而且**连 `--profile desktop --dump-config` 一起挡**。桌面端自带那份（0.2.0-rc.2）写的是
+> `if (!manageDesktopProfile) rejectElectronProfile(...)`，而 `manageDesktopProfile` 是
+> `runCli()` 的函数参数、默认 `false`，**随包代码里没有任何地方把它设成 `true`**；
+> npm 全局那份（0.1.5-rc.1）则是无条件拒绝。报错本身不提任何替代路径 ——
+> 完整对照表与逐项排错见 [docs/INSTALL.md](docs/INSTALL.md)。
+
+desktop profile 启动时只认两件事：**在 `node_modules` 里能解析到本包**，
+以及 **`dsh.profile.bundles` 里有它的包名**。达成这两件事就有主题。
 
 ```bash
-# ① 装插件本体（依赖、shell-patch/、client.js 全跟着进）
-dsh plugin --profile desktop add github:ALPDM00/dsh-theme-mls-desktop
-#    ⚠️ pnpm 会把本包的 postinstall 记成 "ignored build"（ERR_PNPM_IGNORED_BUILDS）
-#       并让命令以退出码 1 结束 —— 依赖其实已经装好了，这不是失败。
+# ① 取包 —— 不要指望 git
+#    本机 git 的 schannel 常建不起 TLS（SEC_E_NO_CREDENTIALS），
+#    `github:` 这类 spec 无论交给 dsh 还是 pnpm 都会死在取包上。
+#    改用 node 直接抓 codeload 的 tar.gz（走镜像，绕开 github.com 直连不通）：
+node -e "
+  fetch('https://gh-proxy.com/https://codeload.github.com/ALPDM00/dsh-theme-mls-desktop/tar.gz/refs/heads/main')
+    .then(r => r.arrayBuffer())
+    .then(b => require('fs').writeFileSync('mls.tar.gz', Buffer.from(b)))
+"
+tar -xzf mls.tar.gz
 
-# ② 让 desktop profile 真挂上这个 bundle
-#    —— desktop profile 的 CLI 不会自己写 `bundles`（上游行为，不是本包能改的）
+# ② 解压出来的整个目录放进 profile 的 node_modules
+#    （$DSH_HOME 见桌面端环境变量；本例是 D:\Software\DeepSeekHarness\.dsh）
+#      <解压目录>  ->  $DSH_HOME/profiles/desktop/node_modules/dsh-theme-mls-desktop
+
+# ③ 让 desktop profile 真挂上这个 bundle
+#    —— desktop profile 的 CLI 不会自己写 `bundles`（上游行为，不是本包能改的），
+#       所以**无论用哪条路装的，这一步都得手工补**
 node -e "
   const fs = require('fs')
   const p = (process.env.DSH_HOME || '') + '/profiles/desktop/package.json'
@@ -68,20 +82,47 @@ node -e "
   fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n')
 "
 
-# ③ 若壳补丁没自动打上，手工补一次
-#    —— 目录不是标准安装位置时必须显式给 --app，否则它找不到你的壳
-node node_modules/dsh-theme-mls-desktop/shell-patch/auto.cjs --app "<桌面端安装目录>"
-
 # ④ 启动桌面端一次，关掉，再启动 —— 就能看到效果
 ```
 
-第 ② 步为什么必需、`bundles` 里该写包名还是 `id`、以及装不上时怎么逐项查，都在
+> ⚠️ **如果你是让 AI 在 DSH 会话里代装**（现在很常见），它多半会卡在权限上：
+> 会话沙箱默认只能写会话工作区，`$DSH_HOME` 在外面，于是第 ② ③ 步报
+> `EPERM: operation not permitted` 或 `[sandbox: file access denied]`。
+> **那不是插件坏了，是那一步需要你批准写 `$DSH_HOME`。** 五道关卡的清单在
+> [docs/INSTALL.md](docs/INSTALL.md) 第〇节。
+
+挂载是否真的生效、`bundles` 里该写包名还是 `id`、以及装不上时怎么逐项查，都在
 [docs/INSTALL.md](docs/INSTALL.md)。补丁的检查 / 还原：
 
 ```bash
 npm run patch:check     # 只报告当前状态，不改任何东西
 npm run patch:revert    # 用 pristine 备份还原 app.asar
 ```
+
+## 卸载
+
+把 `bundles` 里的 `dsh-theme-mls-desktop` 去掉（或交给插件管理器卸载）之后，
+**磁盘上确实是干净的**：
+
+- `$DSH_HOME/profiles/desktop/package.json` 的 `dependencies` / `bundles` 里都没有它；
+- `node_modules/dsh-theme-mls-desktop` 已删除（`link:` 装法删的只是链接，不动你的开发目录）；
+- 启动时拼出来的 `cordis.yml` 里也没有它。
+
+> ⚠️ **但正在运行的那个窗口不会立刻卸掉主题。** 卸载改的是磁盘上的配置，而**已经注入页面的
+> 客户端半还活在渲染进程里** —— 于是会出现「我明明卸载了，任务完成动画还在播 / 主题还在」。
+> 2026-10-11 实测：03:42:52 卸载，磁盘三处全部干净、宿主半的计费账本
+> （`$DSH_HOME/storages/mls-billing-ledger.json`）最后一次写入停在 03:39:22 之后不再更新，
+> **但收尾动画在卸载之后仍然照放**，一直放到窗口重载为止。
+
+处理办法：**刷新页面 / 重启桌面端**，之后就彻底安静。若重启后还在，那与插件残留无关 ——
+`shell-patch` 仍留在 `app.asar` 里（它独立于插件存在，只影响透明 / 原生按钮 / 启动最大化，
+**不含**收尾动画），`npm run patch:revert` 还原即可。
+
+残留的小尾巴（都不影响功能，介意可以手删）：
+
+- `node_modules/.package-map.json`、`pnpm-workspace.yaml` 的 `allowBuilds` 里可能还留着一行包名
+  —— 那是 pnpm 的记账文件，不是"仍然启用"；
+- `$DSH_HOME/storages/mls-billing-ledger.json` 是本主题的计费账本，卸载不会删它。
 
 ## 设置
 
@@ -101,7 +142,7 @@ npm run patch:revert    # 用 pristine 备份还原 app.asar
 
 | 文档 | 内容 |
 | --- | --- |
-| [docs/INSTALL.md](docs/INSTALL.md) | 完整安装步骤、排错、以及"装好了却没反应"的逐项检查 |
+| [docs/INSTALL.md](docs/INSTALL.md) | 完整安装步骤（含"让 AI 代装"）、排错、卸载与残留、以及"装好了却没反应"的逐项检查 |
 | [docs/SHELL-PATCH.md](docs/SHELL-PATCH.md) | 壳补丁做了什么、为什么需要、怎么升级与还原、安全模型 |
 | [docs/COMPLETION.md](docs/COMPLETION.md) | 任务完成动画的四拍、每个旋钮、以及它怎么判断"一轮结束了" |
 | [docs/SETTINGS.md](docs/SETTINGS.md) | 设置页结构、每一项的默认值与作用、调参位置总表 |
