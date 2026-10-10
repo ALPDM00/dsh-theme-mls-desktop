@@ -204,9 +204,8 @@ node shell-patch/revert.cjs                                    # 从备份还原
 > `@8` 写成 `headerBufLen`（应为 `headerBufLen - 4`）、`@12` 多算了一个 padding 字节。
 > Chromium 的 `archive.cc` 解析不了头部就**放弃整个包**，静默退回内置
 > `default_app.asar`，表现为双击图标只看到 Electron 欢迎页。
-> 现在 `lib/asar.cjs` 在**读写双向**强制完整不变量，`shell-patch/tests.cjs`
-> 有 10 项断言专门盯住这两个字段，`verify.cjs` 还要求**重打包后的整个
-> app.asar 与源文件逐字节相同**。
+> 现在 `lib/asar.cjs` 在**读写双向**强制完整不变量；开发期的复核里有一组断言专门盯住
+> 这两个字段，另有一项**往返校验**要求**重打包后的整个 app.asar 与源文件逐字节相同**。
 
 归档 I/O 要真字节，就要绕开 Electron 的 fs 包装（它会把含 `.asar` + 分隔符的路径
 重定向进虚拟挂载，也会把 `<archive>.unpacked/…` 读**进**归档里）。绕开的正确做法是
