@@ -53,16 +53,73 @@
 | `--mar-line-faint`        | `#272733`                 | 极淡分隔线 |
 | `--mar-line-strong`       | `#2E2F38`                 | 强分隔线 |
 | `--mar-wash / strong`     | `rgba(223,222,224,.08/.14)` | hover / 选中态叠加 |
-| `--mar-accent`            | `#C0FE04`                 | 品牌锁定、两个点亮态（悬停「新会话」/ 选中会话行）、focus 环 |
-| `--mar-accent-ink`        | `#0B0D0B`                 | **坐在 accent 填充上的**字色/图标色（= 主底色） |
-| `--mar-signal`            | `#FF003C`                 | 错误语义色 |
+| `--mar-accent`            | `#C0FE04`（七选一）        | 品牌锁定、两个点亮态（悬停「新会话」/ 选中会话行）、focus 环。**由 JS 写进 `<body>` 的 inline 变量**：设置页「主题色」七个色块之一，默认仍是 `#C0FE04` |
+| `--mar-accent-ink`        | `#0B0D0B` / `#FFFFFF`     | **坐在 accent 填充上的**字色/图标色。**量出来的**：`#E60B10` 这类偏暗的强调色在白墨下对比度更高，于是翻成 `#FFFFFF`；其余保持主底色 `#0B0D0B` |
+| `--mar-solid-ink`         | 同 `--mar-accent-ink`     | 任何**实心填充**的字色（DSH 自己的 on-solid 标签从它解析）——必须与 `--mar-accent-ink` 同值 |
+| `--mar-wash-accent`       | `rgba(192,254,4,.14)`     | 强调色的低透明叠加（hover 底），跟着强调色走 |
+| `--mar-signal`            | `#FF003C`                 | 错误语义色（**不跟**主题配色走） |
+
+**主题配色（2026-10-11）**：UI 强调色是用户七选一，JS 在 `accentApply()` 里把
+`--mar-accent` / `--mar-accent-ink` / `--mar-solid-ink` / `--mar-accent-text` /
+`--mar-wash-accent` 五个变量 inline 写到 `<body>` 上（inline 才能压过样式表里的浅色层）。
+候选：`#05C938` / `#E60B10` / `#E7337C` / `#E5710C` / `#C272E9` / `#81E8B1` / `#C0FE04`（默认）。
+**它只改 UI**：点阵场的字形色（`BG_MODES.ink` = `192,254,4`）、启动入场与完成动画的用色
+都不受它影响。切换动画尚未实现，接口是 `accentSwitchFx(next, apply)`。
+七个色块**每一格都有图**：六格是阵营标记、默认色 `#C0FE04` 那格是马拉松 LOGO
+（`assets/factions/*.svg`，构建时按 `data-accent` 内联成 `--sw-img`，
+见 [SETTINGS.md](SETTINGS.md#色块上的图案)）。
 
 **加色规则**：新加一个颜色前先问「现有一档能不能用」。
 这个主题最初有五档几乎一样的暗绿，就是这么来的。
 
-### 2.0 两处绿色（2026-09-18 起）
+### 1.0.1 调色板怎么落地（2026-10-16 修）
 
-绿色只出现在两类地方，规则很简单：
+**DSH 的别名 token 有两层，缺一层就全白干。** 这张表（`MAR_TOKEN_MAP`：背景 / 边框 / 墨色 /
+状态色 / 链接，共 ~90 条）必须同时做两件事：
+
+1. 交给主题服务 `ctx.get('theme').overrideTokens(id, map)`；
+2. **再逐条 inline 写到 `<body>` 上**（`themeAliasApply()`）。
+
+第 2 条不是保险，是**必需的**：桌面端实测第 1 条**静默地什么都没做**——body 计算背景是
+`#151517`（DSH 深色底），不是 `#0B0D0B`；「对话 / 轨迹」选中态与侧栏文件夹图标仍是
+`#7AAAFF`（DSH 的 business 蓝）。主题自己那批 `!important` CSS 规则一直在生效，所以
+"主题在跑"的错觉能维持很久，而**所有走别名的表面其实都是原生配色**。
+inline 写在 `<body>` 上恰好也**正是 DSH 自己的做法**：`dsh-client-ui-layout` 的
+`theme-presenter.js` 就是把 alias token 以 inline 变量投影到 body 上。所以这是同一条通道，
+只是换成我们自己写。
+
+⚠️ **presenter 每次投影前会先删掉它上次写的那批名字**（与我们的完全同名），所以必须重写：
+挂载时 / `bgApplyMode()`（换底盘）/ `ctx.on('theme/change')`（滞后一个 tick，落在其它监听器
+之后）/ 每 1.2s 的巡扫（与 `syncThemePreference` 同一个位置、同一个理由）。
+自检键 `mar.debug.v1` 记录「主题服务是否可用 / 强调色 / body 计算背景 / `--dsw-alias-bg-base`
+的计算值」——判断"落没落"用它，别看颜色。
+
+**加色规则**：新加一个颜色前先问「现有一档能不能用」。
+这个主题最初有五档几乎一样的暗绿，就是这么来的。
+
+### 1.1 原生蓝收口（2026-10-11）
+
+DSH 自己那套蓝没有被主题完全覆盖。收口的规则按「令牌是谁声明的」分成两类，
+用哪一类不是风格选择：
+
+| 类别 | 例子 | 怎么改 |
+| --- | --- | --- |
+| **DSH 在全局声明的别名** | `--dsw-alias-label-deep-diving(-shimmer)`、`--dsw-alias-bg-document-selection`、`--dsw-alias-onboarding-accent` | `overrideTokens` 直接钉。文字类走 `--mar-accent-text`；选区走 `--mar-select`（= 强调色 40%，与原生同浓度） |
+| **故意不钉** | `--dsw-alias-link` | 会话正文里的链接是**用户内容**不是 chrome（用户 2026-10-16：「我们对话中所输出的文本，有些是蓝色的内容，这部分不用改，保持默认就行」）。钉过一轮又退回去了；Markdown 代码块的静态色阶同理不动。**界面 chrome**（选中的「对话 / 轨迹」、侧栏图标）走的是 `--dsw-alias-state-business-primary`，那个一直钉着 |
+| **组件在消费元素自己身上声明的** | `--trajectory-turn-accent`（`.x_table`）、`.x_turnLabelActive`、toast 的 `.x_action`（直接 `color:var(--dsw-static-deepseek-400)`）、`--meter-tint`（`.x_colorMessages`）、`--dsh-file-type-default-color`（`.x_code` 等） | 必须写**匹配那个元素**的样式表规则——从 `<body>` 继承的覆盖压不过元素自己的声明。选择器只认类名的**可读半段**（`_table` / `_turnLabelActive` / `_toast_` / `_action_` / `_colorMessages` / `_code_`…），hash 段每次 DSH 构建都会变 |
+
+**故意不动**：`--dsw-static-blue-*` / `--dsw-static-deepseek-*` / `--dsw-static-neutral-bluish-*`
+三档静态色阶——它们同时喂着 Markdown 代码块高亮（bundle 里有 `"85,85,255" → --dsw-static-blue-400`
+这类映射），整档钉掉会连语法高亮一起改；`--dsh-file-type-violet`（图片/视频类型色，DSH 自己注明
+是刻意选的紫，钉掉会让附件色块全变成一个颜色）；三条新手引导卡片的渐变边框。
+
+核对方法：`.generated/scan-blue-tokens.cjs`（扫 `app.asar` 里所有 `--dsw-*`/`--dsh-*` 声明，
+按色相筛蓝，再减掉主题已钉的）与 `.generated/verify-blues.cjs`（把消费这些蓝的宿主规则逐字抽出，
+配真实哈希类名做夹具，在真 Chrome 里跑「主题关 / 主题开」两遍——关掉那遍必须仍是蓝的）。
+
+### 2.0 强调色的去处（2026-09-18 起，2026-10-11 改为七选一）
+
+强调色（默认酸绿，现在可在设置页「主题色」里七选一）只出现在两类地方，规则很简单：
 
 1. **品牌锁定**（左上 logo + 词标 + HARNESS 徽标）：
    `body.theme-marathon [class*="_brandIdentity|_brandMark|_brandName"]{color:var(--mar-accent)}`
@@ -324,7 +381,7 @@ DSH 把侧栏每条会话行命名为 `…_title`、每个面板顶命名为 `�
   真正瞄准的元素。给遮罩加 `pointer-events:auto` 会变成一块吃掉点击的黑洞
   （`dsh-theme-endfield` 的雷霆大字文档里记过同一个坑）。
 - **`--mar-*` 令牌基本不参与。** 四拍里的红 / 绿是"矩阵像素"与"信号横幅"的语义色，
-  不是界面配色；跟着「主白 + 绿」翻转反而会出事（白方框在白底上消失）。
+  不是界面配色；跟着「浅色」底盘翻转反而会出事（白方框在白底上消失）。
   只有 ④ 的**墨色**跟着配色走。
 - **尊重系统「减少动态效果」**：整段跳过（这一拍没有静态形态可言，半成品比不放更糟），
   与 §5.5 同一条规则；另有抽屉里的独立开关（默认开）。
@@ -431,13 +488,14 @@ body.theme-marathon [data-sidebar-collapsed] [data-dsh-part="sidebar-entry"] > s
 | 插入位置 | 动作行**之前**（`:scope > [class*="_actions"]`）→ 读作「任务结束 → 结算 → 操作」 |
 | 对齐 | **消息内居中**（`margin:12px auto 0`），不是靠左 |
 | 尺寸 | **一个旋钮** `--mlsb-s:1.5`：宽 `calc(268px * var(--mlsb-s))` = 402px；绿条 42px、明细行 33px、灰条 39px、圆角 9px、间隙 7.5px。所有尺寸都写成 `calc(<原始值> * var(--mlsb-s))` |
-| 绿条 | `--mar-accent` 填充 + `--mar-accent-ink`（黑）字；**只有 `TOKEN USAGE`**，左右各一个黑色十字（`+`，展开时两边一起变 `−`） |
+| 绿条 | **固定用最初那支酸绿**：`--mar-bill-accent` 填充 + `--mar-bill-ink`（黑）字；**只有 `TOKEN USAGE`**，左右各一个黑色十字（`+`，展开时两边一起变 `−`）。2026-10-17 之前它吃的是 `--mar-accent` / `--mar-accent-ink`，于是换主题色时整张便签跟着变色 —— 用户："你多更改了我 TOKEN 结算的颜色，这里保持我们原来的绿色就好"。用独立常量还有一个硬理由：偏暗的主题色会把 `--mar-accent-ink` 翻成**白墨**（见 §1 的 `accentInk`），那顶在固定绿横幅上就是白字压酸绿 |
+| 酸绿数字 | 明细行里那几个高亮读数用 `--mar-bill-acid`：深色底盘上是酸绿，浅色底盘上翻成主墨色（与 `--mar-accent-text` 同一条规则——绿字在白底上是看不见的） |
 | 明细行 | 高 33px，`--mar-wash` / `--mar-wash-strong` 交替，1px `--mar-line-faint` 分隔 |
 | 灰条 | `--mar-bg-overlay` 填充 + `--mar-ink-primary` 字；左边「任务用时」、右边 `mm:ss`（**没有 i 角标**） |
 | 圆角 | `--mlsb-radius:calc(6px * var(--mlsb-s))`；绿条收起时四角圆、**展开时下方变直角**衔接信息面板，面板顶直角、**底圆角**，灰条四角圆 |
 | 间隙 | 绿条/面板与灰条之间 `--mlsb-gap:calc(5px * var(--mlsb-s))`（`margin-top`）——两者**不紧贴** |
 | 字体 | **回到宿主默认栈**：标题 `font:800 …/1 var(--dsw-font-family)`、备注同栈；只有数字走等宽栈 + `tabular-nums`（Maratype 不再用于这一块） |
-| 强调色 | 只做**文字**时用 `--mar-accent-text`（不是 `--mar-accent`），否则「主绿 + 黑」看不见 |
+| 强调色 | 只做**文字**时用 `--mar-accent-text`（不是 `--mar-accent`），否则在浅色底盘上看不见 |
 | 用时口径 | `turn/end.time − turn/start.time`，`turn/end` 之后**冻住** |
 | 触发时机 | 只在 `closed`（`turn/end` 到过）之后贴；没有用量的空轮次不贴 |
 | 贴哪一段对话 | **精确**：`ctx.get('sessions').list.current`（DSH 的选中项）；拿不到才退回「最近有账的会话」 |

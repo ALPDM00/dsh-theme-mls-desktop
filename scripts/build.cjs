@@ -5,7 +5,9 @@
  *    placeholder inside src/client.template.js (theme @font-face).
  * 2. base64-inline assets/boot/*.png into the __IMG_*_B64__ tokens inside
  *    src/boot/boot.html.
- * 3. JSON-embed the boot payload { css, html, marathon, intro } into the
+ * 3. URL-encode assets/factions/*.svg into the `/*__FACTION_CSS__*​/` slot of the
+ *    template's stylesheet — one rule per 配色 swatch, keyed on data-accent.
+ * 4. JSON-embed the boot payload { css, html, marathon, intro } into the
  *    BOOT_PAYLOAD marker line in src/client.template.js.
  *
  * Run `node scripts/build.cjs`, then `node check.cjs` for static validation.
@@ -16,6 +18,60 @@ const path = require('path');
 const root = path.resolve(__dirname, '..');
 
 function read(p) { return fs.readFileSync(path.join(root, p), 'utf8'); }
+
+// ---- 0) 配色 swatch artwork ------------------------------------------------
+// Seven plates, seven colours: six Marathon factions plus the Marathon logo
+// itself for the DEFAULT palette entry (马拉松LOGO.svg, added 2026-10-16 on the
+// user's request), so no swatch is left as a flat fill any more.
+//
+// The hex here is the ACCENT the swatch SELECTS (client.template.js's
+// ACCENT_ORDER); the artwork's own plate colour differs by a hair for the six
+// factions (e.g. 特莱克斯 draws on #EA710B, the palette value is #E5710C) because
+// the two were produced separately. The palette value wins: it is what the UI
+// actually wears. 马拉松LOGO.svg is the exception — its plate IS #C0FE04.
+const FACTIONS = [
+  ['05C938', '赛博艾克米.svg'],   // green
+  ['E60B10', '阿拉克尼.svg'],     // red
+  ['E7337C', '纽卡洛里.svg'],     // pink
+  ['E5710C', '特莱克斯.svg'],     // orange
+  ['C272E9', '米达.svg'],         // purple
+  ['81E8B1', '关口.svg'],         // mint
+  ['C0FE04', '马拉松LOGO.svg']    // the default: the Marathon logo
+];
+const factionDir = path.join(root, 'assets', 'factions');
+const factionRules = FACTIONS.map(([hex, file]) => {
+  const p = path.join(factionDir, file);
+  if (!fs.existsSync(p)) {
+    console.error('[build] missing faction artwork:', p);
+    process.exit(1);
+  }
+  // data:image/svg+xml with the SVG's own text percent-encoded. Smaller than
+  // base64 for source-like text, and it stays readable in the built file.
+  // WHAT MUST NEVER SURVIVE ENCODING: the generated rule is spliced into the
+  // template's stylesheet as the body of an ordinary single-quoted JS string, so
+  // a raw single quote, backslash or newline would end the literal and take the
+  // whole client bundle down with it (measured: the swatches rendered nothing and
+  // the page never reported). `%22` stays encoded — the double quotes in
+  // `url("…")` are the delimiters *we* write.
+  const svg = fs.readFileSync(p, 'utf8').replace(/\s+/g, ' ').trim();
+  const enc = encodeURIComponent(svg)
+    .replace(/%20/g, ' ')
+    .replace(/%3D/g, '=')
+    .replace(/%3A/g, ':')
+    .replace(/%2F/g, '/')
+    .replace(/%2C/g, ',')
+    .replace(/'/g, '%27')
+    .replace(/\\/g, '%5C');
+  const rule = '.mar-sw button[data-accent="#' + hex + '"]{--sw-img:url("data:image/svg+xml,' + enc + '");}';
+  if (/['\\\r\n]/.test(rule)) {
+    console.error('[build] generated 配色 rule for ' + file + ' contains a character that would break the JS string literal');
+    process.exit(1);
+  }
+  return rule;
+}).join('');   // NO newlines: the slot it lands in is an ordinary single-quoted
+                // JS string in the template's stylesheet array, and a raw \n
+                // would end the literal (measured: the swatches went blank and
+                // the whole bundle failed to parse).
 
 // ---- 1) font ---------------------------------------------------------------
 const fontPath = path.join(root, 'assets', 'fonts', 'Maratype.otf');
@@ -103,9 +159,15 @@ if (tpl.indexOf(doneMarker) === -1) {
 
 const payloadJson = JSON.stringify(payload);
 const doneJson = JSON.stringify(donePayload);
+const factionMarker = '/*__FACTION_CSS__*/';
+if (tpl.indexOf(factionMarker) === -1) {
+  console.error('[build] marker "' + factionMarker + '" not found in template — 配色 artwork would be dropped');
+  process.exit(1);
+}
 let out = tpl.split('__MARATYPE_BASE64__').join(fontB64);
 out = out.split(marker).join(payloadJson);
 out = out.split(doneMarker).join(doneJson);
+out = out.split(factionMarker).join(factionRules);
 
 if (out.indexOf('__MARATYPE_BASE64__') !== -1) {
   console.error('[build] __MARATYPE_BASE64__ placeholder still present after replace');
@@ -114,8 +176,8 @@ if (out.indexOf('__MARATYPE_BASE64__') !== -1) {
 // NOTE: a plain `indexOf('__IMG_')` false-positives on the inlined base64
 // payload (its alphabet includes the underscore), so match the placeholder shape.
 if (out.indexOf('/*__BOOT_PAYLOAD__*/') !== -1 || out.indexOf('/*__DONE_PAYLOAD__*/') !== -1 ||
-    /__IMG_[A-Z_]+__/.test(out)) {
-  console.error('[build] boot/done placeholder/image token still present after replace');
+    out.indexOf(factionMarker) !== -1 || /__IMG_[A-Z_]+__/.test(out)) {
+  console.error('[build] boot/done/faction placeholder or image token still present after replace');
   process.exit(1);
 }
 if (out.indexOf('dshMarBootHost') === -1 || out.indexOf('#mb-canvas') === -1) {
@@ -139,3 +201,5 @@ console.log('[build]   done html   ' + doneHtml.length + ' bytes');
 console.log('[build]   done engine ' + doneEngine.length + ' bytes');
 console.log('[build]   payload JSON' + payloadJson.length + ' bytes, done JSON ' +
   doneJson.length + ' bytes, font b64 ' + fontB64.length + ')');
+console.log('[build]   配色 artwork  ' + FACTIONS.length + ' faction(s), ' +
+  factionRules.length + ' bytes of generated CSS');

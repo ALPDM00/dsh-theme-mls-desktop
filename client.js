@@ -70,10 +70,37 @@ window.__ModuleLoader__.load({
         return function () { if (el.parentNode) el.parentNode.removeChild(el); };
       }
 
-      // ---- token override --------------------------------------------------
+      // ---- token map: ONE source of truth, projected TWO ways --------------
       // One palette, no light/dark variants: both slots resolve to the same
       // --mar-* custom property so DSH's own light/dark switch never fights the
       // theme. The palette is specified entirely in the injected stylesheet.
+      //
+      // DSH resolves every surface through these aliases (backgrounds, borders,
+      // ink, links, states). The theme needs them to point at its own palette,
+      // and there are two ways to make that happen:
+      //
+      //   1. the theme service: `ctx.get('theme').overrideTokens(id, map)`. This
+      //      is the sanctioned path — the layer is folded into the snapshot that
+      //      ui-layout's presenter projects onto the document;
+      //   2. a DIRECT inline write on <body> (themeAliasApply below).
+      //
+      // Path 2 is not a hack around the presenter: the presenter writes the
+      // snapshot's tokens the same way — as inline custom properties on body
+      // (dsh-client-ui-layout `lib/types/client/theme-presenter.js`: "the
+      // theme's alias tokens … as inline variables on body"). It is the SAME
+      // channel, just sourced from us.
+      //
+      // It is also REQUIRED, measured 2026-10-16 on the live Desktop window:
+      // the service path had silently done nothing, so every DSH surface still
+      // wore its native palette — body background #151517 (= DSH's dark base,
+      // `--dsw-static-neutral-bluish-950`) instead of the theme's `#0B0D0B`,
+      // the 对话/轨迹 tab active colour and the sidebar folder icons still
+      // `#7AAAFF` (= `--dsw-static-deepseek-400`, DSH's business blue), and the
+      // user-visible symptom "上一轮改动并没有实现". The theme's own CSS rules
+      // (accent fills etc.) had been masking how much of the palette never
+      // landed. Writes are re-asserted after the presenter's own writes (it
+      // removes the names it applied before writing the next snapshot) — see
+      // the theme/change hook and the 1.2s sweep.
       //
       // Coverage note: DSH's light token set resolves most surfaces to pure
       // white (--dsw-static-neutral-bluish-00). Overriding only the main chain
@@ -81,9 +108,8 @@ window.__ModuleLoader__.load({
       // "new session" button, menus and code blocks white — light text on
       // white. The list below is therefore *complete*, not decorative: every
       // entry still resolves to one of the four palette colours.
-      if (theme && typeof theme.overrideTokens === 'function') {
-        var both = function (v) { return { light: v, dark: v }; };
-        theme.overrideTokens(PLUGIN_ID, {
+      var both = function (v) { return { light: v, dark: v }; };
+      var MAR_TOKEN_MAP = {
           '--dsw-alias-bg-base':           both('var(--mar-bg-void)'),
           '--dsw-alias-bg-layer-1':        both('var(--mar-bg-deep)'),
           '--dsw-alias-bg-layer-2':        both('var(--mar-bg-panel)'),
@@ -115,6 +141,35 @@ window.__ModuleLoader__.load({
           '--dsw-alias-brand-primary':     both('var(--mar-accent)'),
           '--dsw-alias-brand-primary-invert': both('var(--mar-solid-ink)'),
           '--dsw-alias-brand-text':        both('var(--mar-ink-primary)'),
+          // ---- the last native blues, second pass (2026-10-11) ----------------
+          // Measured by scanning the installed app.asar byte-exactly (see
+          // .generated/scan-blue-tokens.cjs / scan-blue-usage.cjs): these ALIASES
+          // still resolved to DSH's blue and paint visible UI — the 「深度思考」
+          // label, the document-preview selection, the onboarding card. They are
+          // semantic aliases, not part of the static ramps, so they can be pinned
+          // outright.
+          // The static blue / deepseek / neutral-bluish RAMPS stay untouched on
+          // purpose: they also feed Markdown syntax highlighting (the bundle maps
+          // e.g. "85,85,255" -> --dsw-static-blue-400), so pinning a whole ramp
+          // would recolour code blocks too.
+          //
+          // DELIBERATELY **NOT** PINNED — `--dsw-alias-link`. It is the colour of
+          // a link INSIDE the conversation text, and that is user content, not
+          // chrome: 2026-10-16 the user asked for exactly this ("我们对话中所输出
+          // 的文本，有些是蓝色的内容，这部分不用改，保持默认就行"). It was pinned for one
+          // round and then reverted; DSH's own link blue stays. Anything that IS
+          // chrome (the active 对话/轨迹 tab, the sidebar folder icons) rides
+          // `--dsw-alias-state-business-primary`, which is pinned above and has
+          // been since the beginning.
+          //   deep-diving is TEXT, so it goes through --mar-accent-text: the accent
+          // as a letterform is readable on the dark plate and becomes the ink on
+          // the white one — the theme's own rule for accent-as-text.
+          '--dsw-alias-label-deep-diving':     both('var(--mar-accent-text)'),
+          '--dsw-alias-label-deep-diving-shimmer': both('var(--mar-accent-text)'),
+          // the selection is a WASH (native: blue at 40%): the accent at the same
+          // 40%, not --mar-wash-accent (its 14% is too faint to read as selected)
+          '--dsw-alias-bg-document-selection': both('var(--mar-select)'),
+          '--dsw-alias-onboarding-accent':     both('var(--mar-accent)'),
           '--dsw-alias-state-error-primary':   both('var(--mar-signal)'),
           '--dsw-alias-state-error-secondary': both('var(--mar-signal)'),
           '--dsw-alias-state-warn-primary':    both('var(--mar-accent)'),
@@ -194,7 +249,47 @@ window.__ModuleLoader__.load({
           '--dsw-specific-sidebar-nav-item-hover':         both('var(--mar-bg-panel)'),
           '--dsw-specific-tip':                       both('var(--mar-bg-panel)'),
           '--dsw-alias-bg-mask-drop':                 both('var(--mar-scrim)')
-        });
+      };
+
+      //   Path 1 — the theme service, when it answers at apply time.
+      if (theme && typeof theme.overrideTokens === 'function') {
+        try { theme.overrideTokens(PLUGIN_ID, MAR_TOKEN_MAP); } catch (e) {}
+      }
+
+      //   Path 2 — the same map, written straight onto <body> as inline custom
+      //   properties. Every DSH surface inherits from <body>, so this lands even
+      //   when the service path does not answer (see the note above). Values are
+      //   `var(--mar-*)`, which resolve against <body>'s own declarations, so
+      //   the theme's light layer keeps working through them.
+      var aliasLastAt = 0;
+      function themeAliasApply() {
+        if (!body || !body.style) return;
+        for (var name in MAR_TOKEN_MAP) {
+          if (!Object.prototype.hasOwnProperty.call(MAR_TOKEN_MAP, name)) continue;
+          var modes = MAR_TOKEN_MAP[name];
+          body.style.setProperty(name, modes.dark !== undefined ? modes.dark : modes.light);
+        }
+        aliasLastAt = Date.now();
+      }
+
+      //   One-shot self-check, written to localStorage so support can read it
+      //   back out of the profile (`mar.debug.v1`). It is the only honest way to
+      //   tell "the palette landed" from "the theme's own CSS rules are masking
+      //   that it never did": body's computed background is the tell.
+      function marThemeReport() {
+        try {
+          if (!window.localStorage) return;
+          var cs = (typeof window.getComputedStyle === 'function')
+            ? window.getComputedStyle(body) : null;
+          window.localStorage.setItem('mar.debug.v1', JSON.stringify({
+            at: Date.now(),
+            themeService: !!(theme && typeof theme.overrideTokens === 'function'),
+            accent: ACCENT_STATE.color,
+            bodyBg: cs ? cs.backgroundColor : '',
+            aliasBgBase: cs ? cs.getPropertyValue('--dsw-alias-bg-base').trim() : '',
+            lastAlignedAt: aliasLastAt
+          }));
+        } catch (e) {}
       }
 
       // ---- stylesheet ------------------------------------------------------
@@ -259,6 +354,21 @@ window.__ModuleLoader__.load({
         '  --mar-wash:rgba(223,222,224,.08);',
         '  --mar-wash-strong:rgba(223,222,224,.14);',
         '  --mar-wash-danger:rgba(255,0,60,.10);',
+        '  /* the document-preview selection band. DSH ships it as its blue at 40%;',
+        '     the accent at the same 40% keeps the weight while dropping the blue.',
+        '     Derived from --mar-accent, so it needs no light-layer entry. */',
+        '  --mar-select:color-mix(in srgb,var(--mar-accent) 40%,transparent);',
+        '  /* ---- 每轮 Token 结算便签：永远保持最初那支酸绿，不跟主题色走 ------',
+        '     用户 2026-10-17："你多更改了我 TOKEN 结算的颜色，这里保持我们原来的',
+        '     绿色就好。" 便签（.mlsb-*）以前直接吃 --mar-accent / --mar-accent-ink，',
+        '     于是换主题色时它也跟着变色；更要紧的是，偏暗的主题色会把 accent-ink',
+        '     翻成白墨（见 accentInk），那顶在**固定绿**的横幅上就是白字压酸绿 ——',
+        '     所以这里必须是一对独立的常量，而不只是"把 accent 复制一遍"。 */',
+        '  --mar-bill-accent:#C0FE04;',
+        '  --mar-bill-ink:#0B0D0B;',
+        '  /* 便签里那几个酸绿数字（.mlsb-acid）是**文字**：深色底盘上用酸绿，',
+        '     浅色底盘上必须退回主墨色（与 --mar-accent-text 同一个道理）。 */',
+        '  --mar-bill-acid:#C0FE04;',
         '  /* the accent at low alpha, for hovering something that is accent-',
         '     selected — a wash, not a second accent face */',
         '  --mar-wash-accent:rgba(192,254,4,.14);',
@@ -318,6 +428,9 @@ window.__ModuleLoader__.load({
         '  --mar-ink-primary:#0B0D0B;',
         '  /* the accent may no longer be TEXT here — see --mar-accent-text above */',
         '  --mar-accent-text:#0B0D0B;',
+        '  /* same rule for the settlement note\'s green NUMBERS (the green BAR keeps',
+        '     its black ink on both plates — it is a face, not a letterform) */',
+        '  --mar-bill-acid:#0B0D0B;',
         '  --mar-ink-secondary:rgba(11,13,11,.72);',
         '  --mar-ink-tertiary:rgba(11,13,11,.45);',
         '  --mar-line-faint:#E3E5DC;',
@@ -758,10 +871,25 @@ window.__ModuleLoader__.load({
         '.mar-seg button[aria-checked="true"]{color:var(--mar-accent-ink);',
         '  background:var(--mar-accent);border-color:var(--mar-accent);}',
         '.mar-seg button:focus-visible{outline:1px solid var(--mar-accent);outline-offset:2px;}',
-        '.mar-seg .mar-chip{display:inline-flex;width:20px;height:12px;overflow:hidden;',
-        '  border:1px solid currentColor;}',
-        '.mar-seg .mar-chip i{display:block;width:50%;height:100%;}',
-        '.mar-seg .mar-chip i:first-child{width:6px;}',
+        '/* --- 主题色：色块（2026-10-11 起；标题 2026-10-17 从「配色」改名）-----',
+        '   点一下就把 UI 强调色（--mar-accent 系列）换成它。每一格画的是图形',
+        '   （366x237，data-accent → 哪张图由构建脚本的 FACTIONS 决定）：六个阵营',
+        '   + 默认色的马拉松 LOGO。背景色 --sw 是图形的兜底。',
+        '   **一行 4 个**（用户 2026-10-17："放大一些，差不多一列 4 个即可"）：',
+        '   flex-basis 定死 1/4 宽而不是 flex-grow，所以 7 格排成 4 + 3，后一排左对齐。',
+        '   刻意**不**用 .mar-set-row——那一行在关闭背景动画时会被 dim（见下面那条），',
+        '   而主题色与点阵无关（用户："配色只调整 UI 的，不动其他"）。 */',
+        '.mar-sw{display:flex;gap:8px;flex-wrap:wrap;}',
+        '.mar-sw button{display:block;flex:0 0 calc((100% - 24px) / 4);min-width:0;',
+        '  aspect-ratio:366/237;',
+        '  padding:0;margin:0;cursor:pointer;border:1px solid var(--mar-line-strong);',
+        '  background-color:var(--sw);background-image:var(--sw-img,none);',
+        '  background-size:100% 100%;background-repeat:no-repeat;}',
+        '.mar-sw button:hover{border-color:var(--mar-ink-primary);}',
+        '.mar-sw button[aria-checked="true"]{border-color:var(--mar-ink-primary);',
+        '  box-shadow:inset 0 0 0 2px var(--mar-bg-void);}',
+        '.mar-sw button:focus-visible{outline:1px solid var(--mar-accent);outline-offset:2px;}',
+        '.mar-sw button[data-accent="#05C938"]{--sw-img:url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22366%22 height=%22237%22 viewBox=%220 0 366 237%22%3E %3Ctitle%3E%E8%B5%9B%E5%8D%9A%E8%89%BE%E5%85%8B%E7%B1%B3%3C/title%3E %3Crect width=%22366%22 height=%22237%22 fill=%22%2300CB36%22/%3E %3Cg fill=%22%23005300%22%3E %3Crect x=%229.5%22 y=%2221%22 width=%2225%22 height=%222%22/%3E %3Crect x=%2221%22 y=%229.5%22 width=%222%22 height=%2225%22/%3E %3Crect x=%22331.5%22 y=%2221%22 width=%2225%22 height=%222%22/%3E %3Crect x=%22343%22 y=%229.5%22 width=%222%22 height=%2225%22/%3E %3Crect x=%229.5%22 y=%22214%22 width=%2225%22 height=%222%22/%3E %3Crect x=%2221%22 y=%22202.5%22 width=%222%22 height=%2225%22/%3E %3Crect x=%22331.5%22 y=%22214%22 width=%2225%22 height=%222%22/%3E %3Crect x=%22343%22 y=%22202.5%22 width=%222%22 height=%2225%22/%3E %3C/g%3E %3Cpath fill=%22%23000000%22 fill-rule=%22evenodd%22 d=%22M130 71.5 122 81.5 117 89.5 114 96.5 113.5 100 112 102.5 110.5 113 110.5 119.5 112 134.5 114 139 114 141.5 120.5 154.5 127.5 163.5 131.5 167.5 142.5 176.5 144.5 177 148.5 180 150 180 151.5 181.5 153.5 182 155.5 183 160.5 184.5 163.5 185 166 186 172.5 187.5 182 188 182.5 187 182 160.5 182.5 159 183.5 158.5 184.5 160 186 167.5 187.5 169.5 188 171.5 195.5 179.5 203.5 184.5 205.5 185 207.5 186 215.5 188 253.5 188 255 187.5 255 152 254.5 144.5 253 140.5 248 132.5 241.5 126 236.5 123 233.5 122.5 232 121 225.5 121 223.5 119.5 225.5 118.5 230.5 118.5 254.5 119 255.5 117.5 254.5 107 253 103.5 253 100.5 252 98.5 251.5 95.5 250 93.5 249.5 91.5 244 81.5 237.5 73.5 233.5 70 231 67.5 226 63 219.5 59.5 216 58 214 56.5 205.5 53.5 202.5 53 200.5 51.5 190 50 179.5 50 172.5 50.5 170.5 51.5 166 51.5 163.5 53 159.5 53.5 157 55 151.5 56.5 138.5 64.5ZM214.5 119.5 212 120.5 206.5 121 198 125.5 196.5 127 194.5 128.5 189.5 133.5 187.5 137.5 186.5 138.5 183.5 148.5 183 148 182 145.5 182 120.5 182.5 119 183.5 118.5 208.5 118.5Z%22/%3E %3C/svg%3E");}.mar-sw button[data-accent="#E60B10"]{--sw-img:url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22366%22 height=%22237%22 viewBox=%220 0 366 237%22%3E %3Ctitle%3E%E9%98%BF%E6%8B%89%E5%85%8B%E5%B0%BC%3C/title%3E %3Crect width=%22366%22 height=%22237%22 fill=%22%23E80B0E%22/%3E %3Cg fill=%22%236A0000%22%3E %3Crect x=%229.5%22 y=%2221%22 width=%2225%22 height=%222%22/%3E %3Crect x=%2221%22 y=%229.5%22 width=%222%22 height=%2225%22/%3E %3Crect x=%22331.5%22 y=%2221%22 width=%2225%22 height=%222%22/%3E %3Crect x=%22343%22 y=%229.5%22 width=%222%22 height=%2225%22/%3E %3Crect x=%229.5%22 y=%22214%22 width=%2225%22 height=%222%22/%3E %3Crect x=%2221%22 y=%22202.5%22 width=%222%22 height=%2225%22/%3E %3Crect x=%22331.5%22 y=%22214%22 width=%2225%22 height=%222%22/%3E %3Crect x=%22343%22 y=%22202.5%22 width=%222%22 height=%2225%22/%3E %3C/g%3E %3Cpath fill=%22%23000000%22 fill-rule=%22evenodd%22 d=%22M104.5 78.5 104 81.5 104.5 130.5 105 131.5 107 132.5 115 133 116.5 134.5 116.5 142 115.5 143.5 105.5 144.5 104.5 146 104.5 158 105.5 162 112.5 155.5 121.5 150.5 124.5 147.5 127.5 141.5 127.5 136 125.5 130.5 121.5 126.5 117.5 123.5 116.5 121.5 116 92.5 117 89.5 119 88.5 144.5 88.5 147.5 89 149 90.5 149.5 130.5 150 131.5 152 132.5 159.5 132.5 160.5 133 161.5 135 162 137 161.5 142.5 160.5 143.5 159.5 144 152.5 144.5 150.5 145.5 150 146.5 149 154.5 150 161.5 150.5 161.5 157.5 155.5 167 150 170.5 146.5 173 141 172.5 135.5 170.5 130.5 167 126.5 164 125 161.5 122.5 161 121.5 161 92 161.5 90 164 88.5 188 88 193 89 194.5 90.5 194.5 131 195 131.5 197.5 132.5 205.5 133 207 135.5 207 141 206.5 142.5 205.5 143.5 203.5 144.5 197.5 144.5 195.5 145 194.5 146.5 194.5 158.5 195.5 161.5 202 156 212.5 150 215.5 146.5 218 141 217.5 135.5 215.5 130.5 214 128.5 209.5 125.5 206.5 121.5 206.5 92.5 207 89.5 209.5 88.5 235.5 88.5 237.5 89 239 91 239.5 93 239.5 130.5 240 131.5 242.5 132.5 250 132.5 251.5 133.5 252 135.5 251.5 142 250.5 144 243 144.5 240.5 145.5 239.5 146.5 239.5 161.5 240.5 161.5 247.5 155 255.5 151.5 260.5 146.5 262.5 141 263 137.5 262 133.5 260.5 130.5 258 127.5 253 124 251.5 121.5 251.5 81.5 251 78.5 249.5 77 245.5 76.5 117.5 76.5 107.5 77 105.5 77.5Z%22/%3E %3C/svg%3E");}.mar-sw button[data-accent="#E7337C"]{--sw-img:url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22366%22 height=%22237%22 viewBox=%220 0 366 237%22%3E %3Ctitle%3E%E7%BA%BD%E5%8D%A1%E6%B4%9B%E9%87%8C%3C/title%3E %3Crect width=%22366%22 height=%22237%22 fill=%22%23E9357E%22/%3E %3Cg fill=%22%237E0032%22%3E %3Crect x=%229.5%22 y=%2221%22 width=%2225%22 height=%222%22/%3E %3Crect x=%2221%22 y=%229.5%22 width=%222%22 height=%2225%22/%3E %3Crect x=%22331.5%22 y=%2221%22 width=%2225%22 height=%222%22/%3E %3Crect x=%22343%22 y=%229.5%22 width=%222%22 height=%2225%22/%3E %3Crect x=%229.5%22 y=%22214%22 width=%2225%22 height=%222%22/%3E %3Crect x=%2221%22 y=%22202.5%22 width=%222%22 height=%2225%22/%3E %3Crect x=%22331.5%22 y=%22214%22 width=%2225%22 height=%222%22/%3E %3Crect x=%22343%22 y=%22202.5%22 width=%222%22 height=%2225%22/%3E %3C/g%3E %3Cpath fill=%22%23000000%22 fill-rule=%22evenodd%22 d=%22M275.5 76 274.5 75 253.5 75 252 76 252 128.5 250 132.5 248 135 242.5 137.5 212.5 137.5 211.5 135.5 211.5 76.5 210.5 75 188.5 75.5 188 76.5 188 159.5 189 160.5 246 160 246.5 159.5 246.5 140 247 138 249 135.5 252.5 132.5 256.5 132 274.5 132.5 275.5 131.5ZM91.5 75.5 91 159.5 91.5 160 114 160.5 115 159.5 114.5 100 115 98.5 116 98 145 98 149.5 99 152 101 154 104.5 155 109.5 155 159.5 157 160.5 176.5 160.5 177.5 160 177.5 104 176.5 103 158.5 103 156.5 103 152.5 100.5 150 96.5 149 93.5 149.5 76.5 149 75.5 92.5 75Z%22/%3E %3C/svg%3E");}.mar-sw button[data-accent="#E5710C"]{--sw-img:url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22366%22 height=%22237%22 viewBox=%220 0 366 237%22%3E %3Ctitle%3E%E7%89%B9%E8%8E%B1%E5%85%8B%E6%96%AF%3C/title%3E %3Crect width=%22366%22 height=%22237%22 fill=%22%23EA710B%22/%3E %3Cg fill=%22%236C1900%22%3E %3Crect x=%229.5%22 y=%2221%22 width=%2225%22 height=%222%22/%3E %3Crect x=%2221%22 y=%229.5%22 width=%222%22 height=%2225%22/%3E %3Crect x=%22331.5%22 y=%2221%22 width=%2225%22 height=%222%22/%3E %3Crect x=%22343%22 y=%229.5%22 width=%222%22 height=%2225%22/%3E %3Crect x=%229.5%22 y=%22214%22 width=%2225%22 height=%222%22/%3E %3Crect x=%2221%22 y=%22202.5%22 width=%222%22 height=%2225%22/%3E %3Crect x=%22331.5%22 y=%22214%22 width=%2225%22 height=%222%22/%3E %3Crect x=%22343%22 y=%22202.5%22 width=%222%22 height=%2225%22/%3E %3C/g%3E %3Cpath fill=%22%23000000%22 fill-rule=%22evenodd%22 d=%22M91 80.5 91 100.5 91.5 101.5 170.5 102 171.5 102.5 170.5 104 167 105.5 157.5 113 153 115 151.5 116.5 122 135.5 92.5 136 91.5 136.5 91 137.5 91 156.5 92 157.5 126.5 157.5 129 156.5 130.5 155 144 146.5 171.5 128 172.5 128 173.5 129.5 173 156 174.5 157.5 192 157.5 193 157 193 156.5 193.5 128.5 194 128 195.5 128 198 130.5 199.5 131 212 140 225.5 148 227 149.5 228.5 150 238.5 157 240 157.5 274.5 157.5 275.5 156.5 275.5 137.5 275 136 244.5 136 241.5 133.5 230.5 127 228.5 124.5 225.5 123.5 217 118 213.5 115 207.5 112 205.5 110 200 107 195.5 103.5 194.5 102.5 196 101.5 274.5 101.5 275.5 100.5 275.5 80.5 274.5 79.5 92.5 79.5Z%22/%3E %3C/svg%3E");}.mar-sw button[data-accent="#C272E9"]{--sw-img:url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22366%22 height=%22237%22 viewBox=%220 0 366 237%22%3E %3Ctitle%3E%E7%B1%B3%E8%BE%BE%3C/title%3E %3Crect width=%22366%22 height=%22237%22 fill=%22%23C374EA%22/%3E %3Cg fill=%22%2342085E%22%3E %3Crect x=%229.5%22 y=%2221%22 width=%2225%22 height=%222%22/%3E %3Crect x=%2221%22 y=%229.5%22 width=%222%22 height=%2225%22/%3E %3Crect x=%22331.5%22 y=%2221%22 width=%2225%22 height=%222%22/%3E %3Crect x=%22343%22 y=%229.5%22 width=%222%22 height=%2225%22/%3E %3Crect x=%229.5%22 y=%22214%22 width=%2225%22 height=%222%22/%3E %3Crect x=%2221%22 y=%22202.5%22 width=%222%22 height=%2225%22/%3E %3Crect x=%22331.5%22 y=%22214%22 width=%2225%22 height=%222%22/%3E %3Crect x=%22343%22 y=%22202.5%22 width=%222%22 height=%2225%22/%3E %3C/g%3E %3Cpath fill=%22%23000000%22 fill-rule=%22evenodd%22 d=%22M264 104.5 219.5 104 216.5 106 184 139 183.5 139.5 185.5 141.5 231.5 187.5 232.5 187 248 171.5 251.5 167.5 244 159.5 221 136.5 220 134.5 220.5 133.5 262.5 134 264.5 133.5 265.5 132.5 265 105.5ZM101.5 104 101 105.5 101 132.5 101.5 133.5 145.5 133.5 146.5 134.5 145 136.5 114.5 167.5 114.5 168.5 133.5 187.5 134.5 187.5 183 139.5 147.5 104.5 146 104ZM251.5 70.5 242.5 61 232.5 51 231.5 50.5 184 98 183 98 180 96 134.5 50.5 133 51.5 114.5 69.5 115 71.5 127.5 83.5 135.5 89.5 146.5 96 148.5 96.5 150.5 97.5 157.5 99.5 159.5 101 163.5 101.5 166.5 102.5 178 103.5 190 103.5 199 102.5 201.5 101.5 206.5 101 208.5 100 215 98 217.5 96.5 219.5 96 228.5 91 237.5 84.5 242 80.5 251 71.5Z%22/%3E %3C/svg%3E");}.mar-sw button[data-accent="#81E8B1"]{--sw-img:url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22366%22 height=%22237%22 viewBox=%220 0 366 237%22%3E %3Ctitle%3E%E5%85%B3%E5%8F%A3%3C/title%3E %3Crect width=%22366%22 height=%22237%22 fill=%22%2381E8B1%22/%3E %3Cg fill=%22%23044419%22%3E %3Crect x=%229.5%22 y=%2221%22 width=%2225%22 height=%222%22/%3E %3Crect x=%2221%22 y=%229.5%22 width=%222%22 height=%2225%22/%3E %3Crect x=%22331.5%22 y=%2221%22 width=%2225%22 height=%222%22/%3E %3Crect x=%22343%22 y=%229.5%22 width=%222%22 height=%2225%22/%3E %3Crect x=%229.5%22 y=%22214%22 width=%2225%22 height=%222%22/%3E %3Crect x=%2221%22 y=%22202.5%22 width=%222%22 height=%2225%22/%3E %3Crect x=%22331.5%22 y=%22214%22 width=%2225%22 height=%222%22/%3E %3Crect x=%22343%22 y=%22202.5%22 width=%222%22 height=%2225%22/%3E %3C/g%3E %3Cpath fill=%22%23000000%22 fill-rule=%22evenodd%22 d=%22M190.5 98.5 190.5 124.5 191.5 125.5 216 125.5 217 126.5 216 128.5 199 145.5 198 147 218.5 166.5 219.5 166 245 141 246.5 141 247.5 142.5 247 166 247.5 167 275.5 167 275.5 140.5 275 140 249 140 248.5 138.5 249 137.5 260.5 127 261 125.5 241.5 106.5 239.5 106 222.5 122.5 221 124 219.5 124.5 218.5 124 218 98.5ZM218.5 71.5 218.5 96.5 219 98 274.5 98.5 275.5 97.5 276 71.5 275.5 71 220 71ZM91.5 113 91 138.5 91.5 139.5 119 139.5 119.5 140 119.5 165.5 120 167 121.5 167 189.5 167 190 166.5 190.5 141.5 190 139.5 157.5 108 150.5 101.5 149 99.5 149.5 98.5 150.5 98 190 98 190.5 72 189.5 71 148.5 71 147.5 71.5 147.5 96.5 147 98.5 143.5 103 128.5 117.5 128.5 118 148.5 138 148.5 140 119.5 139.5 119 137 119.5 113.5 119 113 92 112.5Z%22/%3E %3C/svg%3E");}.mar-sw button[data-accent="#C0FE04"]{--sw-img:url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22366%22 height=%22237%22 viewBox=%220 0 366 237%22%3E %3Ctitle%3E%E9%A9%AC%E6%8B%89%E6%9D%BELOGO%3C/title%3E %3Crect width=%22366%22 height=%22237%22 fill=%22%23C0FE04%22/%3E %3Cg fill=%22%23536D02%22%3E %3Crect x=%229.5%22 y=%2221%22 width=%2225%22 height=%222%22/%3E %3Crect x=%2221%22 y=%229.5%22 width=%222%22 height=%2225%22/%3E %3Crect x=%22331.5%22 y=%2221%22 width=%2225%22 height=%222%22/%3E %3Crect x=%22343%22 y=%229.5%22 width=%222%22 height=%2225%22/%3E %3Crect x=%229.5%22 y=%22214%22 width=%2225%22 height=%222%22/%3E %3Crect x=%2221%22 y=%22202.5%22 width=%222%22 height=%2225%22/%3E %3Crect x=%22331.5%22 y=%22214%22 width=%2225%22 height=%222%22/%3E %3Crect x=%22343%22 y=%22202.5%22 width=%222%22 height=%2225%22/%3E %3C/g%3E %3Cpath fill=%22%23000000%22 fill-rule=%22evenodd%22 d=%22M176 50 174 51 170 51 168.5 52 162.5 53 150.5 58 141.5 64 133.5 71.5 128 77.5 122.5 86.5 120 92.5 119 93.5 119 94.5 118 95.5 118 97.5 117 99 117 100.5 116 102.5 116 105 115 106.5 115 111.5 114 114 114 125 115 127.5 115 132 116 134 116 136.5 117 138 117 140.5 118 141.5 119 145.5 120 146.5 121 149.5 123 153.5 124 154.5 124 155.5 126 157.5 126 158.5 133 167 140.5 174 149.5 180 150.5 180 153.5 182 154.5 182 155.5 183 156.5 183 157.5 184 159.5 184 160.5 185 162.5 185 163.5 186 165.5 186 167.5 187 170.5 187 172 188 174.5 188 175 187.5 175 144.5 174 144 171.5 144 170.5 143 168.5 143 167.5 142 166.5 142 165.5 141 162.5 140 158.5 137 157.5 137 149 128.5 146 124.5 143 118.5 143 116.5 142 115.5 142 113.5 141 112 141 108.5 140 106.5 140 98.5 141 95 141 91.5 142 90.5 142 88.5 143 87.5 144 83.5 149 75.5 157.5 67 158.5 67 160.5 65 161.5 65 164 63 167.5 62 168.5 61 170.5 61 171.5 60 174 60 176 59 191 59 193.5 60 195.5 60 196.5 61 198.5 61 199.5 62 203 63 209.5 67 219 76.5 219 77.5 221 79.5 221 80.5 222 81.5 222 82.5 223 83.5 223 85 224 85.5 224 87.5 225 88.5 225 90.5 226 91.5 226 95 227 97 227 106.5 226 108.5 226 112 225 113.5 225 115.5 224 116.5 224 118.5 223 119.5 223 120.5 222 121.5 222 122.5 218 128.5 210.5 136 206.5 139 201.5 141 200.5 142 199.5 142 198.5 143 196.5 143 195.5 144 193 144 192 144.5 192 187.5 195 188 196.5 187 199.5 187 201.5 186 203.5 186 204.5 185 206.5 185 207.5 184 209.5 184 210.5 183 211.5 183 212.5 182 213.5 182 214.5 181 217.5 180 218.5 179 219.5 179 221.5 177 222.5 177 224.5 175 226.5 174 238 162.5 243 155.5 243 154.5 244 153.5 247 147.5 247 146.5 248 145.5 249 141.5 250 140.5 250 138.5 251 136.5 251 134 252 132.5 252 127.5 253 125 253 113.5 252 111.5 252 106.5 251 104.5 251 101.5 250 100.5 250 98.5 249 97.5 249 95.5 248 94.5 248 93.5 247 90.5 246 89.5 246 88.5 240 78.5 235 72.5 229.5 67 218.5 59 215.5 58 214.5 57 213.5 57 212.5 56 211.5 56 210.5 55 208.5 55 207.5 54 206.5 54 204.5 53 203 53 201.5 52 199 52 197 51 193 51 191 50Z%22/%3E %3C/svg%3E");}',
         '/* the field switch — its OWN control, not a third segment. The pair below',
         '   is a radio group that always carries exactly one of its two choices, so',
         '   turning the animation off cannot un-pick a colour pair (and turning a',
@@ -778,8 +906,10 @@ window.__ModuleLoader__.load({
         '.mar-switch:focus-visible{outline:1px solid var(--mar-accent);outline-offset:2px;}',
         '/* density / breathing only describe the field, so they dim while it is off',
         '   (the switch row itself never does; neither do the task-completion rows,',
-        '   which have nothing to do with the background field). */',
-        '.mar-set-pane.mar-anim-off .mar-set-row:not(.mar-set-switch):not(.mar-set-done){opacity:.45;}',
+        '   which have nothing to do with the background field, nor 外观 — its two',
+        '   buttons have nothing to do with the field either, and dimming them read as',
+        '   "像有一层灰黑色蒙住了" (user 2026-10-17). */',
+        '.mar-set-pane.mar-anim-off .mar-set-row:not(.mar-set-switch):not(.mar-set-done):not(.mar-set-appearance){opacity:.45;}',
         '.mar-set-row{display:flex;align-items:center;gap:12px;margin:0 0 10px;}',
         '/* 标签一律不换行：这行只有 8 个汉字（「每轮 Token 结算」），88px 的槽位',
         '   会让它折成两行，读起来像排版事故。112px + nowrap 一次解决。',
@@ -896,6 +1026,40 @@ window.__ModuleLoader__.load({
         '  -webkit-text-fill-color:var(--dsw-alias-label-caption);',
         '}',
 
+        '/* ---- the last native blues: COMPONENT-scoped custom properties --------',
+        '   The five aliases above can be pinned through overrideTokens because DSH',
+        '   declares them itself. These six cannot: the bundle declares them on the',
+        '   consuming element (e.g. `._code_1wejo_8{--dsh-file-type-default-color:',
+        '   var(--dsw-static-deepseek-500)}`), and an element\'s OWN custom-property',
+        '   declaration beats anything inherited from <body> — so an override has to',
+        '   match that element, not the token. Selectors therefore key on the READABLE',
+        '   half of the CSS-module class name (`_code_`, `_table`, `_turnLabelActive`,',
+        '   `_toast_`, `_colorMessages`): the hash segment changes on every DSH build,',
+        '   the readable one does not. Measured against the installed bundle with',
+        '   .generated/scan-blue-usage.cjs, and out-specifying the host rule is part',
+        '   of the check (.generated/verify-blues.cjs).',
+        '   All six are !important because the host rules are not, and being certain',
+        '   matters more than being polite here — each one is a single unambiguous',
+        '   colour property. */',
+        '/* the trajectory turn rail / active label: was blue-500 mixed into the plate */',
+        'body.theme-marathon [class*="_table"]{',
+        '  --trajectory-turn-accent:color-mix(in srgb,var(--mar-accent) 22%,var(--mar-bg-deep))!important;}',
+        'body.theme-marathon [class*="_turnLabelActive"]{color:var(--mar-accent-text)!important;}',
+        '/* the toast\'s inline "操作" action: was var(--dsw-static-deepseek-400) directly */',
+        'body.theme-marathon [class*="_toast_"] [class*="_action_"]{',
+        '  color:var(--mar-accent-text)!important;}',
+        '/* the context meter\'s "对话" tint: was var(--dsw-static-blue-450) */',
+        'body.theme-marathon [class*="_colorMessages"]{--meter-tint:var(--mar-accent)!important;}',
+        '/* file-type chips (attachments): .code/.html/.markdown/.word/.other were',
+        '   deepseek-500 / -450 / neutral-bluish-300. Only the blue ones are pinned —',
+        '   .excel/.image/... keep their semantic green/violet. */',
+        'body.theme-marathon [class*="_code_"],',
+        'body.theme-marathon [class*="_html_"],',
+        'body.theme-marathon [class*="_markdown_"],',
+        'body.theme-marathon [class*="_word_"],',
+        'body.theme-marathon [class*="_other_"]{',
+        '  --dsh-file-type-default-color:var(--mar-accent-text)!important;}',
+
         '/* ---- colour-pair switch: the settings mosaic, replayed over the palette --',
         '   Picking 主白 + 绿 or 主黑 + 绿 repaints the whole UI in a single frame:',
         '   every --dsw-* resolves again at once, so there is nothing to see. This',
@@ -1003,13 +1167,13 @@ window.__ModuleLoader__.load({
         // 2026-10-09（用户）：消息内居中 + 绿条上不放费用 + 两侧各一个十字；字体回默认
 '.mlsb-turn-head{display:grid;grid-template-columns:calc(18px * var(--mlsb-s)) 1fr calc(18px * var(--mlsb-s));',
         '  align-items:center;gap:calc(6px * var(--mlsb-s));width:100%;height:calc(28px * var(--mlsb-s));',
-        '  padding:0 calc(9px * var(--mlsb-s));border:0;background:var(--mar-accent);color:var(--mar-accent-ink);',
+        '  padding:0 calc(9px * var(--mlsb-s));border:0;background:var(--mar-bill-accent);color:var(--mar-bill-ink);',
         '  cursor:pointer;font:inherit;text-align:center;transition:border-radius .2s cubic-bezier(.2,.8,.2,1);}',
         '.mlsb-turn-head:hover{filter:brightness(1.05);}',
         '.mlsb-turn-head:focus-visible{outline:1px solid var(--mar-ink-primary);outline-offset:2px;}',
         '.mlsb-turn-title{font:800 calc(11px * var(--mlsb-s))/1 var(--dsw-font-family);',
         '  letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
-        '.mlsb-cross{font:400 calc(14px * var(--mlsb-s))/1 Arial,sans-serif;color:var(--mar-accent-ink);}',
+        '.mlsb-cross{font:400 calc(14px * var(--mlsb-s))/1 Arial,sans-serif;color:var(--mar-bill-ink);}',
         '.mlsb-cross.mlsb-left{justify-self:start;}',
         '.mlsb-cross.mlsb-right{justify-self:end;}',
         // 展开/收起动画— 026-10-09 用户）：`display` 不能过渡，所以用模板那套
@@ -1028,7 +1192,7 @@ window.__ModuleLoader__.load({
         '.mlsb-row b{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;',
         '  font-size:calc(11px * var(--mlsb-s));font-weight:700;',
         '  font-variant-numeric:tabular-nums;color:var(--mar-ink-primary);}',
-        '.mlsb-row b.mlsb-acid{color:var(--mar-accent-text);}',
+        '.mlsb-row b.mlsb-acid{color:var(--mar-bill-acid);}',
         '.mlsb-row b.mlsb-signal{color:var(--mar-signal);}',
         '.mlsb-turn-foot{display:flex;align-items:center;justify-content:space-between;gap:calc(8px * var(--mlsb-s));',
         '  height:calc(26px * var(--mlsb-s));padding:0 calc(9px * var(--mlsb-s));',
@@ -1177,6 +1341,113 @@ dark:  { field: '#0B0D0B', ink: '192,254,4', light: false }   // 主黑 +
             window.localStorage.setItem(BG_STORE_KEY, JSON.stringify(BG_STATE));
           }
         } catch (e) {}
+      }
+
+      // ======================================================================
+      //  主题配色 — the UI accent, and the ONLY thing the 配色 swatches drive
+      //  --------------------------------------------------------------------
+      //  Seven flat rectangles in the settings pane (配色 group); picking one
+      //  repaints the UI accent, nothing else. It deliberately does NOT touch
+      //  the dot field, the boot animation or the completion animation
+      //  (2026-10-11 user: "配色只调整 UI 的，不动其他") — BG_MODES.ink stays
+      //  '192,254,4' and both boot payloads keep their own colours, so this is
+      //  a UI-accent switch and not a second theme.
+      //
+      //  The default is the original acid green, so a store written before this
+      //  setting existed comes back looking exactly as it did.
+      // ======================================================================
+      var ACCENT_STORE_KEY = 'dsh-theme-marathon.accent.v1';
+      var ACCENT_DEFAULT = '#C0FE04';
+      var ACCENT_ORDER = ['#05C938', '#E60B10', '#E7337C', '#E5710C',
+                          '#C272E9', '#81E8B1', ACCENT_DEFAULT];
+      var ACCENT_STATE = { color: accentLoad() };
+
+      // One spelling for the store, the data-accent attribute and the compare:
+      // upper case, always '#', #RGB expanded to #RRGGBB.
+      function accentNorm(v) {
+        var s = String(v == null ? '' : v).trim().toUpperCase();
+        if (s.charAt(0) !== '#') s = '#' + s;
+        if (/^#[0-9A-F]{3}$/.test(s)) {
+          s = '#' + s[1] + s[1] + s[2] + s[2] + s[3] + s[3];
+        }
+        return /^#[0-9A-F]{6}$/.test(s) ? s : '';
+      }
+      //  Anything outside the seven is NOT selectable: a hand-edited
+      //  localStorage value must never paint a colour the pane cannot un-pick.
+      function accentValid(v) { return ACCENT_ORDER.indexOf(accentNorm(v)) >= 0; }
+
+      function accentLoad() {
+        var v = '';
+        try {
+          v = (typeof window !== 'undefined' && window.localStorage)
+            ? window.localStorage.getItem(ACCENT_STORE_KEY) : '';
+        } catch (e) { v = ''; }
+        return accentValid(v) ? accentNorm(v) : ACCENT_DEFAULT;
+      }
+      function accentSave() {
+        try {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            window.localStorage.setItem(ACCENT_STORE_KEY, ACCENT_STATE.color);
+          }
+        } catch (e) {}
+      }
+      function accentRgb(hex) {
+        var h = accentNorm(hex) || ACCENT_DEFAULT;
+        return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16),
+                parseInt(h.slice(5, 7), 16)];
+      }
+      //  The ink that sits ON an accent fill. The old theme could hard-code
+      //  #0B0D0B because there was exactly ONE accent; with seven of them the
+      //  fill can be dark (the red is only 4.75:1 against black), so the ink is
+      //  measured: whichever of #0B0D0B / #FFFFFF has the higher contrast wins.
+      //  --mar-accent-ink and --mar-solid-ink must get the SAME value — the
+      //  second is what DSH's own on-solid labels resolve through.
+      function accentInk(hex) {
+        var c = accentRgb(hex);
+        var lin = [0, 0, 0];
+        for (var i = 0; i < 3; i++) {
+          var v = c[i] / 255;
+          lin[i] = v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+        }
+        var L = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+        var onDark = (L + 0.05) / 0.05;   // contrast against #0B0D0B
+        var onWhite = 1.05 / (L + 0.05);
+        return onWhite > onDark ? '#FFFFFF' : '#0B0D0B';
+      }
+
+      //  The whole state change. Set INLINE on <body> so it outranks both the
+      //  base block and the light layer in the injected stylesheet — the light
+      //  layer's own --mar-accent-text:#0B0D0B is therefore re-derived here
+      //  rather than left to the cascade.
+      function accentApply() {
+        var color = ACCENT_STATE.color;
+        var rgb = accentRgb(color);
+        var ink = accentInk(color);
+        var light = body.classList.contains('mar-bg-light');
+        body.style.setProperty('--mar-accent', color);
+        body.style.setProperty('--mar-accent-ink', ink);
+        body.style.setProperty('--mar-solid-ink', ink);
+        //  On the white plate the accent is a SURFACE and never a letterform
+        //  (see the long note on --mar-accent-text in the stylesheet).
+        body.style.setProperty('--mar-accent-text', light ? '#0B0D0B' : color);
+        body.style.setProperty('--mar-wash-accent',
+          'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',.14)');
+      }
+
+      // ---- RESERVED: the switch animation ----------------------------------
+      //  "在切换颜色时，也需要有一个动画，我们先预留动画接口" (2026-10-11).
+      //  The colour change itself is accentApply(); the animation that dresses
+      //  it is not written yet. The CONTRACT is fixed now so the animation can
+      //  be dropped in later without touching the click path or its tests:
+      //    · next   the colour being switched TO, already normalised+validated
+      //    · apply  the one and only state change — call it EXACTLY ONCE, and
+      //             synchronously from inside the player (vtPour above has the
+      //             same shape, so it can be reused verbatim if the mosaic pour
+      //             is what the animation turns out to be)
+      //  Today it is a pass-through: the swatch repaints instantly and nothing
+      //  animates. Do not "temporarily" call apply() a second time here.
+      function accentSwitchFx(next, apply) {
+        if (typeof apply === 'function') apply();
       }
 
       function bgResize() {
@@ -1553,6 +1824,14 @@ bgObserver.observe(host, { childList: true, subtree: true, attributes: true, att
         if (ui.light) body.classList.add('mar-bg-light'); else body.classList.remove('mar-bg-light');
         syncThemePreference(ui.light);
         body.style.setProperty('--mar-bg-field', ui.field);
+        //  The accent is re-applied here, AFTER the light class moved: which
+        //  variable carries the accent as TEXT depends on the plate, and this is
+        //  the one place both sides of that decision are already in hand.
+        accentApply();
+        //  …and the alias map with it. It does not change with the plate (the
+        //  values are var(--mar-*)), but this is the one call site that runs on
+        //  mount AND on every plate switch, and re-asserting costs nothing.
+        themeAliasApply();
         if (bgCanvas) bgCanvas.style.display = on ? 'block' : 'none';
         bgMarkClear(!on);
         if (!on) { bgStop(); return; }
@@ -1872,6 +2151,20 @@ bgObserver.observe(host, { childList: true, subtree: true, attributes: true, att
         body.style.removeProperty('--mar-bg-field');
         body.style.removeProperty('--mar-bg-veil-a');
         body.style.removeProperty('--mar-bg-veil-rgb');   // 旧版本留下的变量，顺手清掉
+        //  配色也走 inline 变量，dispose 时必须一并摘掉，否则主题卸了、
+        //  强调色还留在 <body> 上（下一份主题会继承一个不属于它的颜色）。
+        body.style.removeProperty('--mar-accent');
+        body.style.removeProperty('--mar-accent-ink');
+        body.style.removeProperty('--mar-solid-ink');
+        body.style.removeProperty('--mar-accent-text');
+        body.style.removeProperty('--mar-wash-accent');
+        //  …and the projected alias map: an unthemed page must not keep DSH
+        //  aliases pointing at variables that are about to disappear.
+        for (var tName in MAR_TOKEN_MAP) {
+          if (Object.prototype.hasOwnProperty.call(MAR_TOKEN_MAP, tName)) {
+            body.style.removeProperty(tName);
+          }
+        }
         if (bgCanvas && bgCanvas.parentNode) bgCanvas.parentNode.removeChild(bgCanvas);
         bgCanvas = null;
         bgCtx = null;
@@ -2580,11 +2873,22 @@ try {
         '<rect x="1.6" y="1.6" width="12.8" height="12.8" stroke="currentColor" stroke-width="1.2"/>' +
         '<path d="M8 4.4v7.2M4.4 8h7.2" stroke="currentColor" stroke-width="1.2"/></svg>';
 
-      function bgSegChip(mode) {
-        var m = BG_MODES[mode];
-        return '<span class="mar-chip" style="background:' + m.field + '">' +
-          '<i style="background:' + m.field + '"></i>' +
-          '<i style="background:rgb(' + m.ink + ')"></i></span>';
+      //  The seven swatches. No visible text — the colour/artwork IS the label; the
+      //  hex only survives as an aria-label so the group is still usable from a
+      //  keyboard/screen reader. The flat colour is a custom property (--sw) that
+      //  doubles as the artwork's fallback; --sw-img comes from the generated
+      //  per-data-accent rules (build.cjs FACTIONS).
+      //  (There used to be a bgSegChip() preview inside the 浅色/深色 buttons; the
+      //  user asked for plain words on 2026-10-17, so it is gone.)
+      function accentSwatches() {
+        var out = '';
+        for (var i = 0; i < ACCENT_ORDER.length; i++) {
+          var c = ACCENT_ORDER[i];
+          out += '<button type="button" role="radio" data-accent="' + c +
+            '" aria-checked="false" aria-label="' + c +
+            '" style="--sw:' + c + '"></button>';
+        }
+        return out;
       }
 
       function mountSettingsTab(panel) {
@@ -2672,14 +2976,23 @@ try {
         pane.setAttribute('data-mar-pane', '1');
         pane.innerHTML =
           '<h4>主题设置</h4>' +
-          '<p class="mar-set-sub">Marathon FUI · 主题配色与各项动画开关</p>' +
+          '<p class="mar-set-sub">Marathon FUI · 主题色与各项动画开关</p>' +
           '<div class="mar-set-group">' +
             '<div class="mar-set-head">外观</div>' +
-            '<div class="mar-set-row"><label>配色</label>' +
-            '<div class="mar-seg" role="radiogroup" aria-label="背景配色">' +
-            '<button type="button" role="radio" data-pair="light" aria-checked="false">' + bgSegChip('light') + '主白 + 绿</button>' +
-            '<button type="button" role="radio" data-pair="dark" aria-checked="false">' + bgSegChip('dark') + '主黑 + 绿</button>' +
+            // 只有两个词，没有预览图案 —— 用户 2026-10-17："只需要显示浅色和深色即可，
+            // 目前两个按钮前方还有图案"。mar-set-appearance 让它不被"关闭背景动画就
+            // 变暗"那条规则连坐（那一层 45% 的暗正是"像有一层灰黑色蒙住了"）。
+            '<div class="mar-set-row mar-set-appearance"><label>配色</label>' +
+            '<div class="mar-seg" role="radiogroup" aria-label="外观配色">' +
+            '<button type="button" role="radio" data-pair="light" aria-checked="false">浅色</button>' +
+            '<button type="button" role="radio" data-pair="dark" aria-checked="false">深色</button>' +
             '</div></div>' +
+          '</div>' +
+          '<div class="mar-set-group">' +
+            '<div class="mar-set-head">主题色</div>' +
+            '<div class="mar-sw" role="radiogroup" aria-label="主题色">' +
+              accentSwatches() +
+            '</div>' +
           '</div>' +
           '<div class="mar-set-group">' +
             '<div class="mar-set-head">背景动画</div>' +
@@ -2692,6 +3005,18 @@ try {
             '<div class="mar-set-row"><label for="mar-bg-speed">呼吸速度</label>' +
             '<input type="range" id="mar-bg-speed" min="0" max="1.5" step="0.05">' +
             '<span class="mar-val" data-val="speed"></span></div>' +
+          '</div>' +
+          // 启动动画：冷启动揭幕（鲸鱼 → HUI 框 → 蓝块 → 红扫 → 揭幕）。
+          // 一个开关，没有别的行 —— 用户 2026-10-17 明确要求删掉那句
+          // "只在下次冷启动生效（揭幕发生在设置页能打开之前，本次改不了）"。
+          // 它本来就跑在设置页能打开之前，所以也没什么可预览的。
+          // （开关行本身带 `.mar-set-switch`，因此天然不在"关闭背景动画就变暗"
+          //   的名单里；这一组将来若加非开关行，记得进那个 `:not(...)` 排除表。）
+          '<div class="mar-set-group">' +
+            '<div class="mar-set-head">启动动画</div>' +
+            '<div class="mar-set-row mar-set-switch"><label for="mar-boot">启用</label>' +
+            '<input type="checkbox" class="mar-switch" id="mar-boot">' +
+            '<span class="mar-val" data-val="boot"></span></div>' +
           '</div>' +
           '<div class="mar-set-group">' +
             '<div class="mar-set-head">任务完成动画</div>' +
@@ -2721,6 +3046,21 @@ try {
         var doneNoteEl = pane.querySelector('#mar-done-note');
         var cellIn = pane.querySelector('#mar-bg-cell');
         var speedIn = pane.querySelector('#mar-bg-speed');
+        var bootIn = pane.querySelector('#mar-boot');
+
+        // 启动动画（2026-10-17）：独立开关，**默认 ON**。它没有即时反馈 ——
+        // 揭幕只在冷启动那一瞬播，设置页能打开时它早结束了 —— 所以这里只写盘，
+        // 另外：万一揭幕正好还在跑（装载后几秒内就打开设置），关掉即收掉它。
+        if (bootIn) {
+          bootIn.addEventListener('change', function () {
+            BOOT_STATE.on = !!bootIn.checked;
+            bootSave();
+            if (!BOOT_STATE.on && bootCleanup) {
+              try { bootCleanup(); } catch (e) {}
+            }
+            syncPane(pane);
+          });
+        }
 
         // 「每轮 Token 结算」：一个独立的开关（2026-10-09 用户要求加进主题设置）。
 if (billIn) {
@@ -2813,6 +3153,29 @@ var head =
           vtPour(bgApplyMode);
           syncPane(pane);
         });
+
+        // 配色：又一个 radio group —— 七个色块里永远有一个是选中的。它只换
+        // UI 强调色，既不碰场开关也不碰 plate（两者都在上面各自的状态里）。
+        var swRow = pane.querySelector('.mar-sw');
+        if (swRow) {
+          swRow.addEventListener('click', function (ev) {
+            var b = ev.target;
+            while (b && b !== swRow) {
+              if (b.getAttribute && b.getAttribute('data-accent')) break;
+              b = b.parentNode;
+            }
+            if (!b || b === swRow) return;
+            var next = accentNorm(b.getAttribute('data-accent'));
+            if (!accentValid(next) || next === ACCENT_STATE.color) {
+              syncPane(pane); return;
+            }
+            ACCENT_STATE.color = next;
+            accentSave();
+            //  预留的动画接口：accentSwitchFx 独占那一次 apply()。
+            accentSwitchFx(next, accentApply);
+            syncPane(pane);
+          });
+        }
         cellIn.addEventListener('input', function () {
           BG_STATE.cell = bgNum(parseInt(cellIn.value, 10) || 16, 8, 48);
           bgSave();
@@ -2843,6 +3206,16 @@ var head =
           var on = btns[i].getAttribute('data-pair') === BG_STATE.scheme;
           btns[i].setAttribute('aria-checked', on ? 'true' : 'false');
         }
+        // 配色：同样一个永远唯一的选中项；顺便把色值写回 --sw，这样填充不
+        // 依赖 style 属性里自定义属性被解析的运气（将来换成 SVG 时这段保留）。
+        var sws = pane.querySelectorAll('.mar-sw button');
+        for (var j = 0; j < sws.length; j++) {
+          var hex = accentNorm(sws[j].getAttribute('data-accent'));
+          sws[j].setAttribute('aria-checked', hex === ACCENT_STATE.color ? 'true' : 'false');
+          if (hex && sws[j].style && sws[j].style.setProperty) {
+            sws[j].style.setProperty('--sw', hex);
+          }
+        }
         var cellIn = pane.querySelector('#mar-bg-cell');
         var speedIn = pane.querySelector('#mar-bg-speed');
         if (cellIn) { cellIn.value = String(BG_STATE.cell); cellIn.disabled = !BG_STATE.anim; }
@@ -2856,6 +3229,10 @@ var head =
         var doneTextIn = pane.querySelector('#mar-done-text');
         if (doneTextIn && doneTextIn !== doc.activeElement) doneTextIn.value = DONE_STATE.text;
         syncDoneState();
+        // 启动动画：只有一个开关。开关行天然是"亮"的（`.mar-set-switch` 在调暗
+        // 名单之外），所以这里不写任何说明文字——用户 2026-10-17 要求删掉那句。
+        var bootIn = pane.querySelector('#mar-boot');
+        if (bootIn) bootIn.checked = bootEnabled();
         if (BG_STATE.anim) pane.classList.remove('mar-anim-off');
         else pane.classList.add('mar-anim-off');
         var vals = {
@@ -2863,7 +3240,8 @@ var head =
           cell: BG_STATE.cell + ' px',
           speed: BG_STATE.speed.toFixed(2),
           billing: billingEnabled() ? '开' : '关',
-          done: doneEnabled() ? '开' : '关'
+          done: doneEnabled() ? '开' : '关',
+          boot: bootEnabled() ? '开' : '关'
         };
         var outs = pane.querySelectorAll('.mar-val');
         for (var k = 0; k < outs.length; k++) {
@@ -2907,14 +3285,47 @@ var head =
         try { sessionStorage.setItem(BOOT_ONCE_KEY, '1'); } catch (e) {}
       }
 
+      // ---- 启动动画 开关（2026-10-17，用户要求） ---------------------------
+      // 冷启动揭幕以前**没有 UI 开关**：想关只能停用整个插件（docs/INSTALL.md
+      // 当时就是这么写的）。现在它是设置页里的一组，和其它开关一样独立。
+      //   · 默认 **ON**，所以老用户的行为一个字节不变；
+      //   · 它**只在下次冷启动生效** —— 揭幕发生在插件 mount 的当下，等设置页
+      //     能打开时它早结束了。所以这里不做"预览"，只在行下面写清楚这一点；
+      //   · 关掉时如果揭幕**正好还在跑**（理论上可能：装载后几秒内就打开设置），
+      //     直接把覆盖层收掉（bootCleanup 就是现成的 teardown）。
+      var BOOT_STORE_KEY = 'mar.boot.v1';
+      function bootLoad() {
+        try {
+          var raw = (typeof window !== 'undefined' && window.localStorage)
+            ? window.localStorage.getItem(BOOT_STORE_KEY) : null;
+          if (!raw) return { on: true };
+          var parsed = JSON.parse(raw);
+          return { on: !(parsed && parsed.on === false) };
+        } catch (e) { return { on: true }; }
+      }
+      function bootSave() {
+        try {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            window.localStorage.setItem(BOOT_STORE_KEY, JSON.stringify(BOOT_STATE));
+          }
+        } catch (e) {}
+      }
+      var BOOT_STATE = bootLoad();
+      function bootEnabled() { return BOOT_STATE.on !== false; }
+      function bootReduced() {
+        return !!(typeof window !== 'undefined' && window.matchMedia &&
+          window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+      }
+
       function buildBoot() {
         if (bootCleanup) return;                 // already running / done
         if (!BOOT_PAYLOAD) return;               // template without build
+        // The master switch. OFF means the cold-start reveal never mounts: no
+        // host, no stylesheet, no engine scripts, no watchdog timer.
+        if (!bootEnabled()) return;
         // The only ways out are the OS-level reduced-motion preference and the
         // cold-start gate (first document load of this window only).
-        var reduce = (typeof window !== 'undefined' && window.matchMedia &&
-          window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-        if (reduce) return;
+        if (bootReduced()) return;
         if (bootAlreadyPlayed() || !bootIsPageLoad()) return;
         markBootPlayed();
 
@@ -3421,6 +3832,11 @@ billingTick();
         //   already runs guarantees the UI ends up matching the pair, and both writes
         //   are idempotent (setTheme is bounded by lastRequestedScheme).
         syncThemePreference((BG_MODES[BG_STATE.scheme] || BG_MODES.dark).light);
+        //   Same reason, same tick: DSH's theme presenter projects the resolved
+        //   snapshot onto <body> as inline custom properties and REMOVES the ones
+        //   it wrote last time — which are these same names. Re-asserting here is
+        //   what keeps the palette from being undone a beat after it lands.
+        themeAliasApply();
         if (BG_STATE.anim) { bgMarkClear(false); bgWatch(); }
       }
       if (typeof setInterval !== 'undefined') mosaicSweeper = setInterval(sweepReveals, 1200);
@@ -3740,6 +4156,11 @@ var displayed = billingDisplayedSessionId();
 
       buildBoot();
       bgMount();
+      //  The palette is projected here as well, before anything can read it, and
+      //  the self-check lands a beat later (after DSH's own presenter has had its
+      //  say) so the report records the SETTLED state, not the hopeful one.
+      themeAliasApply();
+      if (typeof setTimeout === 'function') setTimeout(marThemeReport, 1500);
       // 任务完成动画：先挂上触发链（会话服务可能还没 register，attachDone
 // 等它）；真正播不播还要过开关与「减少动态效果」两道闸（见 doneSchedule /
       // playDone）
@@ -3748,6 +4169,12 @@ attachDone();
       try {
         if (ctx && typeof ctx.on === 'function') {
           ctx.on('connection/reset', function () { pokeDone(15); });
+          //  The presenter re-projects on every theme change and removes the names
+          //  it wrote last time — the same names. Defer past the other listeners
+          //  (ours may run first) and put the palette back.
+          ctx.on('theme/change', function () {
+            setTimeout(function () { themeAliasApply(); marThemeReport(); }, 0);
+          });
         }
       } catch (e) {}
 
