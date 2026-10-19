@@ -63,8 +63,11 @@
 `--mar-accent` / `--mar-accent-ink` / `--mar-solid-ink` / `--mar-accent-text` /
 `--mar-wash-accent` 五个变量 inline 写到 `<body>` 上（inline 才能压过样式表里的浅色层）。
 候选：`#05C938` / `#E60B10` / `#E7337C` / `#E5710C` / `#C272E9` / `#81E8B1` / `#C0FE04`（默认）。
-**它只改 UI**：点阵场的字形色（`BG_MODES.ink` = `192,254,4`）、启动入场与完成动画的用色
-都不受它影响。切换动画尚未实现，接口是 `accentSwitchFx(next, apply)`。
+**它改 UI 强调色 + 背景点阵**：点阵场的字形色在 2026-10-19 起跟着它走
+（`bgInk()` = `accentRgb(ACCENT_STATE.color)`，此前被钉在 `192,254,4`；用户："将主题色适配到
+背景动画中"，这条取代了 2026-10-11 的"配色只调整 UI"）。改色后 `accentApply()` 会**立即重画**
+画布（`bgDraw`），否则在「减少动态效果」下那帧静态点阵会一直停在旧颜色。
+不受它影响的只剩启动入场与完成动画的用色。切换动画尚未实现，接口是 `accentSwitchFx(next, apply)`。
 七个色块**每一格都有图**：六格是阵营标记、默认色 `#C0FE04` 那格是马拉松 LOGO
 （`assets/factions/*.svg`，构建时按 `data-accent` 内联成 `--sw-img`，
 见 [SETTINGS.md](SETTINGS.md#色块上的图案)）。

@@ -1260,11 +1260,11 @@ window.__ModuleLoader__.load({
       //      session switch cannot leave the sidebar on an opaque plate for a
       //      whole second — that is what read as "the field disappears and
       //      comes back".
-      //    * pair / density / speed are user settings, persisted in
+      //    * pair / density / opacity / speed are user settings, persisted in
       //      localStorage and surfaced in DSH's settings dialog under the
       //      「主题设置」 tab this file injects (mountSettingsTab below).
       //  Knobs: BG_STATE.anim (the field switch), .scheme (light|dark), .cell,
-      //  .speed.
+      //  .alpha (how visible the glyphs are), .speed.
       //  The canvas carries the field colour itself (--mar-bg-field), so
       //  clearRect only wipes glyphs — the field is never repainted per frame.
       // ======================================================================
@@ -1274,10 +1274,12 @@ window.__ModuleLoader__.load({
       var BG_ALPHA0 = 0.08;     // alpha of the weakest glyph
       var BG_ALPHA1 = 0.55;     // extra alpha at full strength
       var BG_FPS = 30;          // the field breathes slowly; 30 is plenty
-      //   field / ink   the field's own plate colour and the glyph colour
+      //   field         the field's own plate colour
       //   light         the UI on top has to flip with it (see the light layer
       //                 in the stylesheet): white plate, black ink. It is what
       //                 the 背景动画 switch must NOT take away — see bgApplyMode.
+      //   (the GLYPH colour is not here any more — it is the theme accent, see
+      //    bgInk() below; 2026-10-19 用户："将主题色适配到背景动画中")
       //  There is no scrim ("veil") any more. It existed for one reason: 60%
       //  black over the old acid-green field was the only way to keep white ink
       //  legible, so the .mar-bg-clear containers took a wash. With the field
@@ -1293,9 +1295,18 @@ window.__ModuleLoader__.load({
       //      green pixels — "主白 + 绿 也要有点阵" was a field painting
       //      perfectly and visible nowhere.
       var BG_MODES = {
-        light: { field: '#FFFFFF', ink: '192,254,4', light: true },   // 主白 +
-dark:  { field: '#0B0D0B', ink: '192,254,4', light: false }   // 主黑 +
-};
+        light: { field: '#FFFFFF', light: true },    // 浅色底盘：白底
+        dark:  { field: '#0B0D0B', light: false }    // 深色底盘：黑底
+      };
+      //  The glyph colour IS the theme accent as of 2026-10-19 (用户："将主题色适配到
+      //  背景动画中"). It used to be the frozen '192,254,4' — that was the 2026-10-11
+      //  decision ("配色只调整 UI 的，不动其他"), which the user has now superseded for
+      //  this one surface. --mar-accent is written inline on <body> by accentApply(),
+      //  so ACCENT_STATE is the same value with no DOM round-trip. Returns the
+      //  'r,g,b' triple the canvas alpha prefix expects.
+      function bgInk() {
+        return accentRgb(ACCENT_STATE.color).join(',');
+      }
       var BG_STATE = bgLoad();
 
       var bgCanvas = null, bgCtx = null, bgMounted = false;
@@ -1313,8 +1324,11 @@ dark:  { field: '#0B0D0B', ink: '192,254,4', light: false }   // 主黑 +
       //           the two is always chosen (the pair buttons are a radio group),
       //           and it is kept while the field is off, so the 背景动画 switch
       //           cannot flip the UI back.
+      //   alpha   how visible the glyphs are, 0..1 (默认 1 = 原来的强度).
+      //           用户 2026-10-19："再给背景动画添加一个透明度，用于调节可见范围"。
+      //           它乘在每条字形的 alpha 上，所以 0 就是"看不见"、1 是原样。
       function bgLoad() {
-        var out = { anim: false, scheme: 'dark', cell: 16, speed: 0.55 };
+        var out = { anim: false, scheme: 'dark', cell: 16, speed: 0.55, alpha: 1 };
         var raw = null;
         try { raw = (typeof window !== 'undefined' && window.localStorage) ? window.localStorage.getItem(BG_STORE_KEY) : null; } catch (e) { raw = null; }
         if (!raw) return out;
@@ -1333,6 +1347,9 @@ dark:  { field: '#0B0D0B', ink: '192,254,4', light: false }   // 主黑 +
         if (pair) out.scheme = pair;
         if (typeof s.cell === 'number') out.cell = bgNum(Math.round(s.cell), 8, 48);
         if (typeof s.speed === 'number') out.speed = bgNum(s.speed, 0, 1.5);
+        //  Store written before 2026-10-19 has no alpha → full strength (1), which
+        //  is exactly what those builds looked like.
+        if (typeof s.alpha === 'number') out.alpha = bgNum(s.alpha, 0, 1);
         return out;
       }
       function bgSave() {
@@ -1432,6 +1449,14 @@ dark:  { field: '#0B0D0B', ink: '192,254,4', light: false }   // 主黑 +
         body.style.setProperty('--mar-accent-text', light ? '#0B0D0B' : color);
         body.style.setProperty('--mar-wash-accent',
           'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',.14)');
+        //  The dot field's glyphs ARE this accent now (bgInk), so repaint the canvas
+        //  immediately instead of waiting for the next rAF frame. It matters most
+        //  under reduced motion, where the field is a single static frame that
+        //  would otherwise keep the previous colour until something else redraws.
+        //  bgW/bgCtx are 0/null before the first bgResize, hence the guard.
+        if (bgCtx && BG_STATE.anim && bgW > 0) {
+          try { bgDraw(bgElapsed); } catch (e) {}
+        }
       }
 
       // ---- RESERVED: the switch animation ----------------------------------
@@ -1465,7 +1490,11 @@ dark:  { field: '#0B0D0B', ink: '192,254,4', light: false }   // 主黑 +
       function bgDraw(t) {
         if (!bgCtx || !BG_STATE.anim) return;
         var g = bgCtx, cell = BG_STATE.cell;
-        var ink = BG_MODES[BG_STATE.scheme].ink;
+        //  The glyph colour is the live theme accent (bgInk), and the per-glyph
+        //  alpha is the old curve scaled by the 透明度 knob — so alpha 1 reproduces
+        //  every earlier build exactly, and 0 draws nothing at all.
+        var ink = bgInk();
+        var alphaMul = bgNum(BG_STATE.alpha, 0, 1);
         g.clearRect(0, 0, bgW, bgH);
         g.font = '500 ' + Math.max(9, Math.round(cell * 0.8)) +
           'px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
@@ -1481,7 +1510,8 @@ dark:  { field: '#0B0D0B', ink: '192,254,4', light: false }   // 主黑 +
             if (v < BG_FLOOR) continue;
             var ch = BG_PALETTE.charAt(Math.min(BG_PALETTE.length - 1, Math.floor(v * BG_PALETTE.length)));
             if (ch === ' ') continue;
-            g.fillStyle = 'rgba(' + ink + ',' + (BG_ALPHA0 + (v - BG_FLOOR) * BG_ALPHA1).toFixed(3) + ')';
+            g.fillStyle = 'rgba(' + ink + ',' +
+              ((BG_ALPHA0 + (v - BG_FLOOR) * BG_ALPHA1) * alphaMul).toFixed(3) + ')';
             g.fillText(ch, c * cell, r * cell);
           }
         }
@@ -3002,6 +3032,11 @@ try {
             '<div class="mar-set-row"><label for="mar-bg-cell">点阵密度</label>' +
             '<input type="range" id="mar-bg-cell" min="8" max="40" step="2">' +
             '<span class="mar-val" data-val="cell"></span></div>' +
+            // 透明度（2026-10-19 用户："再给背景动画添加一个透明度，用于调节可见范围"）：
+            // 乘在每条字形的 alpha 上，100% = 原来的强度，0% = 看不见。
+            '<div class="mar-set-row"><label for="mar-bg-alpha">透明度</label>' +
+            '<input type="range" id="mar-bg-alpha" min="0" max="1" step="0.01">' +
+            '<span class="mar-val" data-val="alpha"></span></div>' +
             '<div class="mar-set-row"><label for="mar-bg-speed">呼吸速度</label>' +
             '<input type="range" id="mar-bg-speed" min="0" max="1.5" step="0.05">' +
             '<span class="mar-val" data-val="speed"></span></div>' +
@@ -3046,6 +3081,7 @@ try {
         var doneNoteEl = pane.querySelector('#mar-done-note');
         var cellIn = pane.querySelector('#mar-bg-cell');
         var speedIn = pane.querySelector('#mar-bg-speed');
+        var alphaIn = pane.querySelector('#mar-bg-alpha');
         var bootIn = pane.querySelector('#mar-boot');
 
         // 启动动画（2026-10-17）：独立开关，**默认 ON**。它没有即时反馈 ——
@@ -3183,6 +3219,16 @@ var head =
           bgDraw(bgElapsed);
           syncPane(pane);
         });
+        // 透明度：只重画当前这一帧（不用 resize），所以拖动是即时的。
+        if (alphaIn) {
+          alphaIn.addEventListener('input', function () {
+            BG_STATE.alpha = bgNum(parseFloat(alphaIn.value), 0, 1);
+            if (!isFinite(BG_STATE.alpha)) BG_STATE.alpha = 1;
+            bgSave();
+            bgDraw(bgElapsed);
+            syncPane(pane);
+          });
+        }
         speedIn.addEventListener('input', function () {
           BG_STATE.speed = bgNum(parseFloat(speedIn.value) || 0, 0, 1.5);
           bgSave();
@@ -3218,7 +3264,9 @@ var head =
         }
         var cellIn = pane.querySelector('#mar-bg-cell');
         var speedIn = pane.querySelector('#mar-bg-speed');
+        var alphaIn = pane.querySelector('#mar-bg-alpha');
         if (cellIn) { cellIn.value = String(BG_STATE.cell); cellIn.disabled = !BG_STATE.anim; }
+        if (alphaIn) { alphaIn.value = String(BG_STATE.alpha); alphaIn.disabled = !BG_STATE.anim; }
         if (speedIn) { speedIn.value = String(BG_STATE.speed); speedIn.disabled = !BG_STATE.anim; }
         // 每轮 Token 结算：自己一个开关（与背景动画互不影响）
         var billIn = pane.querySelector('#mar-billing');
@@ -3238,6 +3286,7 @@ var head =
         var vals = {
           anim: BG_STATE.anim ? '开' : '关',
           cell: BG_STATE.cell + ' px',
+          alpha: Math.round(bgNum(BG_STATE.alpha, 0, 1) * 100) + '%',
           speed: BG_STATE.speed.toFixed(2),
           billing: billingEnabled() ? '开' : '关',
           done: doneEnabled() ? '开' : '关',
