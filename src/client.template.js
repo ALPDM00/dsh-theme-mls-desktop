@@ -847,12 +847,19 @@ window.__ModuleLoader__.load({
         '   (probe-sidebar). Scoped to the rail so no other `_fade` element is hit. */',
         'body.theme-marathon [class*="_sidebarCol"] [class*="_fade"]{background-image:none!important;}',
         '/* settings pane: covers the native content column (nav column is 188px).',
-        '   Background and ink are left to the host\'s own settings stylesheet so this',
-        '   pane reads the same as 通用设置 / 模型 / 插件; only the green segment',
-        '   selected state is ours. */',
+        '   The pane still reads as the host\'s own page (ink + font inheriting, same',
+        '   surface), but it now PAINTS that surface itself:',
+        '   background is --dsw-alias-bg-layer-2, the very token AnXs9G_panel uses',
+        '   (overridden by the theme to --mar-bg-panel), so it is pixel-identical to',
+        '   the panel behind it — except that the native page can no longer show',
+        '   through if the hide rule ever misses its target again (2026-11-04: DSH',
+        '   0.2.2 renamed the column from `_content` to `_options` and the old',
+        '   selector silently matched nothing — the previous tab stayed painted',
+        '   under this transparent pane). Only the green segment selected state is',
+        '   ours. */',
         '.mar-set-pane{position:absolute;left:188px;top:0;right:0;bottom:0;z-index:3;',
         '  box-sizing:border-box;padding:26px 24px;overflow:auto;',
-        '  background:transparent;color:inherit;',
+        '  background:var(--dsw-alias-bg-layer-2, var(--mar-bg-panel));color:inherit;',
         '  font-size:13px;line-height:1.6;}',
         '.mar-set-pane h4{margin:0 0 4px;font-size:17px;font-weight:700;letter-spacing:.04em;}',
         '.mar-set-pane .mar-set-sub{margin:0 0 24px;font-size:11px;opacity:.55;}',
@@ -992,8 +999,18 @@ window.__ModuleLoader__.load({
         'body.theme-marathon [class*="_navCell"][class*="_active"]:hover,',
         'body.theme-marathon [class*="_navCell"][aria-current="true"]:hover{',
         '  background-color:var(--mar-accent)!important;color:var(--mar-accent-ink)!important;}',
-        '/* our tab covers the content column, so hide it while ours is showing */',
-        'body.theme-marathon .mar-tab-on > [class*="_content"]{visibility:hidden;}',
+        '/* our tab covers the content column, so hide it while ours is showing.',
+        '   2026-11-04 — DSH 0.2.2 renamed that column\'s CSS-module token from',
+        '   `_content` to `_options` (SettingsRoot: AnXs9G_options, the direct child',
+        '   that carries renderSlot("settings.section")). The old selector matched',
+        '   nothing, so the previous tab stayed painted underneath our pane and the',
+        '   two pages ghosted into each other. Hide by BOTH known tokens AND by the',
+        '   structural marker mountSettingsTab puts on the real column',
+        '   (`data-mar-host-content`), which it finds by geometry, not by hash — so',
+        '   the next rename cannot bring the ghost back silently. */',
+        'body.theme-marathon .mar-tab-on > [class*="_content"],',
+        'body.theme-marathon .mar-tab-on > [class*="_options"],',
+        'body.theme-marathon .mar-tab-on > [data-mar-host-content]{visibility:hidden!important;}',
 
         '/* ---- "Deep diving..." turn status: flat ink, no shimmer --------------',
         '   The host paints this line as a gradient clipped to the text between two',
@@ -2963,6 +2980,58 @@ try {
             nativeCells[i].classList[mute ? 'add' : 'remove']('mar-nav-muted');
           }
         }
+
+        // 2026-11-04 — WHERE THE HOST'S CONTENT COLUMN IS, without trusting a
+        // CSS-module hash. 0.2.0-rc.2 called it `_content`; 0.2.2 calls it
+        // `_options` (AnXs9G_options). The stylesheet used to key on the token
+        // alone, so that rename left the previous settings tab painted under our
+        // transparent pane ("先点通用设置，再点主题设置，上一页的信息残留").
+        // Resolution order: a known token if one matches, otherwise the largest
+        // direct child of the panel that is neither our pane, the nav (contains
+        // nav cells), nor the title/header rows. The result is tagged with
+        // [data-mar-host-content] and the stylesheet hides THAT, so a future
+        // rename only has to keep the panel's shape, not its hash.
+        var hostContent = null;
+        function findHostContent() {
+          if (hostContent && hostContent.parentNode === panel) return hostContent;
+          hostContent = null;
+          var known = null;
+          try {
+            known = panel.querySelector(':scope > [class*="_options"]') ||
+              panel.querySelector(':scope > [class*="_content"]');
+          } catch (e) { known = null; }
+          if (known) { hostContent = known; return hostContent; }
+          var pr = panel.getBoundingClientRect();
+          var threshold = pr.width * pr.height * 0.3;
+          for (var i = 0; i < panel.children.length; i++) {
+            var child = panel.children[i];
+            if (child === pane || child.getAttribute('data-mar-pane')) continue;
+            // our own out-of-flow layers (the settings mosaic, the pane) are not
+            // the host's content column even when they cover more area
+            if (child.classList && (child.classList.contains('mar-mosaic') ||
+                child.classList.contains('mar-set-pane'))) continue;
+            var cs = null;
+            try { cs = getComputedStyle(child); } catch (e) { cs = null; }
+            if (cs && (cs.position === 'absolute' || cs.position === 'fixed')) continue;
+            if (child.querySelector && (child.querySelector('[data-mar-nav]') ||
+                child.querySelector('[class*="_navCell"]'))) continue;
+            var r = child.getBoundingClientRect();
+            if (r.width * r.height > threshold) { hostContent = child; return hostContent; }
+          }
+          return null;
+        }
+        function markHostContent(on) {
+          var node = findHostContent();
+          if (!node) return;
+          if (on) {
+            if (!node.hasAttribute('data-mar-host-content')) node.setAttribute('data-mar-host-content', '');
+          } else if (node.hasAttribute('data-mar-host-content')) {
+            node.removeAttribute('data-mar-host-content');
+          }
+        }
+        // The 1.2s sweep re-asserts it while our tab is on (a React re-render can
+        // swap the column node out; the marker would leave with it).
+        panel.__marMarkHost = markHostContent;
         function hidePane() {
           panel.classList.remove('mar-tab-on');
           btn.classList.remove('mar-nav-on');
@@ -2973,6 +3042,7 @@ try {
           // display) keeps the layout box alive, so re-opening is paint-only.
           if (pane) { pane.style.visibility = 'hidden'; pane.style.pointerEvents = 'none'; }
           muteNative(false);
+          markHostContent(false);
         }
         function showPane() {
           if (!pane) pane = buildPane(panel, hidePane);   // never null in practice
@@ -2984,6 +3054,7 @@ try {
           btn.classList.add('mar-nav-on');
           if (btn.setAttribute) btn.setAttribute('aria-current', 'true');
           muteNative(true);
+          markHostContent(true);
         }
         btn.addEventListener('click', function (ev) {
           ev.preventDefault();
@@ -3700,6 +3771,12 @@ var head =
         }
         if (!panel.__marMosaicPlayed) mountMosaic(panel);
         mountSettingsTab(panel);
+        // Keep the host content hidden while our tab is on: a React re-render
+        // can replace the column node, taking the data-mar-host-content marker
+        // with it. Idempotent — one attribute write at most.
+        if (panel.classList.contains('mar-tab-on') && typeof panel.__marMarkHost === 'function') {
+          panel.__marMarkHost(true);
+        }
       }
 
       // ---- task board: one intro per column --------------------------------

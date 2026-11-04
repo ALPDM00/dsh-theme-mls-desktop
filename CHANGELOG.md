@@ -5,6 +5,39 @@
 次版本号 = 向后兼容的新功能；
 修订号 = 向后兼容的 bug 修复。
 
+## [0.5.3] - 2026-11-04
+
+**修「设置页先点别的选项卡、再点主题设置时，上一页的信息残留」。**
+
+> 版本号说明：一次性兼容修复，按维护者的约定打修订号 `0.5.3`。
+
+### 修复
+- **主题设置的内容列隐藏规则跟上了 DSH 0.2.2 的改名。** 设置的弹窗仍然是「188px 导航列 +
+  内容列」，但 `dsh-client-ui-settings-general` 里那层内容列的 CSS-module token 从
+  `_content` 改成了 **`_options`**（`SettingsRoot` 的 `AnXs9G_options`，直接子节点、
+  里面 `renderSlot("settings.section")`）。主题那条
+  `.mar-tab-on > [class*="_content"]{visibility:hidden}` 于是**一个节点都匹配不到**：
+  切回主题设置时，上一个选项卡（截图里是通用设置）仍画在透明的主题面板底下，两页叠在一起。
+- 修法三层，任何一层单独失效都不再回到"重影"：
+  1. 隐藏选择器同时命中 `_content` / `_options` 两个 token；
+  2. `mountSettingsTab` 里按**几何**找真正的宿主内容列（面板的直接子节点中，排除我们的面板、
+     导航列、标题/头部行，剩下的最大一块），打 `[data-mar-host-content]` 标记，样式按标记隐藏
+     —— 下次再改名只要面板结构不变就不会静默失效；sweep 每 1.2s 重申一次（React 换节点时标记会跟着走）；
+  3. 主题面板自己的背景从 `transparent` 改成宿主 panel 用的同一个 token
+     （`--dsw-alias-bg-layer-2`，被主题覆盖为 `--mar-bg-panel`），像素上与背后的面板完全一致，
+     但即使前两层全部失手，宿主页面也不可能再透上来。
+- 点回任意原生选项卡时，标记移除、内容列恢复（并顺手把主题面板隐藏，原逻辑不变）。
+
+### 校验
+- 新增 `.generated/verify-settings.cjs`（不入库）：无头 Chrome 载入**真实的 `client.js`**，
+  配一个按 0.2.2 结构搭的假设置弹窗（`AnXs9G_overlay > panel > navTitle / nav>navList>navCell×3 /
+  header / options`），复现用户的操作顺序「通用设置 → 主题设置」并断言：
+  内容列 `visibility:hidden`、内容列中心的像素命中主题面板、面板背景 alpha=1、
+  切回原生选项卡后内容列恢复。`--old` 跑修复前的构建：内容列可见、面板 `rgba(0,0,0,0)`，
+  按预期复现 bug（测试真的能失败）。
+- `check.cjs` 新增两条守卫：`_options` + `[data-mar-host-content]` 隐藏规则必须都在；
+  `markHostContent(true/false)`、`panel.__marMarkHost` 的结构化兜底不许被删。
+
 ## [0.5.2] - 2026-11-04
 
 **适配 deepseekHarness 桌面端 `0.2.2-rc.1`（Electron 44）：桌面端升级后启动动画的三条症状
