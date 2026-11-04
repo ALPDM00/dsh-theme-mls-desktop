@@ -8,7 +8,7 @@
 |  |  |
 | --- | --- |
 | 平台 | deepseekHarness **desktop** profile（Electron 壳） |
-| 运行环境 | deepseekHarness `0.1.0-rc.8` 或更新；已实测 `0.2.0-rc.2` |
+| 运行环境 | deepseekHarness `0.1.0-rc.8` 或更新；已实测 `0.2.0-rc.2` 与 **`0.2.2-rc.1`（Electron 44）** |
 | 加载契约 | `window.__ModuleLoader__.load`（浏览器半）+ `webserver/index-inject`（宿主半）+ 可选壳补丁 |
 | 许可 | MIT（第三方素材见 [docs/ASSET_POLICY.md](docs/ASSET_POLICY.md)） |
 
@@ -49,10 +49,11 @@
 > ⚠️ **别用 `dsh plugin --profile desktop add …` —— 它在这两代 dsh 上都是死路。**
 > 闸门在 `@deepseek-ai/dsh/lib/bin.js`，对 `desktop` 一律报
 > `error: profile "desktop" is managed exclusively by the Electron application`，
-> 而且**连 `--profile desktop --dump-config` 一起挡**。桌面端自带那份（0.2.0-rc.2）写的是
-> `if (!manageDesktopProfile) rejectElectronProfile(...)`，而 `manageDesktopProfile` 是
-> `runCli()` 的函数参数、默认 `false`，**随包代码里没有任何地方把它设成 `true`**；
-> npm 全局那份（0.1.5-rc.1）则是无条件拒绝。报错本身不提任何替代路径 ——
+> 而且**连 `--profile desktop --dump-config` 一起挡**（0.2.2-rc.1 里 `--profile` 这条路是无条件拒绝）。
+> 只有 `dsh plugin --profile desktop …` 那一条看 `manageDesktopProfile`：0.2.0-rc.2 是
+> `if (!manageDesktopProfile) rejectElectronProfile(...)`，而它是 `runCli()` 的函数参数、默认 `false`，
+> **随包代码里没有任何地方把它设成 `true`**；npm 全局那份（0.1.5-rc.1）则是无条件拒绝。
+> 报错本身不提任何替代路径 ——
 > 完整对照表与逐项排错见 [docs/INSTALL.md](docs/INSTALL.md)。
 
 desktop profile 启动时只认两件事：**在 `node_modules` 里能解析到本包**，

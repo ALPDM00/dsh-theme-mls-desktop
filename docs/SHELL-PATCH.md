@@ -90,6 +90,31 @@ parked 这件事**必须打日志** —— "被压制的重绘"和"什么都没�
 Windows 上得自己补。这段补丁因此写进文档本身：首帧就透明，并在应用真正挂载后
 （`#root` 有子节点 **且** 里面没有 `[data-dsh-boot]`）自行解除，15s 兜底。
 
+### 壳升级之后（2026-11-04，DSH `0.2.2-rc.1` / Electron 44）
+
+桌面端升级会把 `app.asar` 整个换成原版（连 `resources/` 都是新写入的），补丁自然一起消失。
+症状是三条同时出现、缺一不可地指向"壳补丁没了"：**窗口不透明、不最大化、右上角原生按钮
+在启动动画上突兀地出现**（页面侧已经请求隐藏，但没有 IPC 通道，`chrome()` 是空操作）。
+
+这次升级只改了一个锚点：`lib/main.js` 的 `windowsAppearance` handler 去掉了语言参数
+（`language` → `_language`）与 `windowsLanguage = language` 那行。`APPEARANCE_ANCHOR` /
+`MAIN_CAPTION_STATE` 已按新构建重写；其余八个锚点（`createWindow` 签名、electron import、
+`createMainWindow`、`webviewTag` 块、`hideMainWindow` 尾巴、preload 的
+`markDocumentPlatform`、`dist/index.html` 的 `<head>`）一字未变。
+
+复核办法（都在本机、都不碰安装）：
+
+```bash
+node shell-patch/auto.cjs --check        # 几百毫秒：读 asar 头部判断三个文件的状态
+node shell-patch/apply.cjs --check       # 慢：整包解压后逐条判定（结论应与上面一致）
+DSH_PATCH_DUMP_ANCHORS=1 node shell-patch/apply.cjs
+                                         # 不写入，只打印每个锚点在现役包里命中几次
+```
+
+`apply.cjs` 在写盘前会先用 `node --check` 语法校验改后的 `main.js` / `preload-app.cjs`，
+再逐字节比对重打包结果；任何锚点不是"恰好 1 次"都会整体拒绝（`anchor occurs N times — the
+shell build changed`），不会留一个半应用的壳。
+
 ### 用法
 
 平时只需要 `auto.cjs` —— 它会自己找到安装目录、看状态、该打才打：

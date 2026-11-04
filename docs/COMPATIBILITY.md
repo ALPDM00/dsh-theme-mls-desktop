@@ -19,7 +19,7 @@
 
 | 组件 | 要求 |
 | ---- | ---- |
-| deepseekHarness | `0.1.0-rc.8` 或更新 |
+| deepseekHarness | `0.1.0-rc.8` 或更新（已实测 `0.2.0-rc.2` 与 `0.2.2-rc.1` / Electron 44） |
 | 客户端加载器 | `window.__ModuleLoader__.load`（浏览器运行时） |
 | 主题服务 | `ctx.get('theme').overrideTokens(id, map)` |
 | 样式服务 | `styles.insert(css)`（可选；缺席时回落到注入 `<style>`） |
@@ -31,7 +31,7 @@
 | 回合结束（任务完成动画的主判据） | ① DOM：转录里 **`[data-turn-tail]` 又追加了一个节点**，且**同一个转录**（上一次看到的尾巴节点仍在文档里）并且**这一轮先出现过 `[class*="_turnStatus"]`**（回合进行中指示器）；② DOM：`[class*="_turnStatus"]` 从有到无；③ 会话面 `ctx.get('sessions').binding(id).session` 的 `ConversationSnapshot.turnEnds` 增长（单调计数器）；④ 列表快照 `sessions.list` 的 `byId[id].running` 边沿（**只有宿主暴露 `list` 时才有**）。判据 ③④ 需要"当前会话 id"，而真机服务面**没有 `list`、也拿不到 id**（见下），所以 ①② 才是主判据 |
 | 回合"中断/报错"收尾 | 有会话 id 时读 `binding(id).session.getSnapshot().nodes` 末尾的 assistant `interrupted: true` / `turn-error` 节点，并拦下 `session.cancel()`；没有 id 时读 `[data-turn-tail]` 父元素里的「已中断 / 已停止」字样 |
 | **`sessions` 服务面（实测）** | 真机客户端 `ctx.get('sessions')` 是 `{ retain, using, retainInfo, refreshProjections, search, fork, scope, binding }` —— **没有 `list`**（`SessionListState` 是 ui-conversation 域自己的 store）。任何"没有 `list.subscribe` 就不装触发链"的写法都会让它永远不触发；也**拿不到"当前会话 id"**（DOM 里没有 `data-session*`），所以 `binding(id)` / `scope(id)` 无法自举 |
-| 输入卡锚点 | 启动标记的方框点阵按**类名 token 以 `_card` 结尾**在 composer 栈里就地找真卡片（现役构建 `RlGAzG_card`；`composerSeat` / `composerStack` / `composerHero` 只作兜底）—— `uV2eYG_*` 在当前 app.asar 里已完全不存在 |
+| 输入卡锚点 | 启动标记的方框点阵按**类名 token 以 `_card` 结尾**在 composer 栈里就地找真卡片（现役构建 `GRgSLq_card`；`0.2.0-rc.2` 是 `RlGAzG_card`，只作历史参考；`composerSeat` / `composerStack` / `composerHero` 只作兜底）—— `uV2eYG_*` 在现役 app.asar 里已完全不存在 |
 | 余额服务 | `ctx.get('deepseekAccount').getBalance(meta)` → 回落 `ctx.get('credentials').resolve('DEEPSEEK_API_KEY')` |
 | 会话持久化 | `ctx.sessionPersistence.readFrom(id, 0)`（回填"本功能上线前"的旧轮次，见 [docs/BILLING.md](BILLING.md)） |
 | 会话选中项 | `ctx.get('sessions').list.getSnapshot().current`（精确判断"客户端正在显示哪段对话"） |
@@ -55,6 +55,24 @@
 
 只通过 `overrideTokens` 覆盖设计 token。DSH 的布局、组件、路由与数据**从不**被改动。
 卸载插件即自动恢复默认主题（`overrideTokens` / `styles.insert` 的 disposer 在卸载时触发）。
+
+## 壳补丁与壳版本
+
+`shell-patch/` 的三处改动都按**字面锚点**改 `app.asar` 里的源码，所以它跟的是**桌面壳构建**，
+不是 DSH 的语义版本。桌面端升级会把 `app.asar` 换回原版：补丁没了的症状恰好是三条一起回来
+——窗口不透明、不最大化、右上角三个原生按钮在启动动画上突兀地出现。插件每次加载都会
+`probeShell()` 看一次；原版就自动在后台重打（`docs/SHELL-PATCH.md`）。
+
+| 壳构建 | `lib/main.js` 里的 `windowsAppearance` handler | 说明 |
+| --- | --- | --- |
+| `0.2.0-rc.2` | `(event, language, color, symbolColor)`，还会写 `windowsLanguage` | 旧锚点 |
+| `0.2.2-rc.1` | `(event, _language, color, symbolColor)`，语言不再从这里写 | 2026-11-04 适配 |
+
+同一次适配里还确认了：前端启动板仍然在 `#root > [data-dsh-boot]` 上、spinner 仍然通过
+`dataset.dshBootSpinner` 落 `data-dsh-boot-spinner`（`dsh-web-frontend` 的 boot kernel），
+`serveWebDocument()` 仍然不拼接 `webserver/index-inject` 行（所以首帧补丁仍必须写进
+`dist/index.html`）。前端新增了 `globalThis.__DSH_BOOT_READY__` 与
+`html[data-windows-titlebar]`（只影响浮动面板的定位，不画底色），不影响本包的启动路径。
 
 ## 已知限制
 

@@ -178,10 +178,9 @@ const MAIN_HANDLER = [
  * `\\d` / `\\s` are doubled because this is a JS string literal, not the regex.
  */
 const APPEARANCE_ANCHOR = [
-  '\t\tipcMain.on(DESKTOP_IPC.windowsAppearance, (event, language, color, symbolColor) => {',
+  '\t\tipcMain.on(DESKTOP_IPC.windowsAppearance, (event, _language, color, symbolColor) => {',
   '\t\t\tif (mainWindow === void 0 || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) return;',
   '\t\t\tif (!event.senderFrame.url.startsWith(`dsh-app://app/`)) return;',
-  '\t\t\tif (typeof language === "string" && /^[a-zA-Z]+(?:-[a-zA-Z0-9]+)*$/u.test(language)) windowsLanguage = language;',
   '\t\t\tconst validColor = (value) => typeof value === "string" && /^(?:#[\\da-f]{3,8}|rgba?\\([\\d.,%\\s]+\\))$/iu.test(value);',
   '\t\t\tif (validColor(color) && validColor(symbolColor)) mainWindow.setTitleBarOverlay({',
   '\t\t\t\tcolor,',
@@ -210,10 +209,9 @@ const MAIN_CAPTION_STATE = [
   '\t\tlet bootChromeSuppressed = false;',
   '\t\tlet parkedCaptionPalette;',
   '',
-  '\t\tipcMain.on(DESKTOP_IPC.windowsAppearance, (event, language, color, symbolColor) => {',
+  '\t\tipcMain.on(DESKTOP_IPC.windowsAppearance, (event, _language, color, symbolColor) => {',
   '\t\t\tif (mainWindow === void 0 || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) return;',
   '\t\t\tif (!event.senderFrame.url.startsWith(`dsh-app://app/`)) return;',
-  '\t\t\tif (typeof language === "string" && /^[a-zA-Z]+(?:-[a-zA-Z0-9]+)*$/u.test(language)) windowsLanguage = language;',
   '\t\t\tconst validColor = (value) => typeof value === "string" && /^(?:#[\\da-f]{3,8}|rgba?\\([\\d.,%\\s]+\\))$/iu.test(value);',
   '\t\t\tif (validColor(color) && validColor(symbolColor)) {',
   '\t\t\t\tif (bootChromeSuppressed) {',

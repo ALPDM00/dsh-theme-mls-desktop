@@ -5,6 +5,44 @@
 次版本号 = 向后兼容的新功能；
 修订号 = 向后兼容的 bug 修复。
 
+## [0.5.2] - 2026-11-04
+
+**适配 deepseekHarness 桌面端 `0.2.2-rc.1`（Electron 44）：桌面端升级后启动动画的三条症状
+（不会全屏 / 不会透明 / 右上角按钮突兀显示）修好。**
+
+> 版本号说明：按维护者的判断，补一次性兼容是"小更新"，打成修订号 `0.5.2`
+> （本文件开头的 SemVer 约定里"向后兼容的 bug 修复"= 修订号，这里正好对得上）。
+
+### 修复
+- **壳补丁的 `windowsAppearance` 锚点跟上新壳。** 桌面端升级把 `<install>/resources/app.asar`
+  整体换回原版，补丁随之消失；页面侧仍在请求隐藏 caption 按钮、仍在给 `html` 挂
+  `data-mar-boot`，但窗口没有 alpha 通道、没有 `boot-chrome` IPC 通道，所以表现是三条一起回来：
+  窗口按原版 1280×820 出现（**不全屏**）、底色不透明（**不透出桌面**）、
+  `titleBarOverlay` 三个原生按钮画在启动动画上（**突兀显示**）。
+  `0.2.2-rc.1` 里 `lib/main.js` 的 handler 签名从
+  `(event, language, color, symbolColor)` 变成 `(event, _language, color, symbolColor)`，
+  并且**不再在那里写 `windowsLanguage`**；`APPEARANCE_ANCHOR` 与 `MAIN_CAPTION_STATE`
+  已按新构建重写（parked palette 的抑制逻辑不变）。另外八个锚点经核对一字未变。
+- 新壳的 `dsh/node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html` 结构与旧版一致
+  （`<head>` 下仍是 `<meta charset>`），首帧脚本照旧插在最前；`serveWebDocument()` 仍然
+  不拼接 `webserver/index-inject` 行，所以首帧可透视仍然只能写进文档本身。
+  顺手确认前端启动板标记没变：`#root > [data-dsh-boot]` + `data-dsh-boot-spinner`
+  （boot kernel 用 `dataset.dshBootSpinner` 落属性），主题的"只在 spinner 还在时隐藏"规则继续成立。
+
+### 校验
+- 对从**实装 `app.asar` 里直接读出来的** `0.2.2-rc.1` 源文件做了全量锚点模拟：9 条补丁全部
+  命中恰好一次、`already` 标记全部出现、改后 `main.js` / `preload-app.cjs` 均通过 `node --check`。
+- 实机应用：`node shell-patch/auto.cjs`（STOCK → PATCHED），随后逐条复核 —— 三个文件
+  `patch-revision` 全部 current、`transparentWindowOptions()` 已在窗口选项里展开、
+  `maximizeWindowAtStartup(window)` 已在 `createMainWindow` 里调用、`boot-chrome` IPC 与
+  parked-palette 抑制都在、preload 暴露了 `dshDesktopBootChrome`、`dist/index.html` 带首帧脚本。
+- `app.asar.dsh-theme-marathon.bak` 确认是这次 `0.2.2-rc.1` 的原版（三个目标文件 revision
+  均为 `unpatched`），`revert.cjs` 仍然可用。
+- `node check.cjs`（静态检查）与 `node shell-patch/tests.cjs`（10 项打包器/头部测试）全绿；
+  逐条目对比补丁包与原版的 22102 个归档条目：无缺失、无新增，只有三个目标文件大小变化。
+- 新增 `.generated/`（不入库）里的 `dump-shell.cjs` / `simulate.cjs` / `verify-installed.cjs` /
+  `scan-*.cjs`：把壳文件直接从 asar 里读出来、先模拟再落盘、落盘后再逐条复核。
+
 ## [0.5.1] - 2026-10-19
 
 **背景点阵（背景动画）接入主题色，并新增「透明度」旋钮。**
