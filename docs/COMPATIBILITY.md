@@ -53,8 +53,19 @@
 
 ## 它覆盖了什么
 
-只通过 `overrideTokens` 覆盖设计 token。DSH 的布局、组件、路由与数据**从不**被改动。
-卸载插件即自动恢复默认主题（`overrideTokens` / `styles.insert` 的 disposer 在卸载时触发）。
+主要通过 `overrideTokens` 覆盖设计 token；另有**加性**的 DOM（不属于覆盖，卸载即拆）：
+
+| 加性 DOM | 位置 | 何时存在 |
+| --- | --- | --- |
+| 启动 / 完成覆盖层 | `#dshMarBootHost` / `#dshMarDoneHost`，`body` 末尾，`pointer-events:none` | 播放期间，结束后自删 |
+| 背景点阵 | `#mar-ascii-bg`，`body` 第一个子节点，`pointer-events:none` | 开关打开时 |
+| 「主题设置」页 | 设置对话框内部（宿主自己的 `_panel` 里） | 打开设置页时 |
+| **运行动画条带** | `#dshMarRunHost`，`[data-composer-seat]` 的第一个子节点 | 回合运行期间；关掉开关 / 回合结束即拆 |
+| **点阵动画** | `#dshMarDotHost`，`[data-composer-seat]` 内、输入卡右侧的绝对定位层 | 回合运行期间；关掉开关 / 回合结束即拆 |
+
+DSH 的组件、路由与**数据**从不被写；运行条带只**读**会话快照（`sessions.binding(id).session
+.getSnapshot()`）与宿主自己的 `role="status"` 文案。卸载插件即恢复默认主题（`overrideTokens`
+/ `styles.insert` 的 disposer 在卸载时触发，加性 DOM 由 `dispose()` 自清）。
 
 ## 壳补丁与壳版本
 
@@ -73,6 +84,23 @@
 `serveWebDocument()` 仍然不拼接 `webserver/index-inject` 行（所以首帧补丁仍必须写进
 `dist/index.html`）。前端新增了 `globalThis.__DSH_BOOT_READY__` 与
 `html[data-windows-titlebar]`（只影响浮动面板的定位，不画底色），不影响本包的启动路径。
+
+## 运行动画的宿主锚点（2026-11-05 实测 `0.2.2-rc.1`）
+
+| 锚点 | 语义 | 稳定性 |
+| --- | --- | --- |
+| `[data-chat-running]` | 回合进行中那一行（`RunningStatus` 根） | 整个 asar 只出现 1 次；用它，不要用 `[class*="_running"]`（命中 7 个节点） |
+| `[data-chat-running][data-holding]` | 回合已结束、动作行尚未替换（整行 `visibility:hidden`） | 出现即卸载条带 |
+| `[data-chat-running] [role="status"]` | 宿主自己的本地化「深度求索中」文案 | 标题行直接读它，中英文跟宿主 |
+| `[data-composer-seat]` | `position:sticky; bottom:0` 的输入框座位 | 两个动画都挂它：条带是 firstChild；点阵是它内部的绝对定位层 |
+| `[data-composer-card]` | 输入卡本身（宿主自己的 `GRgSLq_card` 带这个 data 属性） | 点阵按它的实测宽度算右侧空白与垂直中心 |
+| `--dsh-composer-side-clearance` / `--dsh-composer-dock-inset` / `--dsh-composer-card-max-width` | 输入卡宽度预算（继承自 `.an3WzG_body`） | 条带宽度按 queue dock 同一公式算，缺变量时回落到 16 / 8 / 952 |
+| `ConversationSnapshot.turnTimings` / `.runningCalls` / `.partial` | 用时 / 当前工具 / 生成阶段 | 只读；缺失时逐项降级（用时退回「第一次看见运行行」） |
+
+React 侧结论：`RunningStatus` 的 children 是 3 个无 key 的 span，`holding` 只增删 index 0，
+running / holding 共用同一个 key `"running"` —— 是 props 更新不是 remount。两个动画都挂在
+`[data-composer-seat]`（React children 只有 composer）里，因此不进 React 的 diff；运行行被
+整个卸载时由我们自己的 DOM 轮询撤销。详见 [docs/RUNNING.md](RUNNING.md)。
 
 ## 已知限制
 

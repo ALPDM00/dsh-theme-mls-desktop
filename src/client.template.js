@@ -41,6 +41,18 @@ window.__ModuleLoader__.load({
     // stays inert.
     var DONE_PAYLOAD = /*__DONE_PAYLOAD__*/ null;
 
+    // Running-strip payload (运行动画): the compact canvas engine that plays in
+    // the native [data-chat-running] row above the composer. Same build-time
+    // contract as BOOT/DONE above; null in a raw template run, in which case
+    // the strip simply never mounts and the native status row is left alone.
+    var RUN_PAYLOAD = /*__RUN_PAYLOAD__*/ null;
+
+    // Right-side dot animation (动画1) payload. Separate from RUN_PAYLOAD on
+    // purpose: 2026-11-05 the user asked for the two animations to be two
+    // independent options, so either engine can be absent / off without the
+    // other noticing.
+    var DOT_PAYLOAD = /*__DOT_PAYLOAD__*/ null;
+
     function apply(ctx) {
       var doc = (typeof document !== 'undefined') ? document : null;
 
@@ -1128,6 +1140,38 @@ window.__ModuleLoader__.load({
         '  animation:none;',
         '  -webkit-text-fill-color:var(--dsw-alias-label-caption);',
         '}',
+
+        '/* ---- running animation（运行动画，2026-11-05）------------------------',
+        '   The 运行动画 switch replaces the native "深度求索中，用时 N 秒" line',
+        '   with #dshMarRunHost. Two things are keyed on [data-chat-running] — a',
+        '   DATA attribute, not a CSS-module hash, so a DSH rebuild cannot',
+        '   silently detach it:',
+        '     1. the native row is the RUN-STATE signal (it exists exactly while',
+        '        the turn is running) and the source of the SR-only title;',
+        '     2. its two VISIBLE children are hidden; the role="status" span',
+        '        stays, so the live region keeps announcing "深度求索中".',
+        '   The strip itself is NOT mounted in that row: the row lives at the end',
+        '   of the transcript and floats upward in a short conversation. It is',
+        '   inserted into [data-composer-seat] (the sticky input seat), first',
+        '   child, so it sits exactly above the input card. */',
+        'body.mar-run-on [data-chat-running]{width:100%;gap:0;}',
+        'body.mar-run-on [data-chat-running] > span:not([role="status"]){display:none!important;}',
+        // The strip lives in `[data-composer-seat]` (the sticky composer seat),
+        // immediately above the composer stack — i.e. exactly "输入框的上方",
+        // even when the transcript is short and the native running row sits
+        // higher up. The width/max-width mirror the queue dock's own geometry
+        // (dsh-client-ui-conversation QueueDock.module.css) so the strip lines
+        // up with the card, not with the full column.
+        'body.mar-run-on #dshMarRunHost{display:block;flex:none;' +
+        '  width:calc(100% - var(--dsh-composer-side-clearance,16px) - var(--dsh-composer-side-clearance,16px)' +
+        '    - var(--dsh-composer-dock-inset,8px) - var(--dsh-composer-dock-inset,8px));' +
+        '  max-width:calc(var(--dsh-composer-card-max-width,952px) - var(--dsh-composer-dock-inset,8px) - var(--dsh-composer-dock-inset,8px));' +
+        '  margin:0 auto var(--dsh-composer-stack-gap,6px);}',
+        // 点阵动画（动画1）：贴在输入卡右侧的空白里，绝对定位在 composer seat
+        // 内（seat 是 sticky = positioned）。right / top / 尺寸由 JS 按实测空白
+        // 算好，这里只管层与命中测试。
+        'body.mar-dot-on #dshMarDotHost{position:absolute;display:block;' +
+        '  pointer-events:none;z-index:1;}',
 
         '/* ---- the last native blues: COMPONENT-scoped custom properties --------',
         '   The five aliases above can be pinned through overrideTokens because DSH',
@@ -3042,6 +3086,555 @@ try {
         }
       } catch (e) {}
 
+      // ---- running animation（运行动画，2026-11-05 用户要求）----------------
+      // 把输入框上方那条原生运行提示（鲸鱼 + “深度求索中，用时 N 秒 …”）换成
+      // D:\PythonCode\ma\运行动画.html 的语言：左空心人形 / 右实心人形 / 传送线
+      // + 两个光点，下面三行**跟随真实状态**的文字（见 src/run/*.js）：
+      //   ① 标题：读宿主那个 role=status 的隐藏 span，中英文都跟宿主走；
+      //   ② 用时：会话快照 turnTimings 里“当前打开的轮次”的 startTime；真机
+      //      sessions 面没有 list 时，解析原生行的“用时 N 秒”文案并继续累加；
+      //   ③ 动作 / 模式：快照 runningCalls / partial；快照不可用时读 DOM 的
+      //      [data-tool][data-state] / [data-variant=think] / [data-streaming]。
+      // 挂载点：`[data-composer-seat]` 的第一个子节点（sticky 输入框座位），
+      // 所以条带**永远贴在输入卡正上方**；`[data-chat-running]` 只提供“在跑”
+      // 这个信号与读屏标题。原生可见子节点由 body.mar-run-on 的样式表隐藏，
+      // role=status 的读屏 span 保留（见上面 css 段）。
+      // 引擎本体在 src/run/engine-run.js（构建时作为 RUN_PAYLOAD 注入）。
+      // 这里只负责“何时挂 / 喂什么状态 / 何时拆”。
+      var RUN_STORE_KEY = 'mar.run.v1';
+      var RUN_HEIGHT = 132;
+      function runLoad() {
+        try {
+          var raw = (typeof window !== 'undefined' && window.localStorage)
+            ? window.localStorage.getItem(RUN_STORE_KEY) : null;
+          if (!raw) return { on: true };
+          var parsed = JSON.parse(raw);
+          return { on: !(parsed && parsed.on === false) };
+        } catch (e) { return { on: true }; }
+      }
+      function runSave() {
+        try {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            window.localStorage.setItem(RUN_STORE_KEY, JSON.stringify(RUN_STATE));
+          }
+        } catch (e) {}
+      }
+      var RUN_STATE = runLoad();
+      function runEnabled() { return RUN_STATE.on !== false; }
+      // 跟随主题色（2026-11-05 用户追加）：默认 OFF —— 两个动画保持固定
+      // #C0FE04（条带 / 点阵新生格）与 #8F96B2（点阵成熟格）。打开后条带墨色与
+      // 点阵新生格改读 `--mar-accent-text`，跟着七选一主题色 / 浅色底盘走。
+      var FOLLOW_STORE_KEY = 'mar.run.follow.v1';
+      function followLoad() {
+        try {
+          var raw = (typeof window !== 'undefined' && window.localStorage)
+            ? window.localStorage.getItem(FOLLOW_STORE_KEY) : null;
+          if (!raw) return { follow: false };
+          var parsed = JSON.parse(raw);
+          return { follow: !!(parsed && parsed.follow === true) };
+        } catch (e) { return { follow: false }; }
+      }
+      function followSave() {
+        try {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            window.localStorage.setItem(FOLLOW_STORE_KEY, JSON.stringify(FOLLOW_STATE));
+          }
+        } catch (e) {}
+      }
+      var FOLLOW_STATE = followLoad();
+      function accentFollow() { return FOLLOW_STATE.follow === true; }
+      function runReduced() {
+        return !!(typeof window !== 'undefined' && window.matchMedia &&
+          window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+      }
+
+      var runHost = null, runRow = null, runEngine = null;
+      var runTick = null, runScriptEl = null, runStartFallback = 0;
+      var runObserver = null, runTimer = null, runKickTimer = 0, runBroken = false;
+      var runLast = null;
+      // 原生运行行自己报的已跑秒数 + 采样时刻（快照拿不到时的用时来源）
+      var runNativeSec = null, runNativeAt = 0;
+
+      function runEngineApi() {
+        var api = (typeof window !== 'undefined') ? window.__marRunEngine : null;
+        if (!api) return null;
+        if (typeof api.create === 'function') return api;
+        if (typeof api === 'function') return { create: api };
+        return null;
+      }
+      function runEnsureEngine() {
+        if (runEngineApi()) return true;
+        if (!RUN_PAYLOAD || !RUN_PAYLOAD.engine) return false;
+        if (!runScriptEl) {
+          try {
+            runScriptEl = doc.createElement('script');
+            runScriptEl.setAttribute('data-mar-run-engine', '1');
+            runScriptEl.textContent = RUN_PAYLOAD.engine;
+            (doc.head || doc.documentElement).appendChild(runScriptEl);
+          } catch (e) { runScriptEl = null; }
+        }
+        return !!runEngineApi();
+      }
+
+      function runInk() {
+        // 默认固定 #C0FE04（不跟主题色）；设置页「跟随主题色」打开后才读
+        // --mar-accent-text —— 这是用户主动选的，不是主题强加的。
+        if (!accentFollow()) return '#C0FE04';
+        var ink = '';
+        try {
+          ink = String(getComputedStyle(body).getPropertyValue('--mar-accent-text') || '').trim();
+        } catch (e) { ink = ''; }
+        return ink || '#C0FE04';
+      }
+      // Mirror of the host's own formatRunDuration: <60s → “N 秒”, else “N 分 M 秒”.
+      function runDuration(ms, zh) {
+        var s = Math.max(1, Math.round(ms / 1000));
+        if (s < 60) return zh ? ('用时 ' + s + ' 秒') : ('for ' + s + 's');
+        var m = Math.floor(s / 60), r = s % 60;
+        return zh ? ('用时 ' + m + ' 分 ' + r + ' 秒') : ('for ' + m + 'm ' + r + 's');
+      }
+      function runOpenTurnStart(snap) {
+        var best = null;
+        try {
+          if (!snap || !snap.turnTimings || typeof snap.turnTimings.forEach !== 'function') return null;
+          snap.turnTimings.forEach(function (v, k) {
+            if (!v || v.startTime === undefined) return;
+            if (v.endTime !== undefined && v.endTime !== null) return;   // closed turn
+            if (best === null || k > best.turn) best = { turn: k, t: v.startTime };
+          });
+        } catch (e) { return null; }
+        return best ? Number(best.t) : null;
+      }
+      // ---- DOM 侧状态补偿（生产构建的关键一条）-----------------------------
+      // 0.2.2-rc.1 的客户端 `sessions` 服务面**没有 list**（只有 binding / scope /
+      // retain），`doneCurrentId()` 因此拿不到当前会话 id，会话快照这条路在真机上
+      // 可能整条为空。所以动作 / 模式 / 已跑时长必须能从 DOM 直接读：
+      //   · 运行中的工具行：`[data-tool][data-state="running"| "preparing"]`
+      //     （ui-tool 的 ToolRow 根节点，data-tool 就是 wire name）；
+      //   · 思考中：`[data-variant="think"][data-state="running"]`；
+      //   · 正在出字：`[data-streaming]`；
+      //   · 原生那一行自己的 `深度求索中，用时 12 秒` 文案可以解析出已跑秒数 ——
+      //     切进一个已经在跑的会话时，这比"第一次看见条带"准。
+      function runDomScope() {
+        try { return doc.querySelector('[data-conversation-scroll]') || doc; }
+        catch (e) { return doc; }
+      }
+      // 上一行是 turn-tail 时宿主会把新 running 行整个 display:none（ChatView 的
+      // `.flowItem[turn-tail] + .running{display:none}`）——那不是"在跑"。
+      function runRowVisible(row) {
+        try { return !!row && getComputedStyle(row).display !== 'none'; }
+        catch (e) { return !!row; }
+      }
+      function runDomState(zh) {
+        var scope = runDomScope();
+        try {
+          var calls = scope.querySelectorAll('[data-tool][data-state="running"], [data-tool][data-state="preparing"]');
+          if (calls.length) {
+            var name = calls[calls.length - 1].getAttribute('data-tool');
+            if (name) return { mode: 'run', action: (zh ? '调用工具 · ' : 'Tool · ') + name };
+          }
+          if (scope.querySelector('[data-variant="think"][data-state="running"]')) {
+            return { mode: 'think', action: zh ? '正在分析请求' : 'Analyzing the request' };
+          }
+          if (scope.querySelector('[data-streaming]')) {
+            return { mode: 'run', action: zh ? '正在生成回复' : 'Writing the reply' };
+          }
+        } catch (e) {}
+        return { mode: 'think', action: zh ? '等待模型响应' : 'Waiting for the model' };
+      }
+      function runStateOf(snap, zh) {
+        if (!snap) return runDomState(zh);
+        var calls = snap.runningCalls;
+        if (calls && calls.length) {
+          var last = calls[calls.length - 1];
+          var name = last && (last.name || (last.call && last.call.name));
+          if (name) return { mode: 'run', action: (zh ? '调用工具 · ' : 'Tool · ') + String(name) };
+        }
+        var blocks = snap.partial && snap.partial.blocks;
+        if (blocks && blocks.length) {
+          var hasReasoning = false, hasText = false;
+          for (var i = 0; i < blocks.length; i++) {
+            var b = blocks[i];
+            if (!b) continue;
+            if (b.kind === 'reasoning') hasReasoning = true;
+            if (b.kind === 'text' && b.text && b.text.trim()) hasText = true;
+          }
+          if (hasText) return { mode: 'run', action: zh ? '正在生成回复' : 'Writing the reply' };
+          if (hasReasoning) return { mode: 'think', action: zh ? '正在分析请求' : 'Analyzing the request' };
+        }
+        // 快照只说了"在跑"、没说细节：DOM 里能看见工具行就用它。
+        return runDomState(zh);
+      }
+      // 原生运行行自己那行文字里的已跑时长（秒）。中 / 英两种格式都认。
+      function runParseNativeSeconds(row) {
+        var text = '';
+        try {
+          var content = row.querySelector('[class*="runningContent"]');
+          text = String((content || row).textContent || '');
+        } catch (e) { return null; }
+        var m;
+        if ((m = /(\d+)\s*分\s*(\d+)\s*秒/.exec(text))) return (+m[1]) * 60 + (+m[2]);
+        if ((m = /(\d+)\s*秒/.exec(text))) return +m[1];
+        if ((m = /(\d+)\s*m(?:in)?\s*(\d+)\s*s/i.exec(text))) return (+m[1]) * 60 + (+m[2]);
+        if ((m = /for\s+(\d+)\s*s/i.exec(text))) return +m[1];
+        return null;
+      }
+      function runSnapshotNow() {
+        var id = null;
+        try { id = doneCurrentId(); } catch (e) { id = null; }
+        if (!id) return null;
+        var face = null;
+        try { face = doneFaceOf(id); } catch (e) { face = null; }
+        if (!face || typeof face.getSnapshot !== 'function') return null;
+        try { return face.getSnapshot() || null; } catch (e) { return null; }
+      }
+      function runPush() {
+        if (!runEngine) return;
+        if (!runHost || !runHost.isConnected) {
+          runSyncDom();
+          return;
+        }
+        var row = null;
+        try { row = doc.querySelector('[data-chat-running]'); } catch (e) { row = null; }
+        if (!row || row.hasAttribute('data-holding') || !runRowVisible(row)) { runSyncDom(); return; }
+        runRow = row;
+        var snap = runSnapshotNow();
+        var nativeEl = null;
+        try { nativeEl = row.querySelector('[role="status"]'); } catch (e) {}
+        var title = (nativeEl && nativeEl.textContent) ? nativeEl.textContent.trim() : '深度求索中';
+        if (!title) title = '深度求索中';
+        var zh = /[\u4e00-\u9fff]/.test(title);
+
+        var nativeSec = runParseNativeSeconds(row);
+        if (nativeSec !== null && nativeSec >= 1) {
+          runNativeSec = nativeSec;
+          runNativeAt = Date.now();
+        }
+        var start = runOpenTurnStart(snap);
+        var elapsedMs;
+        if (start !== null && isFinite(start)) {
+          elapsedMs = Date.now() - start;
+        } else if (runNativeSec !== null) {
+          elapsedMs = runNativeSec * 1000 + Math.max(0, Date.now() - runNativeAt);
+        } else {
+          elapsedMs = Date.now() - (runStartFallback || Date.now());
+        }
+        var look = runStateOf(snap, zh);
+        var state = {
+          mode: 'run',
+          title: title,
+          meta: runDuration(elapsedMs, zh),
+          action: look.action,
+          ink: runInk(),
+          reduced: runReduced()
+        };
+        try {
+          if (typeof runEngine.set === 'function') runEngine.set(state);
+          else if (typeof runEngine.update === 'function') runEngine.update(state);
+          runLast = state;
+        } catch (e) { /* one bad frame must not tear the strip down */ }
+      }
+      function runUnmount() {
+        if (runTick) { clearInterval(runTick); runTick = null; }
+        if (runEngine) {
+          try { if (typeof runEngine.destroy === 'function') runEngine.destroy(); } catch (e) {}
+          runEngine = null;
+        }
+        if (runHost && runHost.parentNode) {
+          try { runHost.parentNode.removeChild(runHost); } catch (e) {}
+        }
+        runHost = null;
+        runRow = null;
+        runNativeSec = null;
+        runNativeAt = 0;
+        syncRunState();
+      }
+      function runMount(seat, row) {
+        runUnmount();
+        if (!runEnsureEngine()) { runBroken = true; syncRunState(); return; }
+        var api = runEngineApi();
+        if (!api) { runBroken = true; syncRunState(); return; }
+        var host = doc.createElement('div');
+        host.id = 'dshMarRunHost';
+        host.className = 'mar-run-host';
+        host.style.cssText = 'display:block;width:100%;min-width:0;';
+        // First child of the sticky composer seat: above the composer stack, so
+        // it stays pinned just above the input no matter how short the
+        // transcript is. (The native [data-chat-running] row lives at the end
+        // of the transcript and would float upward in a short conversation.)
+        try { seat.insertBefore(host, seat.firstChild); } catch (e) { return; }
+        runHost = host;
+        runRow = row;
+        runStartFallback = Date.now();
+        runNativeSec = null;
+        runNativeAt = 0;
+        try {
+          runEngine = api.create(host, { height: RUN_HEIGHT, reduced: runReduced() });
+        } catch (e) { runEngine = null; }
+        if (!runEngine) {
+          runBroken = true;
+          runUnmount();
+          syncRunState();
+          return;
+        }
+        runBroken = false;
+        runPush();
+        runTick = setInterval(runPush, 250);
+        syncRunState();
+      }
+      function runSyncDom() {
+        if (!runEnabled()) { if (runHost) runUnmount(); return; }
+        // Raw template run (no build) / a payload that never arrived: do not
+        // retry a mount every 400ms; the switch's status line explains it.
+        if (!RUN_PAYLOAD && !runEngineApi()) return;
+        var row = null, seat = null;
+        try {
+          row = doc.querySelector('[data-chat-running]');
+          seat = doc.querySelector('[data-composer-seat]');
+        } catch (e) { row = null; seat = null; }
+        // data-holding = the turn has ended and the host is keeping the row as a
+        // hidden placeholder under the actions row. Nothing to draw there.
+        if (!row || row.hasAttribute('data-holding') || !seat || !runRowVisible(row)) {
+          if (runHost) runUnmount();
+          return;
+        }
+        if (!runHost || runHost.parentNode !== seat || !runHost.isConnected) runMount(seat, row);
+        else runRow = row;
+      }
+      function runKick() {
+        if (runKickTimer) return;
+        runKickTimer = setTimeout(function () {
+          runKickTimer = 0;
+          runSyncDom();
+          dotSyncDom();
+        }, 100);
+      }
+      function runWatch() {
+        if (runTimer) return;
+        try {
+          if (typeof MutationObserver === 'function') {
+            runObserver = new MutationObserver(runKick);
+            runObserver.observe(doc.body, { childList: true, subtree: true });
+          }
+        } catch (e) { runObserver = null; }
+        runTimer = setInterval(function () { runSyncDom(); dotSyncDom(); }, 400);
+        runSyncDom();
+        dotSyncDom();
+      }
+      function runUnwatch() {
+        if (runTimer) { clearInterval(runTimer); runTimer = null; }
+        if (runKickTimer) { clearTimeout(runKickTimer); runKickTimer = 0; }
+        if (runObserver) { try { runObserver.disconnect(); } catch (e) {} runObserver = null; }
+      }
+      function runStateText() {
+        if (!runEnabled()) return '已关闭';
+        if (!RUN_PAYLOAD) return '运行动画引擎缺失（payload 被丢弃）';
+        if (runBroken) return '运行动画覆盖层不可用';
+        if (runHost) return '运行中 · 已替换原生提示';
+        return '待命 · 替换任务时的原生提示';
+      }
+      function syncRunState() {
+        try {
+          var el = doc.getElementById('mar-run-state');
+          if (el) el.textContent = runStateText();
+        } catch (e) {}
+      }
+
+      // ---- dot animation（点阵动画，《动画1》，独立选项，2026-11-05）---------
+      // 用户要求：两个动画作为**两个独立选项**；动画1 放在输入框右侧（空间足够）；
+      // 不要一开始就铺格子，要逐格生长；文字提示保持原生，不换成运行动画那三行。
+      // 所以这里只做一层纯装饰：绝对定位在 `[data-composer-seat]` 右侧的空白里，
+      // 只画 21×21 有机体——不碰 `[data-chat-running]` 的任何子节点，也不加
+      // `mar-run-on`，原生提示该怎么显示还怎么显示。
+      var DOT_STORE_KEY = 'mar.dot.v1';
+      var DOT_MIN = 64, DOT_MAX = 120, DOT_PAD = 28;
+      function dotLoad() {
+        try {
+          var raw = (typeof window !== 'undefined' && window.localStorage)
+            ? window.localStorage.getItem(DOT_STORE_KEY) : null;
+          if (!raw) return { on: true };
+          var parsed = JSON.parse(raw);
+          return { on: !(parsed && parsed.on === false) };
+        } catch (e) { return { on: true }; }
+      }
+      function dotSave() {
+        try {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            window.localStorage.setItem(DOT_STORE_KEY, JSON.stringify(DOT_STATE));
+          }
+        } catch (e) {}
+      }
+      var DOT_STATE = dotLoad();
+      function dotEnabled() { return DOT_STATE.on !== false; }
+
+      var dotHost = null, dotEngine = null, dotScriptEl = null, dotBroken = false;
+
+      function dotEngineApi() {
+        var api = (typeof window !== 'undefined') ? window.__marDotEngine : null;
+        if (!api) return null;
+        if (typeof api.create === 'function') return api;
+        if (typeof api === 'function') return { create: api };
+        return null;
+      }
+      function dotEnsureEngine() {
+        if (dotEngineApi()) return true;
+        if (!DOT_PAYLOAD || !DOT_PAYLOAD.engine) return false;
+        if (!dotScriptEl) {
+          try {
+            dotScriptEl = doc.createElement('script');
+            dotScriptEl.setAttribute('data-mar-dot-engine', '1');
+            dotScriptEl.textContent = DOT_PAYLOAD.engine;
+            (doc.head || doc.documentElement).appendChild(dotScriptEl);
+          } catch (e) { dotScriptEl = null; }
+        }
+        return !!dotEngineApi();
+      }
+      function dotUnmount() {
+        if (dotEngine) {
+          try { if (typeof dotEngine.destroy === 'function') dotEngine.destroy(); } catch (e) {}
+          dotEngine = null;
+        }
+        if (dotHost && dotHost.parentNode) {
+          try { dotHost.parentNode.removeChild(dotHost); } catch (e) {}
+        }
+        dotHost = null;
+        syncDotState();
+      }
+      function dotPush() {
+        if (!dotEngine) return;
+        try {
+          dotEngine.set({ fresh: runInk(), reduced: runReduced() });
+        } catch (e) {}
+      }
+      function dotSyncDom() {
+        if (!dotEnabled()) { if (dotHost) dotUnmount(); return; }
+        if (!DOT_PAYLOAD && !dotEngineApi()) return;
+        var row = null, seat = null, card = null;
+        try {
+          row = doc.querySelector('[data-chat-running]');
+          seat = doc.querySelector('[data-composer-seat]');
+          card = doc.querySelector('[data-composer-card]');
+        } catch (e) { row = null; }
+        if (!row || row.hasAttribute('data-holding') || !runRowVisible(row) || !seat || !card) {
+          if (dotHost) dotUnmount();
+          return;
+        }
+        if (dotHost && dotHost.parentNode === seat) { dotPush(); return; }
+        var sr = null, cr = null;
+        try {
+          sr = seat.getBoundingClientRect();
+          cr = card.getBoundingClientRect();
+        } catch (e) { sr = null; }
+        if (!sr || !cr) return;
+        var margin = (sr.width - cr.width) / 2;
+        if (margin < DOT_MIN + DOT_PAD * 2) {
+          // 右侧空白不够（窄窗口 / 宽卡片）：不硬塞，直接不显示。
+          if (dotHost) dotUnmount();
+          return;
+        }
+        var size = Math.max(DOT_MIN, Math.min(DOT_MAX, Math.round(margin - DOT_PAD * 2)));
+        dotUnmount();
+        if (!dotEnsureEngine()) { dotBroken = true; syncDotState(); return; }
+        var api = dotEngineApi();
+        if (!api) { dotBroken = true; syncDotState(); return; }
+        var host = doc.createElement('div');
+        host.id = 'dshMarDotHost';
+        host.className = 'mar-dot-host';
+        host.setAttribute('aria-hidden', 'true');
+        // 垂直对齐输入卡（不是整个 seat）：seat 里还有上面那条 132px 运行动画
+        // 条带时，seat 的中心并不等于卡片的中心。
+        var top = Math.round((cr.top - sr.top) + cr.height / 2 - size / 2);
+        if (top < 0) top = 0;
+        host.style.cssText = 'width:' + size + 'px;height:' + size + 'px;' +
+          'right:' + Math.round(margin / 2 - size / 2) + 'px;top:' + top + 'px;';
+        try { seat.appendChild(host); } catch (e) { return; }
+        dotHost = host;
+        try { dotEngine = api.create(host, { reduced: runReduced() }); } catch (e) { dotEngine = null; }
+        if (!dotEngine) {
+          dotBroken = true;
+          dotUnmount();
+          syncDotState();
+          return;
+        }
+        dotBroken = false;
+        dotPush();
+        syncDotState();
+      }
+      function dotStateText() {
+        if (!dotEnabled()) return '已关闭';
+        if (!DOT_PAYLOAD) return '点阵引擎缺失（payload 被丢弃）';
+        if (dotBroken) return '点阵动画不可用';
+        if (dotHost) return '运行中 · 显示在输入框右侧';
+        return '待命 · 任务时在输入框右侧显示';
+      }
+      function syncDotState() {
+        try {
+          var el = doc.getElementById('mar-dot-state');
+          if (el) el.textContent = dotStateText();
+        } catch (e) {}
+      }
+      function dotOnResize() {
+        // 卡片宽度 / 窗口宽度变了：摘掉重挂，让右侧空白重新量一次。
+        if (dotHost) { dotUnmount(); dotSyncDom(); }
+      }
+
+      function runApply() {
+        if (runEnabled()) {
+          body.classList.add('mar-run-on');
+          runSyncDom();
+        } else {
+          body.classList.remove('mar-run-on');
+          runUnmount();
+        }
+        if (dotEnabled()) body.classList.add('mar-dot-on');
+        else { body.classList.remove('mar-dot-on'); dotUnmount(); }
+        if (runEnabled() || dotEnabled()) {
+          if (typeof window !== 'undefined' && !runResizeBound) {
+            window.addEventListener('resize', dotOnResize);
+            runResizeBound = true;
+          }
+          runWatch();
+        } else {
+          runUnwatch();
+        }
+        syncRunState();
+        syncDotState();
+      }
+      var runResizeBound = false;
+
+      // 诊断钩子（DevTools / 无头夹具）：开关、挂载点、最近一帧喂给引擎的状态。
+      try {
+        if (typeof window !== 'undefined') {
+          window.__marRunDebug = function () {
+            return {
+              enabled: runEnabled(),
+              payload: !!RUN_PAYLOAD,
+              mounted: !!runHost,
+              engine: !!runEngine,
+              broken: runBroken,
+              reduced: runReduced(),
+              rowPresent: !!(runRow && runRow.isConnected),
+              last: runLast,
+              follow: accentFollow(),
+              metrics: (runEngine && typeof runEngine.metrics === 'function')
+                ? runEngine.metrics() : null,
+              dot: {
+                enabled: dotEnabled(),
+                payload: !!DOT_PAYLOAD,
+                mounted: !!dotHost,
+                engine: !!dotEngine,
+                broken: dotBroken,
+                size: dotHost ? dotHost.getBoundingClientRect().width : 0,
+                rect: dotHost ? (function () {
+                  var r = dotHost.getBoundingClientRect();
+                  return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
+                })() : null
+              }
+            };
+          };
+        }
+      } catch (e) {}
+
       // ---- settings tab: 「主题设置」 -------------------------------------
       // DSH's settings dialog is a nav column + a content column. We append one
       // nav cell and, when it is chosen, cover the content column with our own
@@ -3334,6 +3927,27 @@ try {
             '<input type="checkbox" class="mar-switch" id="mar-boot">' +
             '<span class="mar-val" data-val="boot"></span></div>' +
           '</div>' +
+          // 运行动画（2026-11-05 用户要求）：把输入框上方那条原生“深度求索中”
+          // 提示换成运行动画.html 的条带。默认 ON；两个“为什么”的状态小字写在
+          // 开关下面 —— 引擎缺失 / 减少动态效果时用户能看见原因。
+          '<div class="mar-set-group">' +
+            '<div class="mar-set-head">运行动画</div>' +
+            '<div class="mar-set-row mar-set-switch"><label for="mar-run">启用</label>' +
+            '<input type="checkbox" class="mar-switch" id="mar-run">' +
+            '<span class="mar-val" data-val="run"></span></div>' +
+            '<div class="mar-set-row mar-set-note"><span id="mar-run-state"></span></div>' +
+            // 点阵动画（动画1，2026-11-05 用户要求把开关移进「运行动画」组）：
+            // 仍是独立开关，但和上方的人形条带同属一个分组。
+            '<div class="mar-set-row mar-set-switch"><label for="mar-dot">点阵动画</label>' +
+            '<input type="checkbox" class="mar-switch" id="mar-dot">' +
+            '<span class="mar-val" data-val="dot"></span></div>' +
+            '<div class="mar-set-row mar-set-note"><span id="mar-dot-state"></span></div>' +
+            // 跟随主题色（2026-11-05 用户追加）：一个开关，主动决定两个动画
+            // 是否改用当前主题强调色；默认关 = 保持固定 #C0FE04 / #8F96B2。
+            '<div class="mar-set-row mar-set-switch"><label for="mar-follow">跟随主题色</label>' +
+            '<input type="checkbox" class="mar-switch" id="mar-follow">' +
+            '<span class="mar-val" data-val="follow"></span></div>' +
+          '</div>' +
           '<div class="mar-set-group">' +
             '<div class="mar-set-head">任务完成动画</div>' +
             '<div class="mar-set-row mar-set-switch"><label for="mar-done">启用</label>' +
@@ -3364,6 +3978,9 @@ try {
         var speedIn = pane.querySelector('#mar-bg-speed');
         var alphaIn = pane.querySelector('#mar-bg-alpha');
         var bootIn = pane.querySelector('#mar-boot');
+        var runIn = pane.querySelector('#mar-run');
+        var dotIn = pane.querySelector('#mar-dot');
+        var followIn = pane.querySelector('#mar-follow');
 
         // 启动动画（2026-10-17）：独立开关，**默认 ON**。它没有即时反馈 ——
         // 揭幕只在冷启动那一瞬播，设置页能打开时它早结束了 —— 所以这里只写盘，
@@ -3375,6 +3992,41 @@ try {
             if (!BOOT_STATE.on && bootCleanup) {
               try { bootCleanup(); } catch (e) {}
             }
+            syncPane(pane);
+          });
+        }
+
+        // 运行动画（2026-11-05）：独立开关，默认 ON。关掉 = 立刻摘掉条带、
+        // 把原生提示的可见子节点还回去（body 上的 mar-run-on 没了）；打开 =
+        // 马上开始盯 [data-chat-running]，当前正好在跑就不用等下一轮。
+        if (runIn) {
+          runIn.addEventListener('change', function () {
+            RUN_STATE.on = !!runIn.checked;
+            runSave();
+            runApply();
+            syncPane(pane);
+          });
+        }
+
+        // 点阵动画（动画1，2026-11-05）：与运行动画完全独立的第二个选项。
+        // 关掉 = 摘掉输入框右侧的 canvas、不再观察；打开 = 如果正好在跑，
+        // 立刻让它在右侧生长出来。
+        if (dotIn) {
+          dotIn.addEventListener('change', function () {
+            DOT_STATE.on = !!dotIn.checked;
+            dotSave();
+            runApply();
+            syncPane(pane);
+          });
+        }
+
+        // 跟随主题色：只改配色，不碰两个动画的挂载 / 开关。
+        if (followIn) {
+          followIn.addEventListener('change', function () {
+            FOLLOW_STATE.follow = !!followIn.checked;
+            followSave();
+            runPush();
+            dotPush();
             syncPane(pane);
           });
         }
@@ -3562,6 +4214,16 @@ var head =
         // 名单之外），所以这里不写任何说明文字——用户 2026-10-17 要求删掉那句。
         var bootIn = pane.querySelector('#mar-boot');
         if (bootIn) bootIn.checked = bootEnabled();
+        // 运行动画：开关 + 状态小字（引擎缺失 / 减少动态效果 / 正在替换）
+        var runIn = pane.querySelector('#mar-run');
+        if (runIn) runIn.checked = runEnabled();
+        syncRunState();
+        // 点阵动画：独立开关 + 状态小字（引擎缺失 / 右侧空间不足 / 正在显示）
+        var dotIn = pane.querySelector('#mar-dot');
+        if (dotIn) dotIn.checked = dotEnabled();
+        syncDotState();
+        var followIn = pane.querySelector('#mar-follow');
+        if (followIn) followIn.checked = accentFollow();
         if (BG_STATE.anim) pane.classList.remove('mar-anim-off');
         else pane.classList.add('mar-anim-off');
         var vals = {
@@ -3571,7 +4233,10 @@ var head =
           speed: BG_STATE.speed.toFixed(2),
           billing: billingEnabled() ? '开' : '关',
           done: doneEnabled() ? '开' : '关',
-          boot: bootEnabled() ? '开' : '关'
+          boot: bootEnabled() ? '开' : '关',
+          run: runEnabled() ? '开' : '关',
+          dot: dotEnabled() ? '开' : '关',
+          follow: accentFollow() ? '开' : '关'
         };
         var outs = pane.querySelectorAll('.mar-val');
         for (var k = 0; k < outs.length; k++) {
@@ -4779,6 +5444,10 @@ var displayed = billingDisplayedSessionId();
 // 等它）；真正播不播还要过开关与「减少动态效果」两道闸（见 doneSchedule /
       // playDone）
 attachDone();
+      // 运行动画：挂上 DOM 侧的生命周期（原生运行行出现 → 条带出现；行被宿主
+      // 摘掉 → 条带跟着没）。它不依赖 done 的开关：会话面订阅由 attachDone
+      // 统一装好，这里只读快照。
+      runApply();
       // 重连会重放列表基线，重新确认一次订阅还活着（服务实例被换掉时重挂）
       try {
         if (ctx && typeof ctx.on === 'function') {
@@ -4826,6 +5495,32 @@ attachDone();
             if (typeof window !== 'undefined') window.__marDoneDebug = null;
           },
           function () { stopDone(); },
+          // running animation / dot animation: stop the shared DOM watcher,
+          // destroy both engines, drop the injected engine scripts and forget
+          // the broken flags so a later re-enable starts from a clean slate.
+          function () { runUnwatch(); runUnmount(); dotUnmount(); },
+          function () {
+            if (typeof window !== 'undefined' && runResizeBound) {
+              window.removeEventListener('resize', dotOnResize);
+              runResizeBound = false;
+            }
+          },
+          function () {
+            if (runScriptEl && runScriptEl.parentNode) runScriptEl.parentNode.removeChild(runScriptEl);
+            runScriptEl = null;
+            runBroken = false;
+            runLast = null;
+          },
+          function () {
+            if (dotScriptEl && dotScriptEl.parentNode) dotScriptEl.parentNode.removeChild(dotScriptEl);
+            dotScriptEl = null;
+            dotBroken = false;
+            if (typeof window !== 'undefined') {
+              window.__marRunEngine = null;
+              window.__marDotEngine = null;
+              window.__marRunDebug = null;
+            }
+          },
           function () {
             var blocks = doc.querySelectorAll('[data-mlsb-turn]');
             for (var b = 0; b < blocks.length; b++) {
@@ -4907,11 +5602,13 @@ attachDone();
           // any of the body classes bgTeardown would have removed.
           function () {
             var strays = [doc.getElementById('dshMarBootHost'), doc.getElementById('mar-ascii-bg'),
-                          doc.getElementById('dshMarDoneHost')];
+                          doc.getElementById('dshMarDoneHost'), doc.getElementById('dshMarRunHost'),
+                          doc.getElementById('dshMarDotHost')];
             for (var s = 0; s < strays.length; s++) {
               if (strays[s] && strays[s].parentNode) strays[s].parentNode.removeChild(strays[s]);
             }
             body.classList.remove('theme-marathon', 'mar-bg-on', 'mar-bg-veil', 'mar-bg-light',
+              'mar-run-on', 'mar-dot-on',
               'theme-marathon-void', 'theme-marathon-surface', 'theme-marathon-no-grid',
               'theme-marathon-no-scanlines', 'theme-marathon-no-crt', 'theme-marathon-no-sweep',
               'theme-marathon-no-rgb', 'theme-marathon-no-plates', 'theme-marathon-motion-off',

@@ -41,6 +41,18 @@ window.__ModuleLoader__.load({
     // stays inert.
     var DONE_PAYLOAD = {"css":"/* =============================================================================\n * dsh-theme-mls-desktop — 任务完成动画（覆盖层样式）\n * -----------------------------------------------------------------------------\n * 与启动覆盖层同一套做法：所有选择器都挂在 #dshMarDoneHost 这个 id 之下\n * （id 选择器在 `body.theme-marathon *` 那条 `border-radius:0!important` 之上\n * 或之下都不受影响 —— 我们要的就是直角），并且这一层**永远**是\n * pointer-events:none：关闭由 document 捕获阶段的 pointerdown/keydown 负责。\n *\n * 几何全部钉住内联或在这里，理由与 #dshMarBootHost 相同：宿主自己会给\n * #root 里的元素做缩放（HUI 框实测 19558x8778px），覆盖层必须是一个\n * viewport 大小的裁剪盒，不能变成一个巨型滚动区。\n * ========================================================================== */\n\n#dshMarDoneHost {\n  position: fixed;\n  left: 0; top: 0;\n  width: 100%; height: 100%;\n  /* 比启动覆盖层低一档：启动动画期间绝不该出现完成动画，反过来也一样，\n     但真同时出现时启动动画要赢。 */\n  z-index: 2147482900;\n  background: transparent;\n  overflow: hidden;\n  pointer-events: none;\n  opacity: 1;\n  transition: opacity 180ms linear;\n  /* ④ 那一拍浮在**正常界面**上的墨色（白点阵 + 横幅四角的角标线）。深色配色下\n     是白；浅色配色（body.mar-bg-light）下必须翻成近黑 —— 否则白点会画在白色\n     界面上，等于没画。② 那一拍不吃这个变量：那底下是自铺的黑幕，两套配色都\n     读得清「白方框 + 白实心圆」。 */\n  --md-ink: #FFFFFF;\n}\nbody.mar-bg-light #dshMarDoneHost { --md-ink: #0B0D0B; }\n#dshMarDoneHost.md-gone { opacity: 0; }\n\n#md-stage {\n  position: absolute;\n  left: 0; top: 0;\n  width: 100%; height: 100%;\n}\n\n#dshMarDoneHost canvas {\n  position: absolute;\n  left: 0; top: 0;\n  width: 100%; height: 100%;\n  display: block;\n  pointer-events: none;\n}\n/* 1) 扫屏 / 定格 / 渐黑 2) 白色点阵。点阵必须在方块之下，玻璃才磨得到它。 */\n#md-scene { z-index: 1; }\n#md-dots  { z-index: 2; }\n\n/* ---- 绿色横幅 --------------------------------------------------------- */\n/* 原稿（任务完成动画.html）用 flex 居中 + margin-bottom:40vh 把横幅抬到\n * 视口中心之上 20vh；这里等价地写成 top: calc(50% - 20vh)，省掉一层 stage。 */\n#md-banner-wrap {\n  position: absolute;\n  left: 50%;\n  top: calc(50% - 20vh);\n  transform: translate(-50%, -50%);\n  width: min(850px, 90vw);\n  z-index: 3;\n  pointer-events: none;\n  opacity: 0;\n}\n#dshMarDoneHost.md-banner #md-banner-wrap { opacity: 1; }\n\n#md-banner {\n  width: 100%;\n  background-color: #C0FD04;\n  color: #000000;\n  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;\n  font-weight: 650;\n  letter-spacing: 8px;\n  font-size: min(70px, 8vw);\n  line-height: 1.15;\n  padding: 25px 0;\n  text-align: center;\n  white-space: nowrap;\n  overflow: hidden;\n  box-sizing: border-box;\n  clip-path: inset(0 100% 0 0);\n  -webkit-clip-path: inset(0 100% 0 0);\n}\n/* 从左向右展开 —— 与原稿 @keyframes unfold 一致。 */\n#dshMarDoneHost.md-banner #md-banner {\n  animation: md-unfold 0.5s cubic-bezier(0.25, 1, 0.5, 1) forwards;\n}\n@keyframes md-unfold {\n  to {\n    clip-path: inset(0 0 0 0);\n    -webkit-clip-path: inset(0 0 0 0);\n  }\n}\n\n/* ---- 横幅四角的八根白色角标线 ------------------------------------------ */\n/* 原稿是 --thick:0.1px，那在 1x 屏上根本不落像素、在 2x 屏上只有 0.2 个设备\n * 像素，读不出\"角标\"。这里给到 2px：形态（四角各一横一竖、向外伸出）与原稿\n * 完全一致，只是真的看得见。 */\n.md-line {\n  position: absolute;\n  background-color: var(--md-ink);\n  opacity: 0;\n}\n#dshMarDoneHost.md-banner .md-line {\n  animation: md-line-in 0.4s ease 0.3s forwards;\n}\n@keyframes md-line-in { to { opacity: 1; } }\n\n.md-line-h { width: 35px;  height: 2px; }\n.md-line-v { width: 2px;    height: 35px; }\n\n.md-tl-h { top: 0;    left: -75px; }\n.md-tl-v { top: -75px; left: 0; }\n.md-tr-h { top: 0;    right: -75px; }\n.md-tr-v { top: -75px; right: 0; }\n.md-bl-h { bottom: 0; left: -75px; }\n.md-bl-v { bottom: -75px; left: 0; }\n.md-br-h { bottom: 0; right: -75px; }\n.md-br-v { bottom: -75px; right: 0; }\n\n@media (max-width: 720px) {\n  #md-banner { font-size: min(70px, 8vw); letter-spacing: 5px; padding: 16px 0; }\n  .md-line-h { width: 18px; }\n  .md-line-v { height: 18px; }\n  .md-tl-h, .md-bl-h { left: -32px; }\n  .md-tr-h, .md-br-h { right: -32px; }\n  .md-tl-v, .md-tr-v { top: -32px; }\n  .md-bl-v, .md-br-v { bottom: -32px; }\n}\n\n/* ---- 逐块显示的方块 ---------------------------------------------------- */\n/* 一块 = 视口里的一个 80px 方块（与主题\"配色切换\"那一拍的方块同尺寸）。\n * 起始：**纯黑**，与上一拍铺满画布的黑幕逐像素接得上，所以换层时屏幕上没有\n *       任何跳变。\n * 翻开：JS（engine-done.js 的 openTiles）按 mosaicOrder 的乱序、在 520ms 内\n *       逐块给这里加 `.md-off`，那一块就不再挡住下面的东西 —— **硬切**，\n *       没有淡出、没有模糊、没有描边（用户 2026-10-10：不要玻璃质感，直接\n *       逐块显示内容，与「黑白切换」同一套逻辑）。\n *       时序由 JS 而不是 CSS 动画承担，所以复核脚本的 seek() 也是精确的。\n */\n#md-tiles {\n  position: absolute;\n  left: 0; top: 0;\n  width: 100%; height: 100%;\n  z-index: 4;\n  pointer-events: none;\n}\n#md-tiles i {\n  position: absolute;\n  display: block;\n  background-color: #000000;\n}\n#md-tiles i.md-off { visibility: hidden; }\n\n/* 系统「减少动态效果」：引擎根本不会挂这一层（见 client.template.js 的\n * marDoneReduced()），这里再兜一道，免得将来有人单独重放覆盖层。 */\n@media (prefers-reduced-motion: reduce) {\n  #md-banner { clip-path: none; -webkit-clip-path: none; }\n  .md-line { opacity: 1; animation: none; }\n}\n","html":"<!-- ===========================================================================\n  dsh-theme-mls-desktop — 任务完成动画：DOM（payload 2/2，引擎是 engine-done.js）\n\n  与启动覆盖层同构：全部图形程序化绘制，不含任何外部素材，所以这个文件里\n  没有图片占位符，build.cjs 也不需要为它做 base64 替换。\n\n  层序（都在 #md-stage 里，靠 z-index 排）：\n    1 #md-scene   画布：反向红色 S 扫屏 → 矩阵像素定格 → 渐变为纯黑\n    2 #md-dots    画布：任务完成动画的白色点阵（透明底，浮在正常界面之上；\n                  墨色随配色翻转，见 done.css 的 --md-ink）\n    3 #md-banner-wrap  绿色横幅 + 八个角标线（角标线同样吃 --md-ink）\n    4 #md-tiles   逐块显示的**纯黑方块**：与「配色切换」同尺寸、同一套乱序，\n                  由 JS 按 mosaicOrder 逐块硬切隐藏（没有模糊/淡出），露出来的\n                  就是下面那层正常界面。它必须在点阵之上 —— 方块真的挡住点阵，\n                  逐块才把它放出来。\n\n  全程 pointer-events:none：关闭由 document 捕获阶段的 pointerdown / keydown\n  承担（见 engine-done.js），所以这一层既不会变成\"吃掉那一次点击\"的黑洞，\n  也不会吞掉用户真正要点的按钮。\n  =========================================================================== -->\n<div id=\"md-stage\">\n  <canvas id=\"md-scene\"></canvas>\n  <canvas id=\"md-dots\"></canvas>\n\n  <div id=\"md-banner-wrap\">\n    <i class=\"md-line md-line-h md-tl-h\"></i>\n    <i class=\"md-line md-line-v md-tl-v\"></i>\n    <i class=\"md-line md-line-h md-tr-h\"></i>\n    <i class=\"md-line md-line-v md-tr-v\"></i>\n    <i class=\"md-line md-line-h md-bl-h\"></i>\n    <i class=\"md-line md-line-v md-bl-v\"></i>\n    <i class=\"md-line md-line-h md-br-h\"></i>\n    <i class=\"md-line md-line-v md-br-v\"></i>\n    <div id=\"md-banner\"><span id=\"md-banner-text\">//RUN_COMPLETE</span></div>\n  </div>\n\n  <div id=\"md-tiles\"></div>\n</div>\n","engine":"/* ===========================================================================\n * dsh-theme-mls-desktop — 任务完成动画：引擎（payload 2/2）\n * -----------------------------------------------------------------------------\n * 与启动动画（engine-marathon.js / engine-intro.js）同一套注入契约：全部 DOM\n * 查找都限定在 #dshMarDoneHost 之下，id 前缀 `md-`，暴露为\n * `window.__mbDone = { start, stop, dismiss, cfg, state, seek, resume }`。\n *\n * 四拍时间线（全部毫秒，都是 CFG 里的可调项）：\n *\n *   ① 反向红色 S 型扫屏        RED_LEAD → SWEEP_END（约 1.5s）\n *      启动动画的红扫是 zone0 L→R、zone1 R→L、zone2 L→R（左上起）；这一拍是\n *      **整条路径反过来**：zone2 R→L、zone1 L→R、zone0 R→L —— 右下起、左上收。\n *      分块粒度、块矩形、RED_RISE / RED_HOLD / RED_EXIT 这些系数与启动动画\n *      逐字一致。\n *\n *   ② 矩阵像素定格             MARK_AT → BLACK_AT\n *      **一整块晶格、四种符号、一个尺寸、一格不落**（参数取自用户给的\n *      网格符号测试.html：cell 24 / glyph 12 / line 1.4 / 圆头圆角）：全屏共用同一个\n *      24px 格子（相位与启动动画点阵同一套），**每一格**按\"格心落在哪块地盘\"画一个\n *      符号 —— 侧栏红十字、输入框红方框、输出文本区墨方框、其余空白墨色实心圆。\n *      边界上直接换符号、不留空档（用户 2026-10-10：整屏就是一个矩阵，不要空缺）。\n *      **矩阵跟着红扫逐块亮起来**：某一块的红一开始溶解，那一块的矩阵就在它底下\n *      淡入 —— 不是等整条红扫完了再整屏跳出来。\n *\n *   ③ 渐变为纯黑               BLACK_AT → TILES_AT\n *      标记整体淡出，只剩满屏黑。\n *\n *   ④ 逐块显示内容 → 白点阵 → 绿横幅   TILES_AT 起\n *      满屏 80px 纯黑方块（与主题\"配色切换\"那一拍的方块同尺寸、同一套乱序）\n *      **硬切**逐块消失 —— 没有模糊、没有半透明、没有描边（用户 2026-10-10：\n *      不要玻璃质感，直接逐块显示内容，与黑白切换同一套逻辑），露出来的就是\n *      **正常界面**；白点阵（任务完成动画.html 那片会漂移、会闪灭的点阵，透明底）\n *      约 0.5s 内接上；再约 1s 绿色横幅自左向右展开。此后保持不动，等一次\n *      点击或按键。\n *      点阵墨色随配色翻转（白 / 近黑，见 done.css 的 `--md-ink`），否则\n *      「主白 + 绿」下白点会画在白色界面上（不可见）。\n *\n * 关闭：document 捕获阶段的 pointerdown / keydown，任意时刻按下即整段跳过\n * （含还没播完的 ①②③）。这一层始终 pointer-events:none，所以那一次按下不会\n * 被吞掉 —— 它同时抵达用户真正瞄准的元素（与 dsh-theme-endfield 的雷霆大字\n * 同款做法，见其 docs/features.md：给遮罩加 pointer-events:auto 会变成一块\n * 全屏点击黑洞）。\n * ========================================================================= */\n(function () {\n  'use strict';\n\n  var hostEl = document.getElementById('dshMarDoneHost');\n  if (!hostEl) { if (typeof window !== 'undefined') window.__mbDoneBroken = true; return; }\n  function q(s) { return hostEl.querySelector(s); }\n  var doc = hostEl.ownerDocument || document;\n\n  var scene   = q('#md-scene');\n  var sctx    = scene ? scene.getContext('2d') : null;\n  var dotsC   = q('#md-dots');\n  var dctx    = dotsC ? dotsC.getContext('2d') : null;\n  var elTiles = q('#md-tiles');\n  var elText  = q('#md-banner-text');\n  if (!sctx || !dctx || !elTiles || !elText) {\n    if (typeof window !== 'undefined') window.__mbDoneBroken = true;\n    return;\n  }\n\n  var TAU = Math.PI * 2;\n\n  // ---------------- CONFIG ----------------\n  var CFG = {\n    // ===== 场：与 engine-marathon.js 同一套面板划分 =====\n    // ① 只画 PASS 2 的那些**矩形**（启动动画的红色扫块），所以迷宫、点阵图案、\n    // cell 网格都不需要 —— 只要\"zone 内按 5 个小块一组分面板\"这条规则，\n    // 否则扫块的粒度会和启动动画对不上。\n    CELL_SIZE: 12,\n    TILE_SIZE: 5,\n    ZONES: 3,\n    PANEL_TW: 5,\n    PANEL_SPECIAL_W: 15,\n\n    colorBg:    '#000000',\n    colorRed:   '#FF003C',\n    // ② 的墨色：那一拍底下是自铺的黑幕（③ 要\"渐变为纯黑\"），所以两套配色都\n    // 读得清，不必跟着配色翻。\n    colorPlateInk: '#FFFFFF',\n    // ④ 的墨色：点阵浮在**正常界面**上，默认白；done.css 的 `--md-ink` 在\n    // 「主白 + 绿」下把它翻成近黑（liveInk() 每 ~30 帧重读一次）。\n    colorDotInk:   '#FFFFFF',\n\n    // ===== ① 反向红色 S 型扫屏 =====\n    RED_LEAD: 120,   // 第一块红出现前的静默（覆盖层刚挂上时给它一拍）\n    RED_SPAN: 500,   // 首块 → 末块红起点的跨度；buildRegions() 会按块数\n                     //   重算成 max(500, (TOTAL-1)*20)（与启动动画同一条规则）\n    RED_RISE: 180,   // 单块红淡入\n    RED_HOLD: 400,   // 单块红保持\n    RED_EXIT: 280,   // 单块红溶解回黑\n    BACK_IN:  120,   // 单块的黑底淡入（起点 = 该块红起点 − BACK_IN，于是\"红到位\"\n                     //   时它下面的黑刚好不透明：既擦掉上一帧的红、也让红块不会\n                     //   半透明地叠在界面上。比块间距（≈50ms）长一档才读得出\n                     //   \"黑先到、红后到\"的擦除感，又不至于让整个 zone 一起变黑）\n\n    // ===== ② 矩阵像素定格 =====\n    // 尺寸与启动动画里那套标记**逐字对齐**（用户 2026-10-10：\"还可以再缩小一点，\n    // 与启动动画里蓝扫的大小类似\"）：两边都是同一个 24px 格子（= CELL_SIZE 12 ×\n    // 启动动画的十字步长 2），符号大小都取\"间距 × 0.34\" → **8.16px**，连空心/线条\n    // 符号的线宽都用同一条公式 `max(0.9, size × 0.20)`（启动动画 engine-marathon 里\n    // 十字缩放同样取 0.34、线宽同样取 `Math.max(0.9, size * 0.20)`）。于是启动动画\n    // 收尾的标记与任务完成动画的矩阵读起来是同一套像素。\n    // **每一格都要有符号**（格心落在哪块地盘就画那块的符号）—— 用户 2026-10-10：\n    // \"矩阵之间有明显的分界线…整个画面都是一个矩阵，不要哪里有空缺\"，\n    // 所以这里没有\"放不下就留空\"那一套，格子一个不落、边界上直接换符号。\n    MARK_IN: 350,        // 单块地盘的矩阵淡入（跟着它那一块的红扫走，见 paintScene）\n    MARK_HOLD: 600,      // 全屏矩阵铺满后的保持\n    UI_CELL: 24,         // 晶格间距（= 启动动画标记的 24px 格子，相位也一致）\n    UI_GLYPH_SCALE: 0.34,// 符号外接正方形边长 = UI_CELL × 该值（= 8.16px，与启动动画标记同值）\n    UI_DOT_SCALE: 0.30,  // 空白区实心圆的半径 = 符号边长 × 该值（比方框/十字轻一档）\n    UI_LINE_MIN: 0.9,    // 空心/线条符号的线宽 = max(该值, 符号边长 × UI_LINE_SCALE)\n    UI_LINE_SCALE: 0.20, //   （与启动动画标记的线宽公式完全相同）\n    UI_LINE_CAP: 'round',// 圆头圆角的线条符号（与启动动画标记一致）\n    UI_LINE_JOIN: 'round',\n    UI_BUCKETS: 6,       // 每块地盘的淡入量化档数（每帧 4×6 个 path，足够）\n\n    // ===== ③ 渐变为纯黑 =====\n    BLACK_FADE: 900,     // 矩阵整体淡出的时长（用户 2026-10-10：再长一点）\n    BLACK_HOLD: 700,     // 淡完之后**纯黑静置**的时长（\"多留一点黑屏的时间\"）\n\n    // ===== ④ 逐块显示内容 → 白点阵 → 绿横幅 =====\n    // NOTE: 名字必须与 ① 的 `TILE_SIZE`（迷宫 tile 边长 = 5）区分开 —— 两者\n    // 曾经同名，后者把前者覆盖成 80，面板划分整个塌成 3 条整幅横带\n    // （.generated/probe-done-regions.cjs 抓到的就是这一条）。\n    REVEAL_TILE: 80,       // 方块边长（CSS px）—— 与主题\"配色切换\"那一拍一致\n    REVEAL_DUR: 520,       // 第一块翻到最后一块翻完\n    REVEAL_DOTS_LEAD: 80,  // 方块开始后多久点阵跟上（\"连接上\"的关键：两者重叠）\n    REVEAL_DOTS_IN: 500,   // 点阵淡入\n    BANNER_DELAY: 1000,    // 点阵铺满后再等这么久才出横幅\n    BANNER_DUR: 500,       // 横幅自左向右展开\n    BANNER_TEXT: '//RUN_COMPLETE',\n\n    // ===== 白点阵（原稿 任务完成动画.html 的参数，逐字照搬）=====\n    DOT_SPACING: 75,\n    DOT_R: 0.8,\n    DOT_ALPHA_REST: 0.85,\n    DOT_FLICKER_AMP: 0.16,\n    DOT_WIND_DIR: 1,\n    DOT_WIND_AMP_MAX: 18,\n    JIT_FREQ_MIN: 0.02,\n    JIT_FREQ_MAX: 0.30,\n    FLK_FREQ_MIN: 0.01,\n    FLK_FREQ_MAX: 0.35,\n    WIND_DEAD: 0.28,\n    BLINK_DUR: 90,\n    BLINK_GAP_MIN: 2500,\n    BLINK_GAP_MAX: 8000,\n    BLINK_CLUSTER_P: 0.45,\n    BLINK_KILL_TH: 0.12,\n\n    // ===== DOM 锚点 =====\n    // sidebar / composer 与启动标记（engine-marathon.js 的 UI_ANCHORS）同一张表：\n    // 同一时刻、同一份测量口径，两块动画才落在同一个位置上。\n    // transcript 只属于这一拍：`[data-conversation-scroll]` 是对话列自己的转录\n    // 滚动区（ui-conversation 的 ConversationRoot 写在它上面的语义属性，比带哈希\n    // 的类名稳），兜底才用列容器。\n    ANCHORS: {\n      sidebar: ['[class*=\"_quietBars\"]', '[class*=\"_railIn\"]', '[class*=\"_sidebarCol\"]'],\n      composer: ['[class*=\"uV2eYG_card\"]', '[class*=\"uV2eYG_root\"]',\n                 '[class*=\"composerStack\"]', '[class*=\"composerHero\"]'],\n      transcript: ['[data-conversation-scroll]', '[class*=\"_centerCol\"]']\n    }\n  };\n\n  // ---------------- helpers ----------------\n  function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }\n  function easeOut(t) { return 1 - Math.pow(1 - t, 3); }\n\n  // 确定性乱序（mulberry32 + Fisher-Yates），与 client.template.js 里那套\n  // \"配色切换\"用的 mosaicOrder 逐字一致：看着是散的，实际每次同一顺序，\n  // 于是\"这一拍看起来不对\"可以复现。\n  function mosaicOrder(n) {\n    var seed = 0x9E3779B9, out = [], i, j, t;\n    function rnd() {\n      seed = (seed + 0x6D2B79F5) | 0;\n      t = Math.imul(seed ^ (seed >>> 15), 1 | seed);\n      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;\n      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;\n    }\n    for (i = 0; i < n; i++) out.push(i);\n    for (i = n - 1; i > 0; i--) {\n      j = Math.floor(rnd() * (i + 1));\n      t = out[i]; out[i] = out[j]; out[j] = t;\n    }\n    return out;\n  }\n\n  // ---------------- state ----------------\n  var W = 0, H = 0, DPR = 1;\n  var regions = [];      // 反向 S 顺序\n  var TOTAL = 0;\n  var t0 = 0, raf = null, running = false;\n  var sceneHidden = false, bannerShown = false;\n  var tilesBuilt = false, tileNodes = null, tileOpenAt = null, tileOpened = 0;\n  var lastFrame = 0;\n  var lastRect = { sidebar: null, composer: null, transcript: null };\n  var inkCache = null, inkFrames = 0;\n\n  // 时间线。② 不再是\"红扫完 → 等一拍 → 整屏矩阵\"：矩阵**按地盘跟着红扫逐块淡入**\n  // （每块的起点 = 它自己那一下红开始溶解的时刻，见 regionMarkAlpha），所以\n  //   MARK_AT   = 第一块开始出矩阵\n  //   MARK_DONE = 最后一块的矩阵铺满\n  //   BLACK_AT  = 再保持 MARK_HOLD → 开始淡出\n  // 第一块 / 最后一块的具体时刻由 buildRegions() 算出来后又调一次本函数。\n  function computeTimeline() {\n    CFG.SWEEP_END = CFG.RED_LEAD + CFG.RED_SPAN + CFG.RED_RISE + CFG.RED_HOLD + CFG.RED_EXIT;\n    if (regions.length) {\n      // 有真实块时刻就用真实的（改块数 / 改系数都不会错位）\n      var minHold = Infinity, maxDone = -Infinity;\n      for (var i = 0; i < regions.length; i++) {\n        minHold = Math.min(minHold, regions[i].holdEnd);\n        maxDone = Math.max(maxDone, regions[i].holdEnd + CFG.MARK_IN);\n      }\n      CFG.MARK_AT = minHold;\n      CFG.MARK_DONE = maxDone;\n    } else {\n      // 还没建块（引擎加载时先算一次，只为让 CFG 有个完整形状）\n      CFG.MARK_AT = CFG.RED_LEAD + CFG.RED_RISE + CFG.RED_HOLD;\n      CFG.MARK_DONE = CFG.SWEEP_END - CFG.RED_EXIT + CFG.MARK_IN;\n    }\n    CFG.BLACK_AT  = CFG.MARK_DONE + CFG.MARK_HOLD;\n    CFG.TILES_AT  = CFG.BLACK_AT + CFG.BLACK_FADE + CFG.BLACK_HOLD;\n    CFG.DOTS_AT   = CFG.TILES_AT + CFG.REVEAL_DOTS_LEAD;\n    CFG.BANNER_AT = CFG.TILES_AT + CFG.REVEAL_DUR + CFG.BANNER_DELAY;\n    CFG.END       = CFG.BANNER_AT + CFG.BANNER_DUR;\n  }\n  computeTimeline();\n\n  // ===========================================================\n  //  ① 场的构建 —— zone 内按 5 个小块分组，与启动动画同一套面板宽度\n  // ===========================================================\n  function panelWidthsFor(zoneIdx, tcols) {\n    var SPW = CFG.PANEL_SPECIAL_W;\n    function chunk(tiles) {\n      var out = [];\n      while (tiles >= CFG.PANEL_TW) { out.push(CFG.PANEL_TW); tiles -= CFG.PANEL_TW; }\n      if (tiles > 0) {\n        if (out.length) out[out.length - 1] += tiles;\n        else out.push(tiles);\n      }\n      return out;\n    }\n    if (zoneIdx === 0) {\n      // 右上：右侧 15 tiles 宽特殊面板，其余 5/组\n      if (tcols <= SPW) return [tcols];\n      return chunk(tcols - SPW).concat([SPW]);\n    }\n    if (zoneIdx === 2) {\n      // 下中：中间 15 tiles 宽，两侧 5/组\n      if (tcols <= SPW) return [tcols];\n      var left = Math.floor((tcols - SPW) / 2);\n      var right = tcols - SPW - left;\n      return chunk(left).concat([SPW], chunk(right));\n    }\n    return chunk(tcols);\n  }\n\n  function buildRegions() {\n    var T = CFG.TILE_SIZE;\n    var cellW = CFG.CELL_SIZE;\n    var TILE_PAD = CFG.CELL_SIZE / 2;\n    var cols = Math.max(8, Math.floor(W / cellW));\n    var TCOLS = Math.max(2, Math.floor(cols / T));\n    var zoneH = H / CFG.ZONES;\n    var byZone = [[], [], []];\n    for (var z = 0; z < CFG.ZONES; z++) {\n      var widths = panelWidthsFor(z, TCOLS);\n      var pcol = 0;\n      for (var wi = 0; wi < widths.length; wi++) {\n        var w = widths[wi];\n        var tcA = pcol, tcB = pcol + w;\n        var reg = {\n          z: z,\n          x0: tcA * T * cellW,\n          y0: z * zoneH,\n          x1: (tcB >= TCOLS) ? W : Math.min(W, tcB * T * cellW),\n          y1: (z + 1) * zoneH\n        };\n        // 跨 zone 边界各扩半格：红波跨 z=0/1、z=1/2 时不显示纯背景缝\n        // （与 engine-marathon 的 buildMaze 同一条规则）。\n        if (z > 0) reg.y0 = Math.max(0, reg.y0 - TILE_PAD);\n        if (z < CFG.ZONES - 1) reg.y1 = Math.min(H, reg.y1 + TILE_PAD);\n        byZone[z].push(reg);\n        pcol += w;\n      }\n    }\n    // 反向 S：zone2 R→L、zone1 L→R、zone0 R→L。\n    // 启动动画是 zone0 L→R / zone1 R→L / zone2 L→R（左上起），把整条顺序\n    // 反过来就是右下起、左上收 —— 即用户要的\"与启动动画反过来的 S\"。\n    var out = [];\n    for (var zz = CFG.ZONES - 1; zz >= 0; zz--) {\n      var list = byZone[zz].slice();\n      var dir = (zz === 1) ? 1 : -1;\n      list.sort(function (a, b) { return dir * (a.x0 - b.x0); });\n      for (var k = 0; k < list.length; k++) out.push(list[k]);\n    }\n    for (var o = 0; o < out.length; o++) out[o].order = o;\n    regions = out;\n    TOTAL = regions.length;\n\n    // 每块自己的四个时刻（系数与启动动画一致）\n    var n = Math.max(1, TOTAL - 1);\n    CFG.RED_SPAN = Math.max(500, (TOTAL - 1) * 20);\n    for (var i = 0; i < TOTAL; i++) {\n      var r = regions[i];\n      r.redStart = CFG.RED_LEAD + (r.order / n) * CFG.RED_SPAN;\n      r.redFull  = r.redStart + CFG.RED_RISE;\n      r.holdEnd  = r.redFull + CFG.RED_HOLD;\n      r.dissEnd  = r.holdEnd + CFG.RED_EXIT;\n      r.backStart = Math.max(0, r.redStart - CFG.BACK_IN);\n    }\n    computeTimeline();\n  }\n\n  function redAlpha(r, t) {\n    if (t < r.redStart) return 0;\n    if (t < r.redFull) return easeOut(clamp((t - r.redStart) / CFG.RED_RISE, 0, 1));\n    if (t < r.holdEnd) return 1;\n    if (t < r.dissEnd) return clamp(1 - easeOut((t - r.holdEnd) / CFG.RED_EXIT), 0, 1);\n    return 0;\n  }\n\n  // ===========================================================\n  //  DOM 测量 —— 与 engine-marathon 的 pickRect / composerRect 同一口径\n  // ===========================================================\n  function hiddenTree(el) {\n    var n = el;\n    while (n && n.nodeType === 1) {\n      var s = window.getComputedStyle(n);\n      if (s.display === 'none' || s.visibility === 'hidden') return true;\n      n = n.parentElement;\n    }\n    return false;\n  }\n\n  function rectOf(el) {\n    var r = el.getBoundingClientRect();\n    if (r.width < 4 || r.height < 4) return null;\n    if (r.right < 0 || r.bottom < 0 ||\n        r.left > window.innerWidth || r.top > window.innerHeight) return null;\n    return { x0: r.left, y0: r.top, x1: r.right, y1: r.bottom, hidden: hiddenTree(el) };\n  }\n\n  // 两趟：先只收\"真的可见\"的，都不行才退回\"藏着但量得到\"的\n  // （DSH 在 hero → active 的 settling 相位把 composerSeat 停在 visibility:hidden）。\n  function pickRect(key) {\n    var list = CFG.ANCHORS[key];\n    var fallback = null, i, el, r;\n    for (i = 0; i < list.length; i++) {\n      el = doc.querySelector(list[i]);\n      if (!el) continue;\n      r = rectOf(el);\n      if (!r) continue;\n      if (!r.hidden) return r;\n      if (!fallback) fallback = r;\n    }\n    return fallback;\n  }\n\n  // 类名 token 以 `_card` 结尾、并且真的量得到的元素（现役构建 RlGAzG_card）\n  function cardIn(scope) {\n    if (!scope || !scope.querySelectorAll) return null;\n    var els = scope.querySelectorAll('[class*=\"_card\"]');\n    var fallback = null;\n    for (var i = 0; i < els.length; i++) {\n      var cls = els[i].className;\n      if (typeof cls !== 'string') continue;      // SVG 的 className 是 SVGAnimatedString\n      var tok = cls.split(/\\s+/), hit = false;\n      for (var j = 0; j < tok.length; j++) {\n        if (/_card$/.test(tok[j])) { hit = true; break; }\n      }\n      if (!hit) continue;\n      var r = rectOf(els[i]);\n      if (!r) continue;\n      if (!r.hidden) return r;\n      if (!fallback) fallback = r;\n    }\n    return fallback;\n  }\n\n  function composerRect() {\n    var r = cardIn(doc.querySelector('[class*=\"composerStack\"]')) ||\n            cardIn(doc.querySelector('[class*=\"composerHero\"]'));\n    if (r) return r;\n    return pickRect('composer');\n  }\n\n  // 输出文本区域 = 转录滚动区 − 输入卡那一条 − 侧栏的地盘。\n  // 输入卡 sticky 在滚动区底部，它属于\"输入框\"那一块红色方框，不该再被白色\n  // 方框盖一遍（否则交界上两层格子会咬在一起）。\n  function transcriptRect(sidebar, composer) {\n    var r = pickRect('transcript');\n    if (!r) return null;\n    var x0 = r.x0, y1 = r.y1;\n    if (sidebar && sidebar.x1 > x0 && sidebar.x1 < r.x1) x0 = sidebar.x1;\n    if (composer && composer.y0 > r.y0 && composer.y0 < r.y1) y1 = Math.min(y1, composer.y0 - 8);\n    if (r.x1 - x0 < 40 || y1 - r.y0 < 40) return null;\n    return { x0: x0, y0: r.y0, x1: r.x1, y1: y1 };\n  }\n\n  // 每帧现量；选择器全部落空时退回上一帧量到的矩形（侧栏在指针进入时会摘掉\n  // `_quietBars`，那一帧不该整块消失）。\n  function markRects() {\n    var sb = pickRect('sidebar');\n    if (sb) lastRect.sidebar = sb; else sb = lastRect.sidebar;\n    var cp = composerRect();\n    if (cp) lastRect.composer = cp; else cp = lastRect.composer;\n    var tr = transcriptRect(sb, cp);\n    if (tr) lastRect.transcript = tr; else tr = lastRect.transcript;\n    return { sidebar: sb, composer: cp, transcript: tr };\n  }\n\n  function pointIn(x, y, r) {\n    return !!r && x > r.x0 && x < r.x1 && y > r.y0 && y < r.y1;\n  }\n\n  // ===========================================================\n  //  ② 矩阵像素 —— 一整块晶格，四种符号，一个尺寸，**一格不落**\n  // ===========================================================\n  // 地盘编码（避免每格分配对象）：\n  //   0 空白（墨实心圆）  1 侧栏（红十字）  2 输入框（红方框）  3 输出区（墨方框）\n  var TURF_BLANK = 0, TURF_SIDEBAR = 1, TURF_COMPOSER = 2, TURF_TRANSCRIPT = 3;\n\n  // 格心落在哪块地盘就归谁（四块地盘互不重叠，判的就是一个点）。\n  // **不再判\"符号放不放得下\"**：放不下就留空会在 UI 边界上留下一条一条空档，\n  // 看上去就是\"矩阵之间有明显分界线\"（用户 2026-10-10）。现在边界上直接换符号，\n  // 整屏是一个连续矩阵。\n  function turfAt(x, y, rects) {\n    if (pointIn(x, y, rects.sidebar)) return TURF_SIDEBAR;\n    if (pointIn(x, y, rects.composer)) return TURF_COMPOSER;\n    if (pointIn(x, y, rects.transcript)) return TURF_TRANSCRIPT;\n    return TURF_BLANK;\n  }\n\n  // 这一格所在的那一块（红扫面板）此刻的\"矩阵进度\"：那一块的红一开始溶解，它的\n  // 矩阵就跟着淡入。所以矩阵是**跟着红扫一块块亮起来**的，而不是等整条红扫完了\n  // 再整屏跳出来（用户 2026-10-10：\"红扫后应该就可以逐渐看到\"）。\n  function regionMarkAlpha(x, y, t) {\n    for (var i = 0; i < regions.length; i++) {\n      var r = regions[i];\n      if (x >= r.x0 && x < r.x1 && y >= r.y0 && y < r.y1) {\n        return clamp((t - r.holdEnd) / CFG.MARK_IN, 0, 1);\n      }\n    }\n    return 0;\n  }\n\n  // 每格的进度量化成 UI_BUCKETS 档；一趟扫描按（符号种类 × 档）分组，之后每档\n  // 一次 stroke/fill —— 既保证\"一格一个符号\"，又不必为每格单独落笔。\n  var matrixAcc = null;\n\n  function drawMatrix(t, rects, fade) {\n    if (fade <= 0) return;\n    var g = sctx;\n    var gs = CFG.CELL_SIZE;\n    var cell = CFG.UI_CELL;\n    var size = cell * CFG.UI_GLYPH_SCALE;\n    var half = size / 2;\n    var dotR = size * CFG.UI_DOT_SCALE;\n    // 线宽与启动动画的标记同一条公式\n    var lw = Math.max(CFG.UI_LINE_MIN, size * CFG.UI_LINE_SCALE);\n    var NB = Math.max(1, CFG.UI_BUCKETS | 0);\n    var KINDS = 4;                      // 0 红十字 / 1 红方框 / 2 墨方框 / 3 墨实心圆\n    if (!matrixAcc) {\n      matrixAcc = [];\n      for (var mk = 0; mk < KINDS * NB; mk++) matrixAcc.push([]);\n    }\n    for (var mz = 0; mz < matrixAcc.length; mz++) matrixAcc[mz].length = 0;\n    // 格心相位 = 启动动画点阵那一套（…, 6, 18, 30 …）里每 2 格取一个；\n    // 右边/下边多扫一格，好让最后那一列的符号也够到视口边缘。\n    for (var y = gs / 2; y <= H + gs / 2; y += cell) {\n      for (var x = gs / 2; x <= W + gs / 2; x += cell) {\n        var turf = turfAt(x, y, rects);\n        var prog = regionMarkAlpha(x, y, t);\n        if (prog <= 0.02) continue;\n        var b = Math.min(NB - 1, Math.max(0, Math.ceil(prog * NB) - 1));\n        var kind = turf === TURF_SIDEBAR ? 0\n                 : turf === TURF_COMPOSER ? 1\n                 : turf === TURF_TRANSCRIPT ? 2 : 3;\n        matrixAcc[kind * NB + b].push(x, y);\n      }\n    }\n    g.lineWidth = lw;\n    g.lineCap = CFG.UI_LINE_CAP;\n    g.lineJoin = CFG.UI_LINE_JOIN;\n    for (var k = 0; k < KINDS; k++) {\n      for (var bi = 0; bi < NB; bi++) {\n        var list = matrixAcc[k * NB + bi];\n        if (!list.length) continue;\n        g.globalAlpha = ((bi + 1) / NB) * fade;\n        g.beginPath();\n        for (var n = 0; n < list.length; n += 2) {\n          var px = list[n], py = list[n + 1];\n          if (k === 0) {\n            g.moveTo(px - half, py); g.lineTo(px + half, py);\n            g.moveTo(px, py - half); g.lineTo(px, py + half);\n          } else if (k === 3) {\n            g.moveTo(px + dotR, py);\n            g.arc(px, py, dotR, 0, TAU);\n          } else {\n            g.rect(px - half, py - half, half * 2, half * 2);\n          }\n        }\n        if (k === 0 || k === 1) {\n          g.strokeStyle = CFG.colorRed;\n          g.stroke();\n        } else if (k === 2) {\n          g.strokeStyle = CFG.colorPlateInk;\n          g.stroke();\n        } else {\n          g.fillStyle = CFG.colorPlateInk;\n          g.fill();\n        }\n      }\n    }\n    g.globalAlpha = 1;\n  }\n\n  // ===========================================================\n  //  白点阵（原稿 任务完成动画.html 的画布，去掉 #04060a 底色、暗角与扫描线）\n  //  底色去掉后它才是一层**透明**的遮罩：正常界面在它之下。\n  //  墨色随配色翻转（liveInk），「主白 + 绿」下才不会把白点画在白界面上。\n  // ===========================================================\n  var dotRows = [];\n  var jitPhases = null, flkPhases = null, blinkPhase = null, blinkReadyAt = null;\n  var dotsCols = 0, dotsRows = 0;\n\n  function liveInk() {\n    if (inkCache && inkFrames > 0) { inkFrames--; return inkCache; }\n    inkFrames = 30;   // 约每半秒重读一次：遮罩期间切了配色也跟着走\n    var v = '';\n    try { v = window.getComputedStyle(hostEl).getPropertyValue('--md-ink') || ''; } catch (e) { v = ''; }\n    v = v.trim();\n    inkCache = v || CFG.colorDotInk;\n    return inkCache;\n  }\n\n  function buildDotGrid() {\n    dotRows = [];\n    dotsCols = Math.max(2, Math.floor(W / CFG.DOT_SPACING) + 1);\n    dotsRows = Math.max(2, Math.floor(H / CFG.DOT_SPACING) + 1);\n    var offX = (W - (dotsCols - 1) * CFG.DOT_SPACING) / 2;\n    var offY = (H - (dotsRows - 1) * CFG.DOT_SPACING) / 2;\n    for (var r = 0; r < dotsRows; r++) {\n      var line = [];\n      for (var c = 0; c < dotsCols; c++) {\n        line.push({ x: offX + c * CFG.DOT_SPACING, y: offY + r * CFG.DOT_SPACING });\n      }\n      dotRows.push(line);\n    }\n    jitPhases = new Float32Array(dotsRows);\n    flkPhases = new Float32Array(dotsRows);\n    for (var i = 0; i < dotsRows; i++) {\n      jitPhases[i] = Math.random() * TAU;\n      flkPhases[i] = Math.random() * TAU;\n    }\n    var total = dotsCols * dotsRows;\n    blinkPhase = new Float32Array(total);\n    blinkReadyAt = new Float32Array(total);\n    for (var k = 0; k < total; k++) {\n      blinkPhase[k] = -1;\n      blinkReadyAt[k] = Math.random() * CFG.BLINK_GAP_MAX;\n    }\n  }\n\n  function rowStrength(r, now) {\n    var t = now * 0.001;\n    var s =\n      Math.sin(t * 0.41 + r * 0.09) * 0.55 +\n      Math.sin(t * 0.23 + r * 0.17) * 0.30 +\n      Math.sin(t * 0.67 + r * 0.31) * 0.15;\n    var v = (s + 1) * 0.5;\n    if (v <= CFG.WIND_DEAD) return 0;\n    v = (v - CFG.WIND_DEAD) / (1 - CFG.WIND_DEAD);\n    return v * v;\n  }\n\n  function startBlink(r, c, now) {\n    var idx = r * dotsCols + c;\n    blinkPhase[idx] = 0;\n    blinkReadyAt[idx] = now + CFG.BLINK_GAP_MIN +\n                        Math.random() * (CFG.BLINK_GAP_MAX - CFG.BLINK_GAP_MIN);\n    if (Math.random() < CFG.BLINK_CLUSTER_P) {\n      var dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];\n      var count = 1 + (Math.random() < 0.35 ? 1 : 0);\n      for (var k = 0; k < count; k++) {\n        var d = dirs[(Math.random() * 4) | 0];\n        var nr = r + d[0], nc = c + d[1];\n        if (nr < 0 || nr >= dotsRows || nc < 0 || nc >= dotsCols) continue;\n        var nidx = nr * dotsCols + nc;\n        if (blinkPhase[nidx] >= 0) continue;\n        if (now < blinkReadyAt[nidx]) continue;\n        blinkPhase[nidx] = 0;\n        blinkReadyAt[nidx] = now + CFG.BLINK_GAP_MIN +\n                             Math.random() * (CFG.BLINK_GAP_MAX - CFG.BLINK_GAP_MIN);\n      }\n    }\n  }\n\n  function stepDotField(dt, now) {\n    if (!dotsRows) return;\n    for (var r = 0; r < dotsRows; r++) {\n      var s = rowStrength(r, now);\n      var jf = CFG.JIT_FREQ_MIN + (CFG.JIT_FREQ_MAX - CFG.JIT_FREQ_MIN) * s;\n      var ff = CFG.FLK_FREQ_MIN + (CFG.FLK_FREQ_MAX - CFG.FLK_FREQ_MIN) * s;\n      jitPhases[r] += jf * dt;\n      flkPhases[r] += ff * dt;\n      var base = r * dotsCols;\n      for (var c = 0; c < dotsCols; c++) {\n        var idx = base + c;\n        if (blinkPhase[idx] >= 0) {\n          blinkPhase[idx] += dt / CFG.BLINK_DUR;\n          if (blinkPhase[idx] >= 1) blinkPhase[idx] = -1;\n        } else if (now >= blinkReadyAt[idx]) {\n          startBlink(r, c, now);\n        }\n      }\n    }\n  }\n\n  function drawDotField(now, fade) {\n    var g = dctx;\n    g.setTransform(DPR, 0, 0, DPR, 0, 0);\n    g.clearRect(0, 0, W, H);\n    if (!dotsRows || fade <= 0) return;\n    g.fillStyle = liveInk();\n    for (var r = 0; r < dotsRows; r++) {\n      var s = rowStrength(r, now);\n      var s2 = s * s;\n      var offset = CFG.DOT_WIND_DIR * CFG.DOT_WIND_AMP_MAX * s2 * Math.sin(jitPhases[r]);\n      var alpha = CFG.DOT_ALPHA_REST + CFG.DOT_FLICKER_AMP * s * Math.sin(flkPhases[r]);\n      if (alpha < 0.05) alpha = 0.05;\n      if (alpha > 0.98) alpha = 0.98;\n      var line = dotRows[r];\n      var base = r * dotsCols;\n      g.globalAlpha = alpha * fade;\n      g.beginPath();\n      for (var c = 0; c < dotsCols; c++) {\n        if (blinkPhase[base + c] >= 0) continue;\n        var x = line[c].x + offset, y = line[c].y;\n        g.moveTo(x + CFG.DOT_R, y);\n        g.arc(x, y, CFG.DOT_R, 0, TAU);\n      }\n      g.fill();\n      for (var c2 = 0; c2 < dotsCols; c2++) {\n        var bp = blinkPhase[base + c2];\n        if (bp < 0) continue;\n        var k = Math.sin(Math.PI * bp);\n        var a = 1 - k;\n        if (a < CFG.BLINK_KILL_TH) continue;\n        var x2 = line[c2].x + offset, y2 = line[c2].y;\n        g.globalAlpha = alpha * a * fade;\n        g.beginPath();\n        g.arc(x2, y2, CFG.DOT_R, 0, TAU);\n        g.fill();\n      }\n    }\n    g.globalAlpha = 1;\n  }\n\n  // ===========================================================\n  //  ④ 逐块显示内容 —— 硬切方块，JS 驱动（所以 seek() 也是精确的）\n  // ===========================================================\n  // 每块自己一个\"翻开时刻\"，按 mosaicOrder 的乱序在 REVEAL_DUR 内铺开；翻开 =\n  // 这一块不再挡住下面的东西（visibility:hidden）。**没有**淡出、模糊或描边 ——\n  // 与「配色切换」/设置页马赛克同一套\"逐块硬切\"逻辑（用户 2026-10-10 明确要求\n  // 去掉玻璃质感）。方块起始就是纯黑，与上一拍画布上的黑幕逐像素接得上。\n  function buildTiles() {\n    tilesBuilt = true;\n    var side = CFG.REVEAL_TILE;\n    var cols = Math.max(1, Math.ceil(W / side));\n    var rows = Math.max(1, Math.ceil(H / side));\n    var total = cols * rows;\n    var order = mosaicOrder(total);\n    var frag = doc.createDocumentFragment();\n    tileNodes = new Array(total);\n    tileOpenAt = new Float64Array(total);\n    for (var i = 0; i < total; i++) {\n      var tile = order[i];\n      var node = doc.createElement('i');\n      var c = tile % cols, r = Math.floor(tile / cols);\n      node.style.left = (c * side) + 'px';\n      node.style.top = (r * side) + 'px';\n      node.style.width = (side + 1) + 'px';\n      node.style.height = (side + 1) + 'px';\n      frag.appendChild(node);\n      tileNodes[i] = node;\n      tileOpenAt[i] = CFG.TILES_AT + (i / Math.max(1, total - 1)) * CFG.REVEAL_DUR;\n    }\n    elTiles.appendChild(frag);\n    tileOpened = 0;\n  }\n\n  function openTiles(t) {\n    if (!tilesBuilt) return;\n    while (tileOpened < tileNodes.length && tileOpenAt[tileOpened] <= t) {\n      tileNodes[tileOpened].className = 'md-off';\n      tileOpened++;\n    }\n  }\n\n  function dropTiles() {\n    if (!tilesBuilt) return;\n    tilesBuilt = false;\n    tileNodes = null;\n    tileOpenAt = null;\n    tileOpened = 0;\n    while (elTiles.firstChild) elTiles.removeChild(elTiles.firstChild);\n  }\n\n  // ===========================================================\n  //  RENDER\n  // ===========================================================\n  // 画布是三层的，每帧按 黑底 → 矩阵 → 红块 的顺序重画（整块画布不 clear）：\n  //   ① 黑底逐块累加，不透明的那一层同时擦掉上一帧的红 —— 与 engine-marathon 的\n  //      PASS 1 完全同一套语义；\n  //   ② 矩阵跟着红扫**逐块**淡入：红扫走到哪一块，那一块的矩阵就在它底下亮起来\n  //      （用户 2026-10-10：\"红扫后应该就可以逐渐看到\"）；\n  //   ③ 红块最后画：没扫完的块仍然被红盖着，zone 边界那 12px 重叠带也永远由红赢。\n  function drawSweepBack(t) {\n    var g = sctx;\n    var i, r;\n    for (i = 0; i < regions.length; i++) {\n      r = regions[i];\n      var ba = clamp((t - r.backStart) / CFG.BACK_IN, 0, 1);\n      if (ba <= 0) continue;\n      g.globalAlpha = ba;\n      g.fillStyle = CFG.colorBg;\n      g.fillRect(r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0);\n    }\n    g.globalAlpha = 1;\n  }\n\n  function drawSweepRed(t) {\n    var g = sctx;\n    for (var i = 0; i < regions.length; i++) {\n      var r = regions[i];\n      var ra = redAlpha(r, t);\n      if (ra <= 0.02) continue;\n      g.globalAlpha = ra;\n      g.fillStyle = CFG.colorRed;\n      g.fillRect(r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0);\n    }\n    g.globalAlpha = 1;\n  }\n\n  function hideScene() {\n    sceneHidden = true;\n    scene.style.display = 'none';\n  }\n\n  function showBanner() {\n    bannerShown = true;\n    // 文案已在 start() 写进去了；这里只负责展开（corner lines 走 CSS 延迟）\n    hostEl.classList.add('md-banner');\n  }\n\n  function phaseAt(t) {\n    if (t < CFG.MARK_AT) return 'sweep';\n    if (t < CFG.BLACK_AT) return 'marks';\n    if (t < CFG.TILES_AT) return 'black';\n    if (t < CFG.BANNER_AT) return 'tiles';\n    if (t < CFG.END) return 'banner';\n    return 'hold';\n  }\n\n  // 一幅画：时间线上的 t 对应的画面。拆出来是为了给复核脚本一个确定性的\n  // `seek()` —— 逐帧累加出来的黑幕必须按同样的小步长重放。\n  function paint(t, dt) {\n    if (!sceneHidden) {\n      sctx.setTransform(DPR, 0, 0, DPR, 0, 0);\n      var rects = markRects();\n      var fade = clamp((t - CFG.BLACK_AT) / CFG.BLACK_FADE, 0, 1);\n      drawSweepBack(t);\n      drawMatrix(t, rects, 1 - fade);\n      drawSweepRed(t);\n      // 换层不用淡入淡出：方块起始就是**纯黑**，与画布上那片黑逐像素接得上，\n      // 所以先把方块铺好、再把画布摘掉，屏幕上没有跳变。\n      if (t >= CFG.TILES_AT) {\n        if (!tilesBuilt) buildTiles();\n        hideScene();\n      }\n    } else if (tilesBuilt) {\n      openTiles(t);\n      if (t >= CFG.TILES_AT + CFG.REVEAL_DUR + 120) dropTiles();\n    }\n\n    if (t >= CFG.DOTS_AT) {\n      stepDotField(dt, t);\n      drawDotField(t, clamp((t - CFG.DOTS_AT) / CFG.REVEAL_DOTS_IN, 0, 1));\n    }\n    if (t >= CFG.BANNER_AT && !bannerShown) showBanner();\n  }\n\n  function render(now) {\n    if (!lastFrame) lastFrame = now;\n    var dt = now - lastFrame;\n    lastFrame = now;\n    if (dt > 50) dt = 50;\n    paint(now - t0, dt);\n    raf = requestAnimationFrame(render);\n  }\n\n  // ---------------- resize ----------------\n  var resizing = false;\n  function onResize() {\n    if (resizing) return;\n    resizing = true;\n    requestAnimationFrame(function () { resize(); resizing = false; });\n  }\n\n  function resize() {\n    DPR = Math.min(2, window.devicePixelRatio || 1);\n    W = window.innerWidth;\n    H = window.innerHeight;\n    var cvs = [scene, dotsC];\n    for (var i = 0; i < cvs.length; i++) {\n      cvs[i].width  = W * DPR;\n      cvs[i].height = H * DPR;\n      cvs[i].style.width  = W + 'px';\n      cvs[i].style.height = H + 'px';\n    }\n    sctx.setTransform(DPR, 0, 0, DPR, 0, 0);\n    dctx.setTransform(DPR, 0, 0, DPR, 0, 0);\n    // canvas.width 赋值会清空后备缓冲：累加出来的那一层黑幕必须重铺。\n    if (running && !sceneHidden) sctx.clearRect(0, 0, W, H);\n    buildRegions();\n    buildDotGrid();\n    // 方块按视口算，缩放后必须重铺（只有真的已经进入那一拍时才重建）\n    if (running && t0 && performance.now() - t0 >= CFG.TILES_AT) {\n      dropTiles();\n      buildTiles();\n    }\n  }\n\n  // ---------------- 关闭 ----------------\n  // 捕获阶段 + pointerdown：一个事件覆盖鼠标/触摸/触控笔，按下即消失；用捕获\n  // 阶段是因为菜单、下拉、拖拽手柄常在自己的处理器里 stopPropagation，冒泡\n  // 阶段听不到那些按下。这一层始终 pointer-events:none，所以那一次按下**同时**\n  // 完成两件事：关掉动画，并正常抵达用户真正瞄准的元素。\n  function onDismiss() { dismiss(); }\n\n  function bindDismiss() {\n    doc.addEventListener('pointerdown', onDismiss, true);\n    doc.addEventListener('keydown', onDismiss, true);\n  }\n  function unbindDismiss() {\n    doc.removeEventListener('pointerdown', onDismiss, true);\n    doc.removeEventListener('keydown', onDismiss, true);\n  }\n\n  function dismiss() {\n    if (!running) return;\n    running = false;\n    if (raf) { cancelAnimationFrame(raf); raf = null; }\n    unbindDismiss();\n    hostEl.classList.add('md-gone');\n    setTimeout(function () {\n      if (typeof window.__mbDoneFinish === 'function') {\n        try { window.__mbDoneFinish(); } catch (e) {}\n      }\n    }, 200);\n  }\n\n  // ---------------- LIFECYCLE ----------------\n  // 只挂监听、不做任何绘制：真正的开始由 client.template.js 在触发时调用 start()\n  // （与 engine-marathon 的 resize()/start() 分工一致）。\n  window.addEventListener('resize', onResize);\n  resize();\n\n  // 把这一层恢复成\"第一帧之前\"：时间线里所有一次性副作用（换层、横幅、方块）\n  // 都必须回退，两张画布都必须清空 —— 累加语义下，一帧残留的红就足以让后面\n  // 每一拍的画面都对不上。start() 与复核用的 seek() 共用它。\n  function resetScene() {\n    sceneHidden = false; bannerShown = false;\n    lastFrame = 0;\n    lastRect = { sidebar: null, composer: null, transcript: null };\n    hostEl.classList.remove('md-banner', 'md-gone');\n    scene.style.display = '';\n    dropTiles();\n    buildRegions();\n    buildDotGrid();\n    sctx.setTransform(DPR, 0, 0, DPR, 0, 0);\n    sctx.clearRect(0, 0, W, H);\n    dctx.setTransform(DPR, 0, 0, DPR, 0, 0);\n    dctx.clearRect(0, 0, W, H);\n  }\n\n  function start(opts) {\n    if (running) return;\n    var o = opts || {};\n    if (typeof o.text === 'string' && o.text.length) CFG.BANNER_TEXT = o.text;\n    // 文案在 start() 就写进 DOM，而不是等横幅展开那一拍才写：横幅的\n    // clip-path 从起点就开始往右推，晚一帧写就会闪出上一轮（或 payload 默认）\n    // 的那行字。\n    elText.textContent = CFG.BANNER_TEXT;\n    running = true;\n    inkFrames = 0;   // 强制重读一次 --md-ink（配色可能在上一轮之后被切过）\n    resetScene();\n    bindDismiss();\n    t0 = performance.now();\n    raf = requestAnimationFrame(render);\n  }\n\n  function stop() {\n    running = false;\n    if (raf) { cancelAnimationFrame(raf); raf = null; }\n    unbindDismiss();\n  }\n\n  window.__mbDone = {\n    start: start,\n    stop: stop,\n    dismiss: dismiss,\n    cfg: CFG,\n    // 复核脚本用的只读状态（.generated/verify-done.cjs）：进度、当前拍、四块地盘\n    // 的真实测量值、点阵墨色、方块翻开进度。生产代码不读它。\n    state: function () {\n      var t = running ? (performance.now() - t0) : -1;\n      return {\n        t: t,\n        phase: running ? phaseAt(t) : 'idle',\n        CFG: CFG,\n        W: W, H: H, TOTAL: TOTAL,\n        rects: markRects(),\n        regions: regions,\n        ink: liveInk(),\n        tiles: { built: tilesBuilt, total: tileNodes ? tileNodes.length : 0, opened: tileOpened }\n      };\n    },\n    // TEST-ONLY（只被 .generated/verify-done.cjs 调用）：先把这一层复位，再按\n    // 16ms 小步把时间线重放到 target，随后把 rAF 停住并冻结这一帧（否则 rAF\n    // 会立刻用\"真实的\"（更早的）时间覆盖它）。seeking 之后可以 resume() 继续。\n    seek: function (target) {\n      if (!running) return false;\n      if (raf) { cancelAnimationFrame(raf); raf = null; }\n      resetScene();\n      var step = 16, tt;\n      for (tt = step; tt <= target; tt += step) paint(tt, step);\n      if (tt - step < target) paint(target, step);\n      t0 = performance.now() - target;\n      lastFrame = 0;\n      return true;\n    },\n    resume: function () {\n      if (!running || raf) return false;\n      lastFrame = 0;\n      raf = requestAnimationFrame(render);\n      return true;\n    }\n  };\n  if (typeof window !== 'undefined') window.__mbDoneReady = true;\n})();\n"};
 
+    // Running-strip payload (运行动画): the compact canvas engine that plays in
+    // the native [data-chat-running] row above the composer. Same build-time
+    // contract as BOOT/DONE above; null in a raw template run, in which case
+    // the strip simply never mounts and the native status row is left alone.
+    var RUN_PAYLOAD = {"engine":"/* ===========================================================================\n * dsh-theme-mls-desktop213 — 输入框上方「运行提示」紧凑条带引擎\n * -----------------------------------------------------------------------------\n * 视觉来源：D:\\PythonCode\\ma\\运行动画.html（1920×1080，S=1/3 逻辑缩放）。\n * 原动画是整屏构图：左空心人形 + 右实心人形 + 一条微下弯传送线 + 每轮两个\n * 光点 + 三行居中文字。这里把同一套几何／节奏压进输入框上方 132px 高的条带：\n *\n *   ┌──────────────────────────────────────────────┐\n *   │  空心人形  ───────●──────────────  实心人形   │  视觉带 52px\n *   │              深度求索中 ○ ○ ○                 │  ← 13px / 22px 行高\n *   │              用时 12 秒                        │\n *   │              调用工具 · read                   │\n *   └──────────────────────────────────────────────┘\n *\n * 关键取舍：\n *   1. 背景保持透明，不填任何底色 —— DSH 自己的面板透出来。\n *   2. 人形按高度重新标定（原图 291 局部单位 → 44 CSS px），横向只保留\n *      原图 11.5% / 88.5% 的中心位置关系，所以 560~1000px 宽都能容纳。\n *   3. 传送线保持“两端低于中点”的微下弯（原图 sag≈13.9 源像素），光点严格\n *      沿用原动画的 3.0s 轮、0.433s 间隔、1.03s 行程与 P 曲线。\n *   4. 所有动态都在 RAF 里；prefers-reduced-motion / state.reduced 时只画\n *      一帧（三个标题点全亮，光点定格在传送线中点）。\n *\n * 对外 API（不依赖 import / require / 网络 / 外部资源）：\n *\n *   var inst = window.__marRunEngine.create(host, { height: 132 });\n *   inst.set({ mode:'run', title:'深度求索中', meta:'用时 12 秒',\n *              action:'调用工具 · read', ink:null, dim:null, reduced:false });\n *   inst.renderAt(0.6);   // 验收辅助：暂停 RAF 并定格到 t=0.6s（可选）\n *   inst.destroy();\n *\n * host 由插件创建；本引擎只负责在 host 内追加一个 <canvas>。\n * ========================================================================= */\n(function () {\n  'use strict';\n\n  var DEFAULT_HEIGHT = 132;                 // 交付口径：132 CSS px\n  var FONT_STACK = \"'Microsoft YaHei','Noto Sans SC','PingFang SC',sans-serif\";\n\n  /* =========================================================================\n   * 一、参数区（全部来自 运行动画.html，转换关系写在每条旁边）\n   * ========================================================================= */\n\n  /* ---- 传送线 -------------------------------------------------------------\n   * 源文件：y(x) = y0 + k*(x-cx)^2，x0=377 / x1=1549 / cx=962.5 / k=4.05e-5，\n   * y0=451.7。线段跨度 1172 源像素，两端比中心低 13.88 源像素。\n   * 在条带里我们按“跨度比例”重算下弯量：13.88 / 1172 ≈ 1.19%，再夹到\n   * 1.5~6 CSS px，避免 560px 宽时弯得过分、820px 宽时又看不出来。\n   * halfH 对应源文件 11px 线厚（含 S=1/3 后约 3.7px / 人形高 97px）；\n   * 条带人形只有 44px 高，按同比例取 1.8px 线厚，DPR=2 时等价 3.6 设备像素。\n   */\n  var BEAM = {\n    sagRatio: 0.0058,       // 条带下弯量 ≈ 宽度 × 0.58%（820 → 4.8px）\n    sagMin: 1.5,\n    sagMax: 6.0,\n    widthRatio: 0.041,      // 线厚 = 人形高 × 4.1%（44 → 1.8px）\n    widthMin: 1.2,\n    widthMax: 2.0,\n    fadeRatio: 0.02,        // 两端渐细长度 ≈ 跨度 × 2%（源文件 fade/跨度≈0.77%）\n    fadeMin: 6,\n    fadeMax: 18,\n    samples: 96             // 曲线采样数：820px 宽下每段 <6px，肉眼平滑\n  };\n\n  /* ---- 光点（视频逐帧实测，原样保留）-------------------------------------\n   * loop 3.0s 一轮；每轮 emit 两个球，间隔 0.433s（13 帧）；单球 travel\n   * 1.03s（31 帧）；两个球都消失后空窗 1.54s。\n   * 源文件飞行范围 x 432→1490，相对传送线两端各内缩 ≈4.7%。\n   * 半径源值 r0=10 / rMax=19（直径 20→38→20），按“人形高”比例换算到条带：\n   * 19/291 = 6.5% × 44 ≈ 3.0px；r0 / rMax = 10/19 ≈ 0.526，两端小、中点大。\n   */\n  var PKT = {\n    loop: 3.0,\n    emit: [0, 0.433],\n    travel: 1.03,\n    insetRatio: 0.047,\n    r0OfMax: 0.526,         // 源文件 r0/rMax = 10/19：两端半径是最峰值的 52.6%\n    rMaxRatio: 0.068,       // 半径峰 ≈ 人形高 × 6.8%（44 → 3.0px）\n    rMin: 2.6,\n    rMaxLimit: 3.8,\n    // 位移 LUT：源文件实测基本线性、略 S 形，两端速度慢、中段快。\n    ease: [\n      [0.00, 0.00], [0.10, 0.05], [0.20, 0.13], [0.30, 0.23],\n      [0.40, 0.35], [0.50, 0.49], [0.60, 0.63], [0.70, 0.75],\n      [0.80, 0.86], [0.90, 0.95], [1.00, 1.00]\n    ]\n  };\n\n  /* ---- 人形（源文件局部坐标 164×291，原样搬过来）-------------------------\n   * rects: [x, y, w, h] → 头 / 左臂 / 躯干 / 右臂；腿是两条 41 宽的竖条。\n   * 身体底边 182，腿顶 170：重叠 12 源像素恰好并成一条胯线（原注释）。\n   * headDy：右人形头单独上移 6 源像素；hollow：左边空心、右边实心。\n   * rad=4.5 / inset=12 是源文件的圆角与空心描边厚度；缩放后分别约\n   * 0.7px / 1.8px，因此空心描边在 132px 高时仍然清楚。\n   */\n  var FIG = {\n    W: 164,\n    H: 291,\n    rects: [\n      [ 49,   0,  65,  68],   // 头（与躯干间留 3px 颈隙）\n      [  0,  71,  40, 111],   // 左臂 → 底 182\n      [ 49,  71,  65, 111],   // 躯干 → 底 182\n      [124,  71,  40, 111]    // 右臂 → 底 182\n    ],\n    legs: [[24, 41], [100, 41]],\n    legY: 170,\n    legBottom: 291,\n    titleBottom: 182,\n    headDy: { L: 0, R: -6 },\n    rad: 4.5,\n    inset: 12,\n    pad: 9                    // 源文件离屏画布 HP：给描边留的边距\n  };\n\n  /* ---- 文字 --------------------------------------------------------------\n   * 源文件 60px / 行距 ≈ 79.5px（1.325 倍），按整屏 1080 折算到 132px 条带\n   * 会只剩 7px 左右，太糊；交付明确“字号约 13px、行高 22px”，这里以可读性\n   * 为准，只保留源文件的“三行居中、第一行带点”的结构。\n   * 标题点：半径 1.55px、点间距 5.2px、文字后留白 4.5px，亮度依次呼吸。\n   */\n  var TEXT = {\n    titleSize: 13,\n    lineSize: 13,\n    lineHeight: 22,\n    // 2026-11-05 用户：三条文字颜色统一、不加粗、不要标题后的呼吸点动画，\n    // 视觉上跟左边空心人形一致 —— 全部 400 字重、同一支固定墨色、行高不变。\n    titleWeight: 400,\n    lineWeight: 400,\n    gap: 10,                  // 视觉带底 → 第一行文字顶端\n    padX: 24                  // 文字左右安全边距\n  };\n\n  /* ---- 条带布局 ----------------------------------------------------------\n   * 2026-11-05 用户按原始游戏截图（人形 + 短线）要求改成**居中紧凑构图**：\n   * 两个人形之间是一条**直线**，长度固定约 220px（源 1920 构图里 1172px 是\n   * 61% 宽，铺满 820px 条带会显得线太长）；人形高度 46px。整个装置居中，\n   * 不再把人形顶到左右边缘。视觉带 54px；文字仍居中放在下方。\n   */\n  var STRIP = {\n    bandTop: 4,\n    figH: 46,\n    figHMin: 38,\n    figHSmallBelow: 520,      // 更窄时把人形缩到 38\n    figBeamY: 0.55,           // 直线穿过人形高度的 55%（参考截图）\n    lineLen: 220,             // 直线长度（CSS px）\n    lineLenMin: 160,\n    lineLenMax: 260,\n    sideGap: 10,              // 人形边缘 → 直线端点\n    bandH: 54\n  };\n\n  /* =========================================================================\n   * 二、工具\n   * ========================================================================= */\n  var clamp01 = function (v) { return v < 0 ? 0 : v > 1 ? 1 : v; };\n  var clamp = function (v, a, b) { return v < a ? a : v > b ? b : v; };\n  var ss = function (a, b, v) {\n    var x = clamp01((v - a) / (b - a));\n    return x * x * (3 - 2 * x);\n  };\n\n  // 颜色归一化探针：随便给一个 CSS 颜色，浏览器把它解析成 #rrggbb / rgba()。\n  // 解析失败时 fillStyle 保持上一次的值，我们用哨兵判断。\n  var probe = document.createElement('canvas').getContext('2d');\n  function normalizeColor(value) {\n    if (!value) return '';\n    try {\n      probe.fillStyle = '#010203';\n      probe.fillStyle = String(value).trim();\n      var out = probe.fillStyle;\n      return out === '#010203' ? '' : out;\n    } catch (e) {\n      return '';\n    }\n  }\n\n  function alphaColor(cssColor, alpha) {\n    var c = normalizeColor(cssColor);\n    var m;\n    if (!c) return '';\n    if (c.charAt(0) === '#') {\n      var hex = c.slice(1);\n      if (hex.length === 3) hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];\n      if (hex.length === 6 || hex.length === 8) {\n        var r = parseInt(hex.slice(0, 2), 16);\n        var g = parseInt(hex.slice(2, 4), 16);\n        var b = parseInt(hex.slice(4, 6), 16);\n        return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';\n      }\n    }\n    m = /^rgba?\\(\\s*([\\d.]+)[,\\s]+([\\d.]+)[,\\s]+([\\d.]+)/i.exec(c);\n    if (m) return 'rgba(' + m[1] + ',' + m[2] + ',' + m[3] + ',' + alpha + ')';\n    return '';\n  }\n\n  function lut(L, u) {\n    if (u <= L[0][0]) return L[0][1];\n    for (var i = 1; i < L.length; i++) {\n      if (u <= L[i][0]) {\n        var t = (u - L[i - 1][0]) / (L[i][0] - L[i - 1][0]);\n        var s = 0.5 - 0.5 * Math.cos(Math.PI * t);\n        return L[i - 1][1] + (L[i][1] - L[i - 1][1]) * s;\n      }\n    }\n    return L[L.length - 1][1];\n  }\n\n  function rr(c, x, y, w, h, r) {\n    r = Math.max(0, Math.min(r, w / 2, h / 2));\n    c.beginPath();\n    c.moveTo(x + r, y);\n    c.arcTo(x + w, y, x + w, y + h, r);\n    c.arcTo(x + w, y + h, x, y + h, r);\n    c.arcTo(x, y + h, x, y, r);\n    c.arcTo(x, y, x + w, y, r);\n    c.closePath();\n  }\n\n  /* =========================================================================\n   * 三、布局 / 几何\n   * ========================================================================= */\n\n  function figRects(hollow) {\n    var dy = FIG.headDy[hollow ? 'L' : 'R'];\n    var out = [];\n    var i, r;\n    for (i = 0; i < FIG.rects.length; i++) {\n      r = FIG.rects[i];\n      out.push(i === 0 ? [r[0], r[1] + dy, r[2], r[3]] : r);\n    }\n    var lh = FIG.legBottom - FIG.legY;\n    for (i = 0; i < FIG.legs.length; i++) {\n      out.push([FIG.legs[i][0], FIG.legY, FIG.legs[i][1], lh]);\n    }\n    return out;\n  }\n\n  function computeLayout(w, h) {\n    var sv = h / DEFAULT_HEIGHT;                 // 垂直缩放（默认高度时=1）\n    var figH = (w < STRIP.figHSmallBelow ? STRIP.figHMin : STRIP.figH) * sv;\n    var figW = figH * (FIG.W / FIG.H);\n    var bandTop = STRIP.bandTop * sv;\n\n    // 居中的“人形—短线—人形”装置。线长固定，不随条带宽度拉长；窗口太窄\n    // 时把人形往里收，最后才让线段略微缩短。\n    var lineLen = clamp(STRIP.lineLen * sv, STRIP.lineLenMin, STRIP.lineLenMax);\n    var maxHalf = Math.max(24, w / 2 - figW - 16 - STRIP.sideGap * sv);\n    var half = Math.min(lineLen / 2, maxHalf);\n    var x0 = w / 2 - half;\n    var x1 = w / 2 + half;\n    var gap = STRIP.sideGap * sv;\n    var centerL = x0 - gap - figW / 2;\n    var centerR = x1 + gap + figW / 2;\n    var span = x1 - x0;\n    var cy = bandTop + figH * STRIP.figBeamY;\n    var lineW = clamp(figH * BEAM.widthRatio, BEAM.widthMin, BEAM.widthMax);\n\n    var textTop = bandTop + figH + TEXT.gap * sv;\n    var lineH = TEXT.lineHeight * sv;\n    var lineY = [textTop + lineH / 2, textTop + lineH * 1.5, textTop + lineH * 2.5];\n\n    var rMax = clamp(figH * PKT.rMaxRatio, PKT.rMin, PKT.rMaxLimit);\n    return {\n      w: w,\n      h: h,\n      sv: sv,\n      bandTop: bandTop,\n      figH: figH,\n      figW: figW,\n      figTop: bandTop,\n      figBottom: bandTop + figH,\n      centerL: centerL,\n      centerR: centerR,\n      lineW: lineW,\n      beam: {\n        x0: x0,\n        x1: x1,\n        cx: w / 2,\n        cy: cy,\n        sag: 0,                    // 2026-11-05：直线（原弧线取消）\n        halfH: lineW / 2,\n        fade: clamp(span * BEAM.fadeRatio, BEAM.fadeMin, BEAM.fadeMax)\n      },\n      pkt: {\n        x0: x0 + span * PKT.insetRatio,\n        x1: x1 - span * PKT.insetRatio,\n        r0: rMax * PKT.r0OfMax,\n        rMax: rMax\n      },\n      text: {\n        cx: w / 2,\n        lineY: lineY,\n        lineH: lineH,\n        titleSize: TEXT.titleSize * sv,\n        lineSize: TEXT.lineSize * sv,\n        maxW: w - TEXT.padX * 2\n      }\n    };\n  }\n\n  function beamYAt(L, x) {\n    var half = (L.beam.x1 - L.beam.x0) / 2;\n    var t = half > 0 ? (x - L.beam.cx) / half : 0;\n    return L.beam.cy + L.beam.sag * t * t;\n  }\n\n  function beamHalf(L, x) {\n    var d = Math.min(x - L.beam.x0, L.beam.x1 - x);\n    if (d <= 0) return 0;\n    return L.beam.halfH * Math.min(1, d / L.beam.fade);\n  }\n\n  /* =========================================================================\n   * 四、绘制：传送线 / 人形 / 光点\n   * ========================================================================= */\n\n  function drawBeam(c, L, color, alpha) {\n    var b = L.beam;\n    var N = BEAM.samples;\n    var i, x, y;\n    c.save();\n    c.globalAlpha = alpha == null ? 1 : alpha;\n    c.fillStyle = color;\n    c.beginPath();\n    for (i = 0; i <= N; i++) {\n      x = b.x0 + (b.x1 - b.x0) * i / N;\n      y = beamYAt(L, x) - beamHalf(L, x);\n      if (i) c.lineTo(x, y); else c.moveTo(x, y);\n    }\n    for (i = N; i >= 0; i--) {\n      x = b.x0 + (b.x1 - b.x0) * i / N;\n      c.lineTo(x, beamYAt(L, x) + beamHalf(L, x));\n    }\n    c.closePath();\n    c.fill();\n    c.restore();\n  }\n\n  /* 人形离屏精灵：空心用“填充并集 → destination-out 内缩区”，和源文件一致。\n   * 这样相邻块（臂底 / 躯干底 / 腿顶）的边会自然并成同一条线，不会出现\n   * 一条条独立描边叠在一起的脏边。每个尺寸 / DPR / 颜色只重建一次。 */\n  function buildFigureSprite(figH, dpr, color, hollow) {\n    var scale = figH / FIG.H;\n    var pad = FIG.pad;\n    var wCss = Math.ceil((FIG.W + pad * 2) * scale);\n    var hCss = Math.ceil((FIG.H + pad * 2) * scale);\n    var cv = document.createElement('canvas');\n    cv.width = Math.max(1, Math.round(wCss * dpr));\n    cv.height = Math.max(1, Math.round(hCss * dpr));\n    var c = cv.getContext('2d');\n    var unit = scale * dpr;\n    c.setTransform(unit, 0, 0, unit, pad * scale * dpr, pad * scale * dpr);\n\n    var rects = figRects(hollow);\n    var i, r;\n    c.fillStyle = color;\n    for (i = 0; i < rects.length; i++) {\n      r = rects[i];\n      rr(c, r[0], r[1], r[2], r[3], FIG.rad);\n      c.fill();\n    }\n    if (hollow) {\n      c.globalCompositeOperation = 'destination-out';\n      for (i = 0; i < rects.length; i++) {\n        r = rects[i];\n        var ins = FIG.inset;\n        rr(c, r[0] + ins, r[1] + ins, r[2] - ins * 2, r[3] - ins * 2,\n          Math.max(FIG.rad - ins, 1));\n        c.fill();\n      }\n      c.globalCompositeOperation = 'source-over';\n    }\n    return { canvas: cv, wCss: wCss, hCss: hCss, scale: scale, pad: pad };\n  }\n\n  function drawFigure(c, sprite, cx, top, figH) {\n    var scale = figH / FIG.H;\n    var x = cx - (FIG.W / 2 + sprite.pad) * scale;\n    var y = top - sprite.pad * scale;\n    c.drawImage(sprite.canvas, x, y, sprite.wCss, sprite.hCss);\n  }\n\n  function drawPacket(c, L, u, color, fixedMax) {\n    var p = lut(PKT.ease, clamp01(u));\n    var x = L.pkt.x0 + (L.pkt.x1 - L.pkt.x0) * p;\n    var y = beamYAt(L, x);\n    var b = Math.sin(Math.PI * clamp01(p));\n    var r = fixedMax ? L.pkt.rMax : L.pkt.r0 + (L.pkt.rMax - L.pkt.r0) * b;\n    var a = fixedMax ? 1 : ss(0, 0.03, u) * (1 - ss(0.97, 1, u));\n\n    c.save();\n    c.translate(x, y);\n    c.scale(1, 0.95);                 // 源文件同样是轻微压扁的圆\n    c.globalAlpha = a;\n    c.fillStyle = color;\n    c.beginPath();\n    c.arc(0, 0, r, 0, Math.PI * 2);\n    c.fill();\n    c.restore();\n  }\n\n  /* =========================================================================\n   * 五、绘制：两种模式的视觉带\n   * ========================================================================= */\n\n  // mode='run'：完整复刻源动画的视觉带\n  function drawRunBand(c, L, t, colors, reduced) {\n    drawBeam(c, L, colors.ink, 1);\n\n    drawFigure(c, L.sprites.L, L.centerL, L.figTop, L.figH);\n    drawFigure(c, L.sprites.R, L.centerR, L.figTop, L.figH);\n\n    if (reduced) {\n      // 静止帧：一个光点定格在传送线中点（p=0.5 时 x 基本就是线段中点）\n      drawPacket(c, L, 0.5, colors.ink, true);\n      return;\n    }\n    var tt = t % PKT.loop;\n    for (var i = 0; i < PKT.emit.length; i++) {\n      var age = (tt - PKT.emit[i] + PKT.loop) % PKT.loop;\n      if (age <= PKT.travel) drawPacket(c, L, age / PKT.travel, colors.ink, false);\n    }\n  }\n\n  /* =========================================================================\n   * 六、绘制：三行文字\n   * ========================================================================= */\n\n  function ellipsize(ctx, text, maxW) {\n    if (ctx.measureText(text).width <= maxW) return text;\n    var chars = Array.from(text);\n    while (chars.length > 1) {\n      chars.pop();\n      var trial = chars.join('') + '…';\n      if (ctx.measureText(trial).width <= maxW) return trial;\n    }\n    return '…';\n  }\n\n  function fitLine(ctx, text, weight, size, maxW) {\n    var s = size;\n    text = text == null ? '' : String(text);\n    ctx.font = weight + ' ' + s + 'px ' + FONT_STACK;\n    while (s > size * 0.8 && ctx.measureText(text).width > maxW) {\n      s -= 0.5;\n      ctx.font = weight + ' ' + s + 'px ' + FONT_STACK;\n    }\n    if (ctx.measureText(text).width > maxW) {\n      text = ellipsize(ctx, text, maxW);\n      ctx.font = weight + ' ' + s + 'px ' + FONT_STACK;\n    }\n    return { text: text, font: weight + ' ' + s + 'px ' + FONT_STACK, width: ctx.measureText(text).width };\n  }\n\n  function buildMetrics(ctx, L, state) {\n    var title = fitLine(ctx, state.title, TEXT.titleWeight, L.text.titleSize, L.text.maxW);\n    var meta = fitLine(ctx, state.meta, TEXT.lineWeight, L.text.lineSize, L.text.maxW);\n    var action = fitLine(ctx, state.action, TEXT.lineWeight, L.text.lineSize, L.text.maxW);\n\n    return {\n      title: title,\n      meta: meta,\n      action: action,\n      startX: L.text.cx - title.width / 2\n    };\n  }\n\n  function drawText(c, L, M, t, colors, reduced) {\n    if (!M) return;\n    c.textAlign = 'left';\n    c.textBaseline = 'middle';\n    // 三条文字同色（固定墨色，不跟主题色）、同字重、无标题点动画。\n    c.fillStyle = colors.ink;\n    c.globalAlpha = 1;\n\n    c.font = M.title.font;\n    c.fillText(M.title.text, M.startX, L.text.lineY[0]);\n\n    c.font = M.meta.font;\n    c.fillText(M.meta.text, L.text.cx - M.meta.width / 2, L.text.lineY[1]);\n\n    c.font = M.action.font;\n    c.fillText(M.action.text, L.text.cx - M.action.width / 2, L.text.lineY[2]);\n\n    c.globalAlpha = 1;\n  }\n\n  /* =========================================================================\n   * 七、引擎实例\n   * ========================================================================= */\n\n  function create(host, opts) {\n    if (!host || !host.appendChild) throw new Error('[marRunEngine] host is required');\n    opts = opts || {};\n\n    var height = clamp(parseInt(opts.height, 10) || DEFAULT_HEIGHT, 96, 240);\n    var explicitReduced = opts.reduced != null;\n    var reducedMq = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;\n\n    var state = {\n      mode: opts.mode === 'think' ? 'think' : 'run',\n      title: opts.title != null ? String(opts.title) : '深度求索中',\n      meta: opts.meta != null ? String(opts.meta) : '用时 0 秒',\n      action: opts.action != null ? String(opts.action) : '调用工具 · read',\n      ink: opts.ink != null ? opts.ink : null,\n      dim: opts.dim != null ? opts.dim : null,\n      reduced: explicitReduced ? !!opts.reduced : !!(reducedMq && reducedMq.matches)\n    };\n\n    var cv = document.createElement('canvas');\n    cv.className = 'mar-run-canvas';\n    cv.setAttribute('aria-hidden', 'true');\n    cv.style.display = 'block';\n    cv.style.width = '100%';\n    cv.style.height = height + 'px';\n    cv.style.pointerEvents = 'none';\n    host.appendChild(cv);\n\n    var ctx = cv.getContext('2d');\n    var W = 0, dpr = 1, L = null, M = null;\n    var colors = { ink: '#C0FE04', dim: 'rgba(192,254,4,0.72)', dimAlpha: 1 };\n    var sprites = { key: '', L: null, R: null };\n    var raf = 0;\n    var destroyed = false;\n    var t0 = (window.performance && performance.now ? performance.now() : Date.now());\n    var hiddenAt = 0;\n    var observer = null;\n\n    function nowMs() {\n      return (window.performance && performance.now) ? performance.now() : Date.now();\n    }\n\n    function readInk() {\n      // 2026-11-05 用户：两个动画都**不跟主题色**走，固定用我们设定的颜色。\n      var ink = state.ink || '#C0FE04';\n      ink = normalizeColor(ink) || '#C0FE04';\n      colors.ink = ink;\n      colors.dim = alphaColor(ink, 0.72) || ink;\n      colors.dimAlpha = 1;\n    }\n\n    function ensureSprites() {\n      var key = dpr + '|' + L.figH + '|' + colors.ink;\n      if (sprites.key === key) return;\n      sprites.key = key;\n      sprites.L = buildFigureSprite(L.figH, dpr, colors.ink, true);\n      sprites.R = buildFigureSprite(L.figH, dpr, colors.ink, false);\n    }\n\n    function rebuild() {\n      if (!L) return;\n      L.sprites = sprites;\n      ensureSprites();\n      M = buildMetrics(ctx, L, state);\n    }\n\n    function layout() {\n      var w = Math.round(host.clientWidth || 0);\n      if (w < 1) w = opts.fallbackWidth ? Math.round(opts.fallbackWidth) : 0;\n      if (w < 1) return false;\n      var d = Math.min(window.devicePixelRatio || 1, 3);\n      if (w === W && d === dpr && L) return false;\n\n      W = w;\n      dpr = d;\n      cv.width = Math.max(1, Math.round(W * dpr));\n      cv.height = Math.max(1, Math.round(H() * dpr));\n      cv.style.width = '100%';\n      cv.style.height = height + 'px';\n      L = computeLayout(W, height);\n      sprites.key = '';\n      readInk();\n      rebuild();\n      return true;\n    }\n\n    function H() { return height; }\n\n    function render(t) {\n      if (!L) return;\n      ctx.setTransform(1, 0, 0, 1, 0, 0);\n      ctx.clearRect(0, 0, cv.width, cv.height);\n      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);\n\n      drawRunBand(ctx, L, t, colors, state.reduced);\n      drawText(ctx, L, M, t, colors, state.reduced);\n    }\n\n    function tick(now) {\n      raf = 0;\n      if (destroyed || state.reduced || document.hidden) return;\n      var t = ((now == null ? nowMs() : now) - t0) / 1000;\n      render(t);\n      raf = requestAnimationFrame(tick);\n    }\n\n    function start() {\n      if (destroyed || raf) return;\n      if (state.reduced || document.hidden) {\n        render(state.reduced ? 0.35 : (nowMs() - t0) / 1000);\n        return;\n      }\n      raf = requestAnimationFrame(tick);\n    }\n\n    function stop() {\n      if (raf) {\n        cancelAnimationFrame(raf);\n        raf = 0;\n      }\n    }\n\n    function onResize() {\n      if (destroyed) return;\n      if (layout()) {\n        if (state.reduced) render(0.35); else start();\n      }\n    }\n\n    function onVisibility() {\n      if (destroyed) return;\n      if (document.hidden) {\n        hiddenAt = nowMs();\n        stop();\n      } else {\n        if (hiddenAt) {\n          t0 += nowMs() - hiddenAt;\n          hiddenAt = 0;\n        }\n        start();\n      }\n    }\n\n    function onMotionPreference() {\n      if (explicitReduced || destroyed) return;\n      state.reduced = !!(reducedMq && reducedMq.matches);\n      if (state.reduced) { stop(); render(0.35); } else start();\n    }\n\n    function set(patch) {\n      if (destroyed || !patch) return api;\n      if (patch.mode != null) state.mode = patch.mode === 'think' ? 'think' : 'run';\n      if (patch.title != null) state.title = String(patch.title);\n      if (patch.meta != null) state.meta = String(patch.meta);\n      if (patch.action != null) state.action = String(patch.action);\n      if (patch.ink !== undefined) state.ink = patch.ink == null ? null : patch.ink;\n      if (patch.dim !== undefined) state.dim = patch.dim == null ? null : patch.dim;\n      if (patch.reduced != null) {\n        state.reduced = !!patch.reduced;\n        explicitReduced = true;\n      }\n      readInk();\n      rebuild();\n      if (state.reduced) {\n        stop();\n        render(0.35);\n      } else {\n        start();\n      }\n      return api;\n    }\n\n    function destroy() {\n      if (destroyed) return;\n      destroyed = true;\n      stop();\n      if (observer) {\n        try { observer.disconnect(); } catch (e) { /* noop */ }\n        observer = null;\n      }\n      window.removeEventListener('resize', onResize);\n      document.removeEventListener('visibilitychange', onVisibility);\n      if (reducedMq && reducedMq.removeEventListener) {\n        reducedMq.removeEventListener('change', onMotionPreference);\n      }\n      if (cv.parentNode) cv.parentNode.removeChild(cv);\n    }\n\n    // ---- 首次布局 + 监听 ---------------------------------------------------\n    layout();\n    if (L) {\n      start();\n    } else {\n      // host 还没有尺寸（例如刚插入 DOM）：等一帧再量。\n      requestAnimationFrame(function () { onResize(); });\n    }\n\n    if (window.ResizeObserver) {\n      observer = new ResizeObserver(onResize);\n      try { observer.observe(host); } catch (e) { observer = null; }\n    }\n    window.addEventListener('resize', onResize);\n    document.addEventListener('visibilitychange', onVisibility);\n    if (reducedMq && reducedMq.addEventListener) {\n      reducedMq.addEventListener('change', onMotionPreference);\n    }\n\n    var api = {\n      set: set,\n      destroy: destroy,\n      canvas: cv,\n      resize: onResize,\n      // 验收用：当前布局（居中人形 + 直线；sag 必须为 0）。\n      metrics: function () {\n        if (!L) return null;\n        return {\n          width: W,\n          height: height,\n          beamSpan: L.beam.x1 - L.beam.x0,\n          sag: L.beam.sag,\n          figH: L.figH,\n          textLineY: L.text.lineY.slice(),\n          ink: colors.ink,\n          titleWeight: TEXT.titleWeight,\n          lineWeight: TEXT.lineWeight,\n          titleDots: 0\n        };\n      },\n      // 验收/截图辅助：暂停 RAF 并把画面定格在指定时间（秒）。\n      renderAt: function (seconds) {\n        var v = parseFloat(seconds);\n        if (destroyed || !isFinite(v)) return api;\n        stop();\n        render(v);\n        return api;\n      },\n      pause: function () { stop(); return api; },\n      resume: function () { start(); return api; }\n    };\n    return api;\n  }\n\n  window.__marRunEngine = {\n    create: create,\n    version: '0.1.0'\n  };\n})();\n"};
+
+    // Right-side dot animation (动画1) payload. Separate from RUN_PAYLOAD on
+    // purpose: 2026-11-05 the user asked for the two animations to be two
+    // independent options, so either engine can be absent / off without the
+    // other noticing.
+    var DOT_PAYLOAD = {"engine":"/* ===========================================================================\n * dsh-theme-mls-desktop213 — 输入框右侧「点阵动画」引擎（动画1）\n * -----------------------------------------------------------------------------\n * 只负责一块方形 canvas：把 src/run/think-anim1.js 的 21×21 有机体画出来。\n * 与运行动画条带（engine-run.js）完全独立：\n *   · 不画任何文字、不接管原生提示；\n *   · 没有静态点阵底/边框 —— 第一帧几乎是空的，格子随时间逐格生长；\n *   · host 的尺寸由插件算好（输入卡右侧的空白），这里只按 host 尺寸铺满。\n *\n * 对外 API（无 import / require / 网络）：\n *\n *   var inst = window.__marDotEngine.create(host, { reduced: false });\n *   inst.set({ reduced: false });      // ink 参数保留但忽略：颜色固定\n *   inst.destroy();\n * ========================================================================= */\n(function () {\n  'use strict';\n\n  function nowMs() {\n    return (typeof performance !== 'undefined' && performance.now)\n      ? performance.now() : Date.now();\n  }\n\n  function create(host, opts) {\n    opts = opts || {};\n    if (!host) throw new Error('dot engine: host required');\n    if (typeof window === 'undefined' || !window.__marThinkAnim ||\n        typeof window.__marThinkAnim.draw !== 'function') {\n      throw new Error('dot engine: __marThinkAnim missing');\n    }\n\n    var cv = document.createElement('canvas');\n    cv.setAttribute('aria-hidden', 'true');\n    cv.style.cssText = 'display:block;width:100%;height:100%;';\n    host.appendChild(cv);\n    var ctx = cv.getContext('2d');\n\n    var state = {\n      reduced: opts.reduced === true,\n      fresh: opts.fresh || '#C0FE04'\n    };\n    var reducedMq = null;\n    try { reducedMq = window.matchMedia('(prefers-reduced-motion: reduce)'); } catch (e) { reducedMq = null; }\n    var explicitReduced = opts.reduced !== undefined;\n    var w = 0, h = 0, dpr = 1, raf = 0, t0 = nowMs(), hiddenAt = 0, destroyed = false;\n\n    function layout() {\n      var r = host.getBoundingClientRect();\n      var nw = Math.max(1, Math.round(r.width));\n      var nh = Math.max(1, Math.round(r.height));\n      var nd = Math.min(window.devicePixelRatio || 1, 3);\n      if (nw === w && nh === h && nd === dpr) return false;\n      w = nw; h = nh; dpr = nd;\n      cv.width = Math.max(1, Math.round(w * dpr));\n      cv.height = Math.max(1, Math.round(h * dpr));\n      return true;\n    }\n\n    function render(t) {\n      if (!w || !h) return;\n      ctx.setTransform(1, 0, 0, 1, 0, 0);\n      ctx.clearRect(0, 0, cv.width, cv.height);\n      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);\n      var size = Math.min(w, h);\n      window.__marThinkAnim.draw(ctx, w / 2, h / 2, size, t, state.reduced, state.fresh);\n    }\n\n    function tick(now) {\n      raf = 0;\n      if (destroyed || state.reduced || document.hidden) return;\n      render(((now == null ? nowMs() : now) - t0) / 1000);\n      raf = requestAnimationFrame(tick);\n    }\n\n    function start() {\n      if (destroyed || raf) return;\n      if (state.reduced || document.hidden) {\n        render(state.reduced ? 3.2 : (nowMs() - t0) / 1000);\n        return;\n      }\n      raf = requestAnimationFrame(tick);\n    }\n\n    function stop() {\n      if (raf) { cancelAnimationFrame(raf); raf = 0; }\n    }\n\n    function onResize() {\n      if (destroyed) return;\n      if (layout()) { render((nowMs() - t0) / 1000); }\n    }\n\n    function onVisibility() {\n      if (destroyed) return;\n      if (document.hidden) {\n        hiddenAt = nowMs();\n        stop();\n      } else {\n        if (hiddenAt) { t0 += nowMs() - hiddenAt; hiddenAt = 0; }\n        start();\n      }\n    }\n\n    function onMotionPreference() {\n      if (explicitReduced || destroyed) return;\n      state.reduced = !!(reducedMq && reducedMq.matches);\n      if (state.reduced) { stop(); render(3.2); } else start();\n    }\n\n    var observer = null;\n    layout();\n    render(0);\n    start();\n    if (window.ResizeObserver) {\n      observer = new ResizeObserver(onResize);\n      try { observer.observe(host); } catch (e) { observer = null; }\n    }\n    window.addEventListener('resize', onResize);\n    document.addEventListener('visibilitychange', onVisibility);\n    if (reducedMq && reducedMq.addEventListener) reducedMq.addEventListener('change', onMotionPreference);\n\n    var api = {\n      set: function (patch) {\n        if (destroyed || !patch) return api;\n        // `fresh` is the “新生格” colour: fixed #C0FE04 by default, or the\n        // active theme accent when the user turns 跟随主题色 on.\n        if (patch.fresh !== undefined) state.fresh = patch.fresh == null ? '#C0FE04' : String(patch.fresh);\n        if (patch.reduced != null) {\n          state.reduced = !!patch.reduced;\n          explicitReduced = true;\n        }\n        if (state.reduced) { stop(); render(3.2); } else start();\n        return api;\n      },\n      resize: function () { onResize(); return api; },\n      destroy: function () {\n        if (destroyed) return;\n        destroyed = true;\n        stop();\n        if (observer) { try { observer.disconnect(); } catch (e) {} observer = null; }\n        window.removeEventListener('resize', onResize);\n        document.removeEventListener('visibilitychange', onVisibility);\n        if (reducedMq && reducedMq.removeEventListener) reducedMq.removeEventListener('change', onMotionPreference);\n        if (cv.parentNode) cv.parentNode.removeChild(cv);\n      }\n    };\n    return api;\n  }\n\n  window.__marDotEngine = { create: create, version: '1.0.0' };\n})();\n\n;\n/* ===========================================================================\n * 思考态视觉：动画1（点阵有机体）\n * -----------------------------------------------------------------------------\n * 数据逐帧取自 D:\\PythonCode\\ma\\动画1.html（21×21 / 141 帧 / 15fps），解码\n * 规则与原文件一致（首帧 RLE，之后每帧是“下标-字符”增量）。这里只保留中央\n * 点阵，不带 720×406 的 HUD 外框 —— 外框在 52px 视觉带里会糊成噪点。\n *\n * 由 src/run/engine-run.js 的 drawThinkBand() 调用：\n *   window.__marThinkAnim.draw(ctx, cx, cy, size, colors, t, reduced)\n *\n * 配色：不引入第二个色系。新生格 = 主题墨色（ink），成熟格 = 同一墨色的低\n * 透明度；在深色 / 浅色两套底下都自动成立（浅底 ink 就是墨）。\n * ========================================================================= */\n(function () {\n  'use strict';\n\n  var STATES = [[0.337,0.006],[0.340,0.218],[0.406,0.424],[0.350,0.600],[0.350,0.800],[0.350,1.000],[0.450,0.029],[0.538,0.132],[0.463,0.455],[0.451,0.606],[0.517,0.754],[0.514,0.970],[0.620,0.011],[0.612,0.225],[0.697,0.361],[0.788,0.512],[0.752,0.864],[0.608,0.985],[0.816,0.000],[0.754,0.221],[0.817,0.392],[0.842,0.622],[0.850,0.815],[0.908,0.960],[0.978,0.002],[1.026,0.155],[1.039,0.457],[0.997,0.666],[0.953,0.755],[0.995,0.984],[1.001,0.050],[1.049,0.238],[1.054,0.335],[1.023,0.558],[1.003,0.876]];\n\n  var FRAMES = [\"64.01m5h.0100m.\",\"64nbm.\",\"64x\",\"64q6o96p96q1\",\"64x6oa6pt6qg\",\"64r6om6qm\",\"5i05k064w6qg\",\"5it5jn5kt64u6qm\",\"4ym5ir5jt5ks64o6ot6px6qt7a9\",\"4ca4d94eb4yt5iv5jx5kp62g66g6os6pw6qn7807at7u27vg7w0\",\"4cn4dt4en4wg4yx50m5iu5jv5ku62t66t6ow6qw78g7an7cm7un7vn7wn\",\"4ct4dr4wt4yv50t5io5ju5ko62v66w6ou6pv6qu78t7ax7cn7ut7vt7wt\",\"4dq4et4yu5jo62u66o6oo6pp6qo7ct8e08gg8i0\",\"3613813qn3rn3tn3un4dw4wr50s62o6po7aw7vn7wy8eg8gt8ig\",\"36t38t3qt3rt3s83tt3ut4cy4dq4ey4ww50w7au7cy7ux7wq8en8in909911921\",\"2l038n3ry3sn3ty4cq4dx4ew4wp50p78y7ao7up7vt7wp8et8gq90n91t92n9l29n0\",\"2l12m12n136x38x3rs3st3tn4cp4dw4eu4wu50u78s7cs7uu7vq7wu8gv8it90t91q92t9lm9nn\",\"2l.2ma2n.36w38w3sw3tr4co4du4eo4wo78q7cq7vu8gu90s91w92s9lt9ma9nt\",\"2n036q38q3rr3su3ts4do4yo50o78p7cu7uo7vo7wo8go90q91p92q9lr9mt9ns\",\"2lb2mg2ng36w38w3qx3rq3so3tq3ux78o7co8ex8iq90w92w9lw9nw\",\"2lt2mt2nt36v3qw3rw3tw3uv8ew8iw90p91u92p9lv\",\"2lr2mx2nr36u38u3qu3ru3tu3uu8ep8ip9mn9nv\",\"2lp2mu2nv36o38o3ro3to8eu8iu90u91o92u9mx\",\"2lu2mo2nu3qo3uo8io90o92o9lu9mw9nu\",\"8eo9mu9no\",\"\",\"\",\"64i\",\"646\",\"64.\",\"\",\"4yw6pw\",\"4yq5jx63a6596pt\",\"4xm4yt4zm5jt63t65t6ot6qt\",\"4xt4zt5g15m862w65n66s6os6ps6qs\",\"4yn5gs5jw5mn62t63q65q66t6ov6pv6qv78n7an7ct\",\"4yx4zn5gy5ha5ii5jp5ki5l25mt63w65w6op6po6qp78t7at7t17uv7wv7x2\",\"4xn4yq5gt5hn5i05ju5k05ln63p65p6m17ar7tm7ut7wt7xm\",\"4924cq4ew4h14xx4yw4zx5gy5hy5i.5jo5k.5ly62s63u65u66r6my6ov6qw6sn7aq7tg7xg8gv\",\"36w38u3qp3st3uu49g4bn4ct4et4fn4hm4wi4xv4yv4zv50i5hx5lq62q63o65o66q6qv6st7tm8gt8h091u\",\"36t37t38t3qt3ut4bt4ft4hn4tg4vs4w.4xu4yu4zu50.51n53b5gr5hw5lw5mx62w6mq6op6qp6sx78n7aw7cy7tn7xn8fm8hg91n\",\"2lx2nw3n03oh3sx3wg3x049n4bs4cs4er4fr4tn4vy4xo4yo4zo51t53n5gw5hu5lu5mq62q66w6mw6ou6qu6sw78s7au7cs7tt7us7ws7xt8ft8ht91q\",\"2lt2nt3nn3ot3sw3wt3xn49t4bx4cx4d04ex4fq4ht4tt4vr51y5gu5ho5lo5mp62w66v6mp6oo6qo6sp7ao7cr7ts7uw7ww7xs8fq8hq91w\",\"20a21n22h3qs3sq3us3xt49x4bq4cq4d.4eq4fw4hx4vx51x53t5mu62p66u6su78r7tx7uu7v07wu7xq8ec8fp8gy8hp8ic8zb91t93b9lt9mo9nta6na8n\",\"20n21t22m3nt3ox3qw3ri3sx3ti3uw3wq49w4bv4cp4ep4hw4vq51q5go5mo62o66o6mu6so78v7cw7tv7uo7v.7wo7xw8e.8fu8gx8hu8i.8zt90c92c93t9ls9nsa6ta7ha8t\",\"22n3op3qp3r.3sq3t.3up3wv49p4bu4co4eo4fu4hp4tn4vv51v53n6mo78u7cu7tp7xp8fo8gr8zn90091x92693y9lw9nwa7t\",\"2ln2nn3ou3qu3sp3uu3wu49u4bo4fo4hu4tw4vu51u53w78o7co7tu7xu8fu8gq8zx90.91v92.93q9lp9m69npa8n\",\"20t22t2lr2mi2ns31136x37s38r3d03ns3so3wo3xy4tu4vo51o53u8gw8zw91u93w9lv9m0a6na8t\",\"2lx2nx31m36v37q38p3dm3xs4to8gu8zp93p9lw9m.9nwa6sa8n\",\"2lq2mc2nq31t36u37v38u3dt3nx3xx8go8zu91o93ua6ra7ya8y\",\"21w2lw2m031x36o37u38o3dr3nw3qo3uo3wu3xw49o4ho53o7to7xo8fo8ho9lv9nva6xa7wa8x\",\"20x21u22q2m.2nw31v37o3dw3nu3wp3xu9lu9nua6pa7ua8p\",\"20p21o22p2lu2np31u3du3no3wu3xo8zo93o9lo9noa6ua7oa8o\",\"20o22u2nu3do3oo3woa6o\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"641\",\"640\",\"64a\",\"64n\",\"\",\"64w\",\"64u6ot6qx\",\"5jt64o6qt\",\"4yp7907at7b1\",\"4w14xx4yt4zt5016pi79m7bn\",\"4wa4xt5ig5jr5km63i65i79n\",\"4ct4d04en4w850g5it5jv5kt63065.6on6p.6qs78t79m7ct\",\"3su4d84et4wm4yn5ix5ju5kr63.6op6qv79t7bt\",\"37u3st4dm4vu4wt4yt50t51u5gy5hi5ip5kv5li5mn6oo6qo7by7vn\",\"37v4bp4dt4vt4wr4xr4zs50s51t5h65iu5ku5lc5mt5z278x79q7ay7bw7cx7s87vt7y1\",\"3p13v14at4bt4cy4dq4en4ft4gn4ug4wv4xq4zw50w52a5h.5io5l.5ms5z16916mi6si78w79p7aw7bp7cw7sm7vq7yn\",\"2lw2nx37p3ou3pn3vn3wu4ay4cq4du4eq4gs4un4vr4wu4xu4yw4zp50u51n52n5gq5ko5mx5z262666669b6m66s678u79o7au7bo7cu7r17st7ui7vp7wi7yt8cg8dy8jn8km\",\"2lt2nt31o33137t3b13or3py3vt3ws4aw4bx4cw4do4ew4fq4gw4ut4vw4wo4xo4yu4zo50o51w52t5gw5jo5mq5yn5zg62.66.69m6ag6m.6s.78o7ao7co7r27sy7t67u.7vu7w.7x67z28ct8fi8gc8hi8jt8kt\",\"33t36i38i3bn3ot3qc3ss3uc3wt4814ap4bp4fp4gp4i14vp4yo51p5d95mw5p15yt5zt69t6at7rm7t.7vo7x.7zm8f.8g08h.8xn91695m\",\"36c38c3bt3q.3sq3u.48t4av4bo4ev4fu4it4sh4tp4ux4vu51u52x53u5425dm5e05gv5mv5o05pn5yx6ax7rt7yn7zt8cn8g68ky8xt91.95t\",\"20r22t31y3663863dt3ox3px3sp3vy3wr4aw4cp4ep4fo4gq4in4sn4tt4uw4vo51o52v53t54n5dt5em5gu5mo5on5pt5yw5zx69x6aw6in6wn7rw7sx7yx7zw8bn8cr8gc8kr8ln8v89709im9qm\",\"1ft1hn20t2lr2ns31t3603mn3ni3ou3pq3su3vq3wp3xi3ym48s49i4aq4co4eo4gw4hi4ir4up52u54t5et5go5ot5yp5zw69w6av6iy6wt7ru7sp7yp7zo8bt8cx8dr8g68js8kx8lt8vm8zi91093i97m9it9qt\",\"1fn1ht20q22q2lw2nv33s36.37r3803bn3mt3n.3pp3so3vp3wu3x.3yt48q49.4aw4h.4ix4st4tr4uu53s54n5dx5eq5oq5px5zv69v6ap6iw6wq7ro7so7yo8bs8dw8g08jq8kq8ly8vt8xs8z.93095r97t9iq9qqa3gabgapaavm\",\"1fx1hx20v22v2f12ha2lu2nu2ra2t137v38.3by3mw3oo3pu3vo3yw48w4au4gu4iw4tq53q54t5dw5eu5ou5pw5yv5zp69p6av6ip6wu8br8cq8dp8g.8jp8kx8lr8vy8xq91.93.95w97n9ip9l69n09qpa3tabtapmavn\",\"1fq1hw2fy2ht2no2rt2s22tn31y33x37o3br3ds3mu3ou3po3yp48u4ao4go4iu4tv4uo52o53v5dp5eo5oo5pp5yp5zu69u6au6iu6wo8bq8cw8du8jo8kq8lq8vw8xw97q9iu9l.9n.9qua60a7ia86\",\"1fw1u220p21i28g2gy2hr2rr2st31w33w3bw3dw3op3yu4io4sx4to53o54x5du5pu5yu5zo69o6io8bv8cq8do8lv8xv95v97w9io9qoa3xa6.a7ca8.abxapn\",\"1fp1hv1un1vg21022p27a28n2en2fx2gx2hp2lo2rp2sx2tx2un31u33p3bp3du3mo3ou48o4sp54p5do5po5yo6ao6iu6wu8bp8cp8kp8lu8xu95ua3wa7.abpapyavt\",\"1ab1hp1mb1ut1vt20u21.22u27t28t2et2fw2gv2ho2ro2sw2tw31o33u3bo3do3oo3yo4so54o8bo8co8ko8lo8vq8xo95o97qa3uabu\",\"1an1fu1mn1vy20o22o27y28n2ev2fp2gp2sp2tp2uw33o3wo8vw97wa3oaboavr\",\"1hu1mt1ux1vw27v28r2eu2fu2go2so2tu2uu6io6wo8vu97pappavv\",\"1at1uw1vu27u28w2eo2fo2uo8vo97oapoavo\",\"1ar1my1uv1vo27o2to\",\"1aw1fo1ho1mv1uu28u2eu\",\"1au1mo1uo28o2uu\",\"1ao2uo\",\"2eo\",\"64.\",\"\",\"64p\",\"64o\",\"\",\"\",\"5j.64x\",\"5i.5js5k.64.6q.\",\"4x.5ir6466o.6po6qo7c.\",\"4xo5is5jk6406oo7bp7co\",\"4xp4y.4z.5ij5jc5kq64.6oq6pn78.79s7as7bu7c.\",\"4b.4xs5id5j.5kk5m.6ol6qw78u7al7bs7vu\",\"4a.4bo4cw4du4w.4xx4yj4zm5g.5ho5i.5j65kf5lo6on6pt6q.78v79.7am7cs7v.\",\"4ao4bs4cx4dr4ex4u.4ws4xs4yk4zs50s52.5go5hi5j.5kl5l.5mo6o.6qn78s79o7ae7bm7cr7vm\",\"37.3p.3ss3v.4b.4cs4ds4e.4fx4uo4xq4yj4zl51.52o5g.5ht5it5j05k.5lx5m.5o.5zq63e6506oq6q.79r7a.7bn7cs7z.8d.\",\"2l.37o3o.3po3so3vo4ar4bj4dl4ef4gs4wq4x64y64zm50m51o5e.5go5i.5j.5kn5lt5mo5oo5p.5z.61i62m63.65.66t67i69r6o.6p66qt79t7au7cm7wi7zo8c.8do\",\"2lo2ns3oo3s.4bd4c.4em4fk4vr4wm4x74y.4z750s51x5eo5gu5hx5id5k.5mk5po5zp61.62t66q67.69s6p.6qm77u79n7an7b.7dx7r.7ut7wo8co8fs8ho95u\",\"2ls2n.37.3o.3w.4bj4c64ds4f.4gm4v.4wt4x64z.50t51n5g75ht5i75j05me5om5p.62m66y69u6lo6oe6q.6to76o77y79m7at7bt7c.7dt7eo7tn7un7vn7wx7xn7y.8br8ds8fo8hn8jm8x.95.\",\"1f.2l.2nm34o37o39o3ao3m.3oo3so3vx3wo3y.48.4as4b.4cl4dt4ee4f64g.4i.4vq4xd50.52.5d.5es5gd5h65i.5ld5m05oo5y.5zo62n66f69q6kc6lv6o.6w.77l78.79.7ad7b.7cn7ro7s.7to7ut7vm7xs7yu8bu8d.8f.8h.8j.8ls8xo95w\",\"1fo1h.2lm2nx2oo33u34.37w3903a.3bu3d.3mo3ol3ps3st3vm3wl3yo48o4a64bd4c64d.4e64f04gj4io4ss4ts4uq4vy4wm4x.4z750m52n53s54.5do5eo5fm5g75hl5l65m75nt5ox5po5yo5zu62.66.69w6k.6ln6tt6uo6wo76m77.78679f7a.7bf7c67d.7en7r.7ss7tn7u.7w.7xn7y.8br8dk8jk8ku8xs91o95o\",\"2hs2lo2no2o.33s35t37m39.3bs3do3of3pl3sy3wm3yu48w4as4bl4c.4dn4e04f74g64sr4tc4u.4vd4w.4z.50751m52t53k54s5co5dv5em5fx5g.5h.5j.5l.5m65nn5or5pv5y.5zy69o6a.6l.6t.6u.76.78.79.7b.7c.7e.7qn7sy7t.7ve7x.7yq7zr80o8bm8cp8dj8j68ko8l.8x.91.9mxav.\",\"1hs20s2ho2lu2mn31.33m35.37.3oq3s73w73yw48m4a04b04de4e.4fe4gm4is4ss4t.4ug4vy4w750.51e52n53.5c.5ds5ee5f75gf5m05nm5o65pk5yo5zt69n6ao6w.73o74o79d7go7rn7s.7v.7y.7z.80n8b.8c.8de8j08k.8ls8xo91t95.9i.9jo9lo9m.9no9q.a7oabuavo\",\"1fv22s27.2gw2hs2lv2m.2nr2rs31o33d3773bm3lo3mf3om3p03sk3v03wm3ys48.4a.4b.4d.4f.4g.4if4sm4tc4ud4v74w.51752.5cc5d.5e65f.5gd5m.5n.5oc5p65qc5wo5y.5z.69f6a.6wo73.74t79.7ql7re7s07yl7zd89o8be8co8dk8jf8lm8x.91n95u97.9hn9io9k69ln9nn9on9qoa5na7.a9nab.\",\"1f.1hm1m.1vs20l21t22.27o2e.2f.2go2h.2ln2mt2nn2rj2u.33737.3bs3l.3m.3nt3og3p.3s73v.3ww3xn3yd45o4804af4d64i04lo4sp4t04u64vl51052053054m5c65e.5g.5o05p05qo5w.5xn5yd5z66966al6bn6ix6wm7gt7oy7q.7r.7s.7y.7z.80.89.8bs8cs8dm8eg8im8jn8wo8xn8yy91.94n95n96o97s9h.9i.9jy9k.9l.9n.9o.9pna3.a5xa6sap.av.\",\"1fk1h.1mo1u.1v.1xo20m21o22d25i27p2eo2fo2gu2hr2l72mo2n72rk31.33s3be3d.3lr3me3om3pd3s.3vd3we3xf3yq45.48m4a64d.4e04gm4i64l.4sm4t.4u.4v.52.53d54e5ct5d05e05o.5ps5q05wn5xy5y.5z06906a.6bo6cu6il6wl72o73o74o7go7hi7ox82n8b.8c.8de8e.8f08i.8j78kn8ni8vm8w.8xl8ys95d96q97o9im9j.9p.9q7a3ea5.a6.a7ta8na9.abmapjastavk\",\"1hk1ms1ux1ve1xu20l21t22l25q27l28l2e.2gs2h.2l.2mg2n62r02ss2t.2uo33m3b73do3jo3kt3lo3mm3nm3o63p.3v.3w73xn3yu3zt40i45t48.4a.4e.4g.4i74s74t651.53654.5at5cy5dl5e.5p.5qt5ws5y65z.69.6a66bn6cm6hx6i.6l06t66wd72t73t74m7g67hs7io7o.82o88o89q8bk8cl8d.8f.8h78j.8kl8lk8nx8oo8p68vs8wl8xd8y.94.95.96n97m9ei9go9i.9q09soa36a6ea7.ablapxas.av6ben\",\"1f.1hj1mo1us1vs1x.1zo20n22p23e25.27r28.2eo2hm2l02m.2rf2to30o31s3373b.3dt3j.3k.3ly3me3ng3w.3ys3zo40.45i4804im4lt4s.4t.53.5405a.5cm5dm5pf5wo5xx6a76br6cs6ht6i76t06w66xt72q73y74.7g.7ho7it82.88u89.8bl8cm8h08kn8l68n.8or8po8tu8ww8x095696o99o9e.9gt9i09q69s.a2na37a6.a8.absacnapkastavjbbobcnbecbfi\",\"0qo10o1am1f61hc1mm1u.1vf1zf20.21.22.23t27f28f2e.2gk2hl2ie2l.2n.2qm2rm2sf2t.2um31t32d33.3b63c73dn3eo3ju3l.3m.3n.3o.3x.3ym3z.45o48.4i.4lo53n54.5ax5c.5dd5pd5q.5wy5xy5y.6a.6bl6ct6g66i.6l.6t.6w.6xo6yn72o73s7hf7io7mp84p87o88.8b.8c78h68kd8l.8oq8p.8tn8v78wl8x695e96t97s99t9eu9go9i.9q.9st9zoa2ra3mabdap7as.av7b9nbb.bc.be.bf.bhs\",\"0qt0sy0yn10x1as1f71h71mo1ul1ve1zm20t23m27s28l2es2g.2hn2in2l02q62rt2sn2to2uw30n31r3273363b.3c63d.3en3j.3m73yl45.46y4874km4l.4tj53.5ao5d05p.5st5w.5xe6bm6c.6go6w06xm6yo72n73y7ht7in7mn84i87.88n8b08cd8h.8k78oo8vd8wt95.97099n9do9hn9rd9so9vo9z.a2wa3eab.acoapsavfb8nb9.bh.binbjo\",\"0q.0tn0xy0ys10.1em1f61h61it1ms1uo1vs1wn1z020.23026n27.28s2ef2f.2gy2h.2i.2n02q.2rm2s.2t.2us30t31t32l33.3cf3dn3y046n4704804jd4kt4t.5305a.5d.5s.5xd6be6gn6i06w.6xl6yn72m7367hl7im7m.84.88.8bl8c.8k.8o.8tr8vk8wk8x.95096e97l99o9d.9e.9gm9he9k09o09re9sta1ya2la3dabeacmadnap7avmb7ob8.biqbj6bk6\",\"0sl0tx0yn1bl1ef1fl1gm1h.1il1ln1m.1u.1vr1wt1z.20622623.27l28u2e.2g.2hn2l72n.2r.2st2tq2u.30s31.32.3c.3dm3m.47748.4j.4kl53.5x.6966b.6h06i.6w06xe71m72t73e7h.7it7jm8b.8l68tp8v.8w78x095.96n97.99t9h09kj9r09se9v.a1ma2ga3.a70ab.acnaqkautav6b4ob5ob7sbaybgnbi.bjnbk.\",\"0se0te0xd1an1bm1ek1fe1g01it1lt1mt1ul1v.1wf20.22.27.2862gf2h.2l02rl2s.2t.2u730m3d.3em3y.46k47.4j04kd5z069.6g.6h.6w.6x.6y.71e72773.7id7jf8bd8l.8tt8wk8x.96.99n9gn9hf9k69od9r.9sna1ya2fa7.ab0acmadmap1aqtas6av.b4.b5.b6rb7.bbmbftbgfbj.bk0bmo\",\"0qn0sf0t.0x.0yf10n1ad1bl1f.1id1lf1m.1u01v626e2772872f62h02l.2n02r.2se2t72u.2yn30.3e.3gm4604j.4k65w65z.6c071d72e7ik7jn8b.8t.8w.99.9g.9h09k09o09r69s.a0ya1.a2lab.ackad.aeeap.aqdaslaudb40b6.banbbnbfebglbk.bm.\",\"0mt0q70rl0s70ye0zl10m14o18t1a61e71g.1i01ll1ot1u.1v.1wd1x62602702802dt2f.2gm2h.2n.2s.2t02vn2ye2ze3ff3gt46.4k05w.6c671772d7i77j77m683684687l8878pf9h.9k.9o.9r.a0da2dac6aedalyaq.as0au7aznb4nba0bb7bfmbg7bmn\",\"0ny0q.0r70s60y70ze10.13l14t1a.1b01e.1i.1l61te1u01w.1x.26.27.28.29g2dm2g.2s62t.2v72yt2z63f03gl4k.5w671.72.7i.7j.7m77n083084787088.8p7a0la20aelalsas.au.azeb4xba.bb0bc6bf6bg.\",\"0mn0nt0ol0r60sd0z612e13t18n1b.1l.1sl1t71u.2902am2d62s.2ve2yd3d03f.5w.6c.7m07n.83.84687.8p.a00a2.ac.ae0al7azdb4.bb.be0bf.bm.\",\"0m.0nm0od0r.0s.0y.0z012713l14.18l1961n01om1sf1t628029d2af2de2v62y.2z.3d.3f03g.6y67m.84.a0.ae.aleaz7b70bc.be.bj0\",\"0n70o60z.12k13d1861n61o71sk1t.28.2902a62d02v02y03f.3g06y09d09v0al6azdb7e\",\"0n.0o.12.13.18.1901n71o.1s.1t029.2a.2d.2v.2y.3g.6y.9d6ag0al0az0b70bj6\",\"1n.1t.3g09y0ag.al.az.b7.bj.\",\"19.3g.9d.9v.9y.aj0b46\",\"aj.b40bm0\"];\n\n  var B36 = '0123456789abcdefghijklmnopqrstuvwxyz';\n  var SYMBOLS = '#0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';\n  var IDX = {};\n  for (var i = 1; i < SYMBOLS.length; i++) IDX[SYMBOLS[i]] = i - 1;\n\n  function rleFull(s) {\n    var out = [];\n    for (var i = 0; i < s.length; i += 3) {\n      var n = B36.indexOf(s[i]) * 36 + B36.indexOf(s[i + 1]);\n      var c = s[i + 2];\n      for (var j = 0; j < n; j++) out.push(c);\n    }\n    return out;\n  }\n\n  var CELLS = null;\n  function ensureCells() {\n    if (CELLS) return CELLS;\n    var all = [];\n    var cur = rleFull(FRAMES[0]);\n    all.push(cur);\n    for (var f = 1; f < FRAMES.length; f++) {\n      var s = FRAMES[f];\n      var nx = cur.slice();\n      for (var i = 0; i < s.length; i += 3) {\n        nx[B36.indexOf(s[i]) * 36 + B36.indexOf(s[i + 1])] = s[i + 2];\n      }\n      all.push(nx);\n      cur = nx;\n    }\n    CELLS = all;\n    return CELLS;\n  }\n\n  var N = 21;\n  var FPS = 15;\n\n  function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }\n\n  // 每一格“第一次亮起”的帧号：用来做逐格淡入（不再依赖预先铺满的点阵底）。\n  var BORN = null;\n  function ensureBorn() {\n    if (BORN) return BORN;\n    var cellsAll = ensureCells();\n    var born = new Array(N * N);\n    for (var i = 0; i < born.length; i++) born[i] = -1;\n    for (var f = 0; f < cellsAll.length; f++) {\n      var cells = cellsAll[f];\n      for (var k = 0; k < cells.length; k++) {\n        if (cells[k] !== '.' && born[k] < 0) born[k] = f;\n      }\n    }\n    BORN = born;\n    return born;\n  }\n\n  /* draw(c, cx, cy, size, t, reduced)\n   *   size  : 方形边长（CSS px），由调用方按宿主空间决定\n   *   t     : 秒；从 0 开始 = 从“一格都没有”开始生长\n   *   没有底板、没有边框、没有静态格子：不亮的格子直接不存在。\n   *   颜色固定（2026-11-05 用户要求，不跟主题色）：\n   *     新生格 = #C0FE04（酸绿，闪一下），成熟格 = #8F96B2（原来的蓝灰）。\n   *   每格的最终色按 STATES 的 warm 值在两者之间插值 —— 绿会自然退成蓝灰。 */\n  var FRESH = [0xC0, 0xFE, 0x04];\n  var MATURE = [0x8F, 0x96, 0xB2];\n\n  // 把 #rgb / #rrggbb / rgb(...) 解析成 [r,g,b]；解析失败返回 null。\n  function parseColor(value) {\n    if (!value) return null;\n    var s = String(value).trim();\n    var m = /^#([0-9a-f]{3})$/i.exec(s);\n    if (m) return [parseInt(m[1][0] + m[1][0], 16), parseInt(m[1][1] + m[1][1], 16), parseInt(m[1][2] + m[1][2], 16)];\n    m = /^#([0-9a-f]{6})$/i.exec(s);\n    if (m) return [parseInt(m[1].slice(0, 2), 16), parseInt(m[1].slice(2, 4), 16), parseInt(m[1].slice(4, 6), 16)];\n    m = /^rgba?\\(\\s*([\\d.]+)[,\\s]+([\\d.]+)[,\\s]+([\\d.]+)/i.exec(s);\n    if (m) return [Math.round(+m[1]), Math.round(+m[2]), Math.round(+m[3])];\n    return null;\n  }\n\n  function mixColor(a, b, t) {\n    var r = Math.round(a[0] + (b[0] - a[0]) * t);\n    var g = Math.round(a[1] + (b[1] - a[1]) * t);\n    var bl = Math.round(a[2] + (b[2] - a[2]) * t);\n    return 'rgb(' + r + ',' + g + ',' + bl + ')';\n  }\n\n  function draw(c, cx, cy, size, t, reduced, freshCss) {\n    var cellsAll = ensureCells();\n    var born = ensureBorn();\n    var fresh = parseColor(freshCss) || FRESH;\n    var half = size / 2;\n    var pitch = size / N;\n    var dot = Math.max(1, pitch * 0.74);\n    var pad = (pitch - dot) / 2;\n    var total = cellsAll.length;\n    var fi = reduced ? (42 % total) : (Math.floor(t * FPS) % total);\n    var cells = cellsAll[fi];\n    var fadeFrames = 8;\n\n    c.save();\n    for (var k = 0; k < cells.length; k++) {\n      var sym = cells[k];\n      if (sym === '.') continue;\n      var st = STATES[IDX[sym]];\n      if (!st) continue;\n      var a = clamp01(st[0]);\n      if (a <= 0.01) continue;\n      // 这一格第一次亮起后的 8 帧内从 0 淡到目标亮度 —— “逐渐显示”。\n      var b = born[k];\n      var grow = b < 0 ? 1 : clamp01((fi - b + 1) / fadeFrames);\n      if (grow <= 0) continue;\n      var warm = clamp01(st[1]);            // 1 = 新生（绿），0 = 成熟（蓝灰）\n      var x = cx - half + (k % N) * pitch + pad;\n      var y = cy - half + ((k / N) | 0) * pitch + pad;\n      c.globalAlpha = a * grow;\n      c.fillStyle = mixColor(MATURE, fresh, warm);\n      c.fillRect(x, y, dot, dot);\n    }\n    c.restore();\n    c.globalAlpha = 1;\n  }\n\n  window.__marThinkAnim = { draw: draw, version: '3.0.0' };\n})();\n"};
+
     function apply(ctx) {
       var doc = (typeof document !== 'undefined') ? document : null;
 
@@ -1128,6 +1140,38 @@ window.__ModuleLoader__.load({
         '  animation:none;',
         '  -webkit-text-fill-color:var(--dsw-alias-label-caption);',
         '}',
+
+        '/* ---- running animation（运行动画，2026-11-05）------------------------',
+        '   The 运行动画 switch replaces the native "深度求索中，用时 N 秒" line',
+        '   with #dshMarRunHost. Two things are keyed on [data-chat-running] — a',
+        '   DATA attribute, not a CSS-module hash, so a DSH rebuild cannot',
+        '   silently detach it:',
+        '     1. the native row is the RUN-STATE signal (it exists exactly while',
+        '        the turn is running) and the source of the SR-only title;',
+        '     2. its two VISIBLE children are hidden; the role="status" span',
+        '        stays, so the live region keeps announcing "深度求索中".',
+        '   The strip itself is NOT mounted in that row: the row lives at the end',
+        '   of the transcript and floats upward in a short conversation. It is',
+        '   inserted into [data-composer-seat] (the sticky input seat), first',
+        '   child, so it sits exactly above the input card. */',
+        'body.mar-run-on [data-chat-running]{width:100%;gap:0;}',
+        'body.mar-run-on [data-chat-running] > span:not([role="status"]){display:none!important;}',
+        // The strip lives in `[data-composer-seat]` (the sticky composer seat),
+        // immediately above the composer stack — i.e. exactly "输入框的上方",
+        // even when the transcript is short and the native running row sits
+        // higher up. The width/max-width mirror the queue dock's own geometry
+        // (dsh-client-ui-conversation QueueDock.module.css) so the strip lines
+        // up with the card, not with the full column.
+        'body.mar-run-on #dshMarRunHost{display:block;flex:none;' +
+        '  width:calc(100% - var(--dsh-composer-side-clearance,16px) - var(--dsh-composer-side-clearance,16px)' +
+        '    - var(--dsh-composer-dock-inset,8px) - var(--dsh-composer-dock-inset,8px));' +
+        '  max-width:calc(var(--dsh-composer-card-max-width,952px) - var(--dsh-composer-dock-inset,8px) - var(--dsh-composer-dock-inset,8px));' +
+        '  margin:0 auto var(--dsh-composer-stack-gap,6px);}',
+        // 点阵动画（动画1）：贴在输入卡右侧的空白里，绝对定位在 composer seat
+        // 内（seat 是 sticky = positioned）。right / top / 尺寸由 JS 按实测空白
+        // 算好，这里只管层与命中测试。
+        'body.mar-dot-on #dshMarDotHost{position:absolute;display:block;' +
+        '  pointer-events:none;z-index:1;}',
 
         '/* ---- the last native blues: COMPONENT-scoped custom properties --------',
         '   The five aliases above can be pinned through overrideTokens because DSH',
@@ -3042,6 +3086,555 @@ try {
         }
       } catch (e) {}
 
+      // ---- running animation（运行动画，2026-11-05 用户要求）----------------
+      // 把输入框上方那条原生运行提示（鲸鱼 + “深度求索中，用时 N 秒 …”）换成
+      // D:\PythonCode\ma\运行动画.html 的语言：左空心人形 / 右实心人形 / 传送线
+      // + 两个光点，下面三行**跟随真实状态**的文字（见 src/run/*.js）：
+      //   ① 标题：读宿主那个 role=status 的隐藏 span，中英文都跟宿主走；
+      //   ② 用时：会话快照 turnTimings 里“当前打开的轮次”的 startTime；真机
+      //      sessions 面没有 list 时，解析原生行的“用时 N 秒”文案并继续累加；
+      //   ③ 动作 / 模式：快照 runningCalls / partial；快照不可用时读 DOM 的
+      //      [data-tool][data-state] / [data-variant=think] / [data-streaming]。
+      // 挂载点：`[data-composer-seat]` 的第一个子节点（sticky 输入框座位），
+      // 所以条带**永远贴在输入卡正上方**；`[data-chat-running]` 只提供“在跑”
+      // 这个信号与读屏标题。原生可见子节点由 body.mar-run-on 的样式表隐藏，
+      // role=status 的读屏 span 保留（见上面 css 段）。
+      // 引擎本体在 src/run/engine-run.js（构建时作为 RUN_PAYLOAD 注入）。
+      // 这里只负责“何时挂 / 喂什么状态 / 何时拆”。
+      var RUN_STORE_KEY = 'mar.run.v1';
+      var RUN_HEIGHT = 132;
+      function runLoad() {
+        try {
+          var raw = (typeof window !== 'undefined' && window.localStorage)
+            ? window.localStorage.getItem(RUN_STORE_KEY) : null;
+          if (!raw) return { on: true };
+          var parsed = JSON.parse(raw);
+          return { on: !(parsed && parsed.on === false) };
+        } catch (e) { return { on: true }; }
+      }
+      function runSave() {
+        try {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            window.localStorage.setItem(RUN_STORE_KEY, JSON.stringify(RUN_STATE));
+          }
+        } catch (e) {}
+      }
+      var RUN_STATE = runLoad();
+      function runEnabled() { return RUN_STATE.on !== false; }
+      // 跟随主题色（2026-11-05 用户追加）：默认 OFF —— 两个动画保持固定
+      // #C0FE04（条带 / 点阵新生格）与 #8F96B2（点阵成熟格）。打开后条带墨色与
+      // 点阵新生格改读 `--mar-accent-text`，跟着七选一主题色 / 浅色底盘走。
+      var FOLLOW_STORE_KEY = 'mar.run.follow.v1';
+      function followLoad() {
+        try {
+          var raw = (typeof window !== 'undefined' && window.localStorage)
+            ? window.localStorage.getItem(FOLLOW_STORE_KEY) : null;
+          if (!raw) return { follow: false };
+          var parsed = JSON.parse(raw);
+          return { follow: !!(parsed && parsed.follow === true) };
+        } catch (e) { return { follow: false }; }
+      }
+      function followSave() {
+        try {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            window.localStorage.setItem(FOLLOW_STORE_KEY, JSON.stringify(FOLLOW_STATE));
+          }
+        } catch (e) {}
+      }
+      var FOLLOW_STATE = followLoad();
+      function accentFollow() { return FOLLOW_STATE.follow === true; }
+      function runReduced() {
+        return !!(typeof window !== 'undefined' && window.matchMedia &&
+          window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+      }
+
+      var runHost = null, runRow = null, runEngine = null;
+      var runTick = null, runScriptEl = null, runStartFallback = 0;
+      var runObserver = null, runTimer = null, runKickTimer = 0, runBroken = false;
+      var runLast = null;
+      // 原生运行行自己报的已跑秒数 + 采样时刻（快照拿不到时的用时来源）
+      var runNativeSec = null, runNativeAt = 0;
+
+      function runEngineApi() {
+        var api = (typeof window !== 'undefined') ? window.__marRunEngine : null;
+        if (!api) return null;
+        if (typeof api.create === 'function') return api;
+        if (typeof api === 'function') return { create: api };
+        return null;
+      }
+      function runEnsureEngine() {
+        if (runEngineApi()) return true;
+        if (!RUN_PAYLOAD || !RUN_PAYLOAD.engine) return false;
+        if (!runScriptEl) {
+          try {
+            runScriptEl = doc.createElement('script');
+            runScriptEl.setAttribute('data-mar-run-engine', '1');
+            runScriptEl.textContent = RUN_PAYLOAD.engine;
+            (doc.head || doc.documentElement).appendChild(runScriptEl);
+          } catch (e) { runScriptEl = null; }
+        }
+        return !!runEngineApi();
+      }
+
+      function runInk() {
+        // 默认固定 #C0FE04（不跟主题色）；设置页「跟随主题色」打开后才读
+        // --mar-accent-text —— 这是用户主动选的，不是主题强加的。
+        if (!accentFollow()) return '#C0FE04';
+        var ink = '';
+        try {
+          ink = String(getComputedStyle(body).getPropertyValue('--mar-accent-text') || '').trim();
+        } catch (e) { ink = ''; }
+        return ink || '#C0FE04';
+      }
+      // Mirror of the host's own formatRunDuration: <60s → “N 秒”, else “N 分 M 秒”.
+      function runDuration(ms, zh) {
+        var s = Math.max(1, Math.round(ms / 1000));
+        if (s < 60) return zh ? ('用时 ' + s + ' 秒') : ('for ' + s + 's');
+        var m = Math.floor(s / 60), r = s % 60;
+        return zh ? ('用时 ' + m + ' 分 ' + r + ' 秒') : ('for ' + m + 'm ' + r + 's');
+      }
+      function runOpenTurnStart(snap) {
+        var best = null;
+        try {
+          if (!snap || !snap.turnTimings || typeof snap.turnTimings.forEach !== 'function') return null;
+          snap.turnTimings.forEach(function (v, k) {
+            if (!v || v.startTime === undefined) return;
+            if (v.endTime !== undefined && v.endTime !== null) return;   // closed turn
+            if (best === null || k > best.turn) best = { turn: k, t: v.startTime };
+          });
+        } catch (e) { return null; }
+        return best ? Number(best.t) : null;
+      }
+      // ---- DOM 侧状态补偿（生产构建的关键一条）-----------------------------
+      // 0.2.2-rc.1 的客户端 `sessions` 服务面**没有 list**（只有 binding / scope /
+      // retain），`doneCurrentId()` 因此拿不到当前会话 id，会话快照这条路在真机上
+      // 可能整条为空。所以动作 / 模式 / 已跑时长必须能从 DOM 直接读：
+      //   · 运行中的工具行：`[data-tool][data-state="running"| "preparing"]`
+      //     （ui-tool 的 ToolRow 根节点，data-tool 就是 wire name）；
+      //   · 思考中：`[data-variant="think"][data-state="running"]`；
+      //   · 正在出字：`[data-streaming]`；
+      //   · 原生那一行自己的 `深度求索中，用时 12 秒` 文案可以解析出已跑秒数 ——
+      //     切进一个已经在跑的会话时，这比"第一次看见条带"准。
+      function runDomScope() {
+        try { return doc.querySelector('[data-conversation-scroll]') || doc; }
+        catch (e) { return doc; }
+      }
+      // 上一行是 turn-tail 时宿主会把新 running 行整个 display:none（ChatView 的
+      // `.flowItem[turn-tail] + .running{display:none}`）——那不是"在跑"。
+      function runRowVisible(row) {
+        try { return !!row && getComputedStyle(row).display !== 'none'; }
+        catch (e) { return !!row; }
+      }
+      function runDomState(zh) {
+        var scope = runDomScope();
+        try {
+          var calls = scope.querySelectorAll('[data-tool][data-state="running"], [data-tool][data-state="preparing"]');
+          if (calls.length) {
+            var name = calls[calls.length - 1].getAttribute('data-tool');
+            if (name) return { mode: 'run', action: (zh ? '调用工具 · ' : 'Tool · ') + name };
+          }
+          if (scope.querySelector('[data-variant="think"][data-state="running"]')) {
+            return { mode: 'think', action: zh ? '正在分析请求' : 'Analyzing the request' };
+          }
+          if (scope.querySelector('[data-streaming]')) {
+            return { mode: 'run', action: zh ? '正在生成回复' : 'Writing the reply' };
+          }
+        } catch (e) {}
+        return { mode: 'think', action: zh ? '等待模型响应' : 'Waiting for the model' };
+      }
+      function runStateOf(snap, zh) {
+        if (!snap) return runDomState(zh);
+        var calls = snap.runningCalls;
+        if (calls && calls.length) {
+          var last = calls[calls.length - 1];
+          var name = last && (last.name || (last.call && last.call.name));
+          if (name) return { mode: 'run', action: (zh ? '调用工具 · ' : 'Tool · ') + String(name) };
+        }
+        var blocks = snap.partial && snap.partial.blocks;
+        if (blocks && blocks.length) {
+          var hasReasoning = false, hasText = false;
+          for (var i = 0; i < blocks.length; i++) {
+            var b = blocks[i];
+            if (!b) continue;
+            if (b.kind === 'reasoning') hasReasoning = true;
+            if (b.kind === 'text' && b.text && b.text.trim()) hasText = true;
+          }
+          if (hasText) return { mode: 'run', action: zh ? '正在生成回复' : 'Writing the reply' };
+          if (hasReasoning) return { mode: 'think', action: zh ? '正在分析请求' : 'Analyzing the request' };
+        }
+        // 快照只说了"在跑"、没说细节：DOM 里能看见工具行就用它。
+        return runDomState(zh);
+      }
+      // 原生运行行自己那行文字里的已跑时长（秒）。中 / 英两种格式都认。
+      function runParseNativeSeconds(row) {
+        var text = '';
+        try {
+          var content = row.querySelector('[class*="runningContent"]');
+          text = String((content || row).textContent || '');
+        } catch (e) { return null; }
+        var m;
+        if ((m = /(\d+)\s*分\s*(\d+)\s*秒/.exec(text))) return (+m[1]) * 60 + (+m[2]);
+        if ((m = /(\d+)\s*秒/.exec(text))) return +m[1];
+        if ((m = /(\d+)\s*m(?:in)?\s*(\d+)\s*s/i.exec(text))) return (+m[1]) * 60 + (+m[2]);
+        if ((m = /for\s+(\d+)\s*s/i.exec(text))) return +m[1];
+        return null;
+      }
+      function runSnapshotNow() {
+        var id = null;
+        try { id = doneCurrentId(); } catch (e) { id = null; }
+        if (!id) return null;
+        var face = null;
+        try { face = doneFaceOf(id); } catch (e) { face = null; }
+        if (!face || typeof face.getSnapshot !== 'function') return null;
+        try { return face.getSnapshot() || null; } catch (e) { return null; }
+      }
+      function runPush() {
+        if (!runEngine) return;
+        if (!runHost || !runHost.isConnected) {
+          runSyncDom();
+          return;
+        }
+        var row = null;
+        try { row = doc.querySelector('[data-chat-running]'); } catch (e) { row = null; }
+        if (!row || row.hasAttribute('data-holding') || !runRowVisible(row)) { runSyncDom(); return; }
+        runRow = row;
+        var snap = runSnapshotNow();
+        var nativeEl = null;
+        try { nativeEl = row.querySelector('[role="status"]'); } catch (e) {}
+        var title = (nativeEl && nativeEl.textContent) ? nativeEl.textContent.trim() : '深度求索中';
+        if (!title) title = '深度求索中';
+        var zh = /[\u4e00-\u9fff]/.test(title);
+
+        var nativeSec = runParseNativeSeconds(row);
+        if (nativeSec !== null && nativeSec >= 1) {
+          runNativeSec = nativeSec;
+          runNativeAt = Date.now();
+        }
+        var start = runOpenTurnStart(snap);
+        var elapsedMs;
+        if (start !== null && isFinite(start)) {
+          elapsedMs = Date.now() - start;
+        } else if (runNativeSec !== null) {
+          elapsedMs = runNativeSec * 1000 + Math.max(0, Date.now() - runNativeAt);
+        } else {
+          elapsedMs = Date.now() - (runStartFallback || Date.now());
+        }
+        var look = runStateOf(snap, zh);
+        var state = {
+          mode: 'run',
+          title: title,
+          meta: runDuration(elapsedMs, zh),
+          action: look.action,
+          ink: runInk(),
+          reduced: runReduced()
+        };
+        try {
+          if (typeof runEngine.set === 'function') runEngine.set(state);
+          else if (typeof runEngine.update === 'function') runEngine.update(state);
+          runLast = state;
+        } catch (e) { /* one bad frame must not tear the strip down */ }
+      }
+      function runUnmount() {
+        if (runTick) { clearInterval(runTick); runTick = null; }
+        if (runEngine) {
+          try { if (typeof runEngine.destroy === 'function') runEngine.destroy(); } catch (e) {}
+          runEngine = null;
+        }
+        if (runHost && runHost.parentNode) {
+          try { runHost.parentNode.removeChild(runHost); } catch (e) {}
+        }
+        runHost = null;
+        runRow = null;
+        runNativeSec = null;
+        runNativeAt = 0;
+        syncRunState();
+      }
+      function runMount(seat, row) {
+        runUnmount();
+        if (!runEnsureEngine()) { runBroken = true; syncRunState(); return; }
+        var api = runEngineApi();
+        if (!api) { runBroken = true; syncRunState(); return; }
+        var host = doc.createElement('div');
+        host.id = 'dshMarRunHost';
+        host.className = 'mar-run-host';
+        host.style.cssText = 'display:block;width:100%;min-width:0;';
+        // First child of the sticky composer seat: above the composer stack, so
+        // it stays pinned just above the input no matter how short the
+        // transcript is. (The native [data-chat-running] row lives at the end
+        // of the transcript and would float upward in a short conversation.)
+        try { seat.insertBefore(host, seat.firstChild); } catch (e) { return; }
+        runHost = host;
+        runRow = row;
+        runStartFallback = Date.now();
+        runNativeSec = null;
+        runNativeAt = 0;
+        try {
+          runEngine = api.create(host, { height: RUN_HEIGHT, reduced: runReduced() });
+        } catch (e) { runEngine = null; }
+        if (!runEngine) {
+          runBroken = true;
+          runUnmount();
+          syncRunState();
+          return;
+        }
+        runBroken = false;
+        runPush();
+        runTick = setInterval(runPush, 250);
+        syncRunState();
+      }
+      function runSyncDom() {
+        if (!runEnabled()) { if (runHost) runUnmount(); return; }
+        // Raw template run (no build) / a payload that never arrived: do not
+        // retry a mount every 400ms; the switch's status line explains it.
+        if (!RUN_PAYLOAD && !runEngineApi()) return;
+        var row = null, seat = null;
+        try {
+          row = doc.querySelector('[data-chat-running]');
+          seat = doc.querySelector('[data-composer-seat]');
+        } catch (e) { row = null; seat = null; }
+        // data-holding = the turn has ended and the host is keeping the row as a
+        // hidden placeholder under the actions row. Nothing to draw there.
+        if (!row || row.hasAttribute('data-holding') || !seat || !runRowVisible(row)) {
+          if (runHost) runUnmount();
+          return;
+        }
+        if (!runHost || runHost.parentNode !== seat || !runHost.isConnected) runMount(seat, row);
+        else runRow = row;
+      }
+      function runKick() {
+        if (runKickTimer) return;
+        runKickTimer = setTimeout(function () {
+          runKickTimer = 0;
+          runSyncDom();
+          dotSyncDom();
+        }, 100);
+      }
+      function runWatch() {
+        if (runTimer) return;
+        try {
+          if (typeof MutationObserver === 'function') {
+            runObserver = new MutationObserver(runKick);
+            runObserver.observe(doc.body, { childList: true, subtree: true });
+          }
+        } catch (e) { runObserver = null; }
+        runTimer = setInterval(function () { runSyncDom(); dotSyncDom(); }, 400);
+        runSyncDom();
+        dotSyncDom();
+      }
+      function runUnwatch() {
+        if (runTimer) { clearInterval(runTimer); runTimer = null; }
+        if (runKickTimer) { clearTimeout(runKickTimer); runKickTimer = 0; }
+        if (runObserver) { try { runObserver.disconnect(); } catch (e) {} runObserver = null; }
+      }
+      function runStateText() {
+        if (!runEnabled()) return '已关闭';
+        if (!RUN_PAYLOAD) return '运行动画引擎缺失（payload 被丢弃）';
+        if (runBroken) return '运行动画覆盖层不可用';
+        if (runHost) return '运行中 · 已替换原生提示';
+        return '待命 · 替换任务时的原生提示';
+      }
+      function syncRunState() {
+        try {
+          var el = doc.getElementById('mar-run-state');
+          if (el) el.textContent = runStateText();
+        } catch (e) {}
+      }
+
+      // ---- dot animation（点阵动画，《动画1》，独立选项，2026-11-05）---------
+      // 用户要求：两个动画作为**两个独立选项**；动画1 放在输入框右侧（空间足够）；
+      // 不要一开始就铺格子，要逐格生长；文字提示保持原生，不换成运行动画那三行。
+      // 所以这里只做一层纯装饰：绝对定位在 `[data-composer-seat]` 右侧的空白里，
+      // 只画 21×21 有机体——不碰 `[data-chat-running]` 的任何子节点，也不加
+      // `mar-run-on`，原生提示该怎么显示还怎么显示。
+      var DOT_STORE_KEY = 'mar.dot.v1';
+      var DOT_MIN = 64, DOT_MAX = 120, DOT_PAD = 28;
+      function dotLoad() {
+        try {
+          var raw = (typeof window !== 'undefined' && window.localStorage)
+            ? window.localStorage.getItem(DOT_STORE_KEY) : null;
+          if (!raw) return { on: true };
+          var parsed = JSON.parse(raw);
+          return { on: !(parsed && parsed.on === false) };
+        } catch (e) { return { on: true }; }
+      }
+      function dotSave() {
+        try {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            window.localStorage.setItem(DOT_STORE_KEY, JSON.stringify(DOT_STATE));
+          }
+        } catch (e) {}
+      }
+      var DOT_STATE = dotLoad();
+      function dotEnabled() { return DOT_STATE.on !== false; }
+
+      var dotHost = null, dotEngine = null, dotScriptEl = null, dotBroken = false;
+
+      function dotEngineApi() {
+        var api = (typeof window !== 'undefined') ? window.__marDotEngine : null;
+        if (!api) return null;
+        if (typeof api.create === 'function') return api;
+        if (typeof api === 'function') return { create: api };
+        return null;
+      }
+      function dotEnsureEngine() {
+        if (dotEngineApi()) return true;
+        if (!DOT_PAYLOAD || !DOT_PAYLOAD.engine) return false;
+        if (!dotScriptEl) {
+          try {
+            dotScriptEl = doc.createElement('script');
+            dotScriptEl.setAttribute('data-mar-dot-engine', '1');
+            dotScriptEl.textContent = DOT_PAYLOAD.engine;
+            (doc.head || doc.documentElement).appendChild(dotScriptEl);
+          } catch (e) { dotScriptEl = null; }
+        }
+        return !!dotEngineApi();
+      }
+      function dotUnmount() {
+        if (dotEngine) {
+          try { if (typeof dotEngine.destroy === 'function') dotEngine.destroy(); } catch (e) {}
+          dotEngine = null;
+        }
+        if (dotHost && dotHost.parentNode) {
+          try { dotHost.parentNode.removeChild(dotHost); } catch (e) {}
+        }
+        dotHost = null;
+        syncDotState();
+      }
+      function dotPush() {
+        if (!dotEngine) return;
+        try {
+          dotEngine.set({ fresh: runInk(), reduced: runReduced() });
+        } catch (e) {}
+      }
+      function dotSyncDom() {
+        if (!dotEnabled()) { if (dotHost) dotUnmount(); return; }
+        if (!DOT_PAYLOAD && !dotEngineApi()) return;
+        var row = null, seat = null, card = null;
+        try {
+          row = doc.querySelector('[data-chat-running]');
+          seat = doc.querySelector('[data-composer-seat]');
+          card = doc.querySelector('[data-composer-card]');
+        } catch (e) { row = null; }
+        if (!row || row.hasAttribute('data-holding') || !runRowVisible(row) || !seat || !card) {
+          if (dotHost) dotUnmount();
+          return;
+        }
+        if (dotHost && dotHost.parentNode === seat) { dotPush(); return; }
+        var sr = null, cr = null;
+        try {
+          sr = seat.getBoundingClientRect();
+          cr = card.getBoundingClientRect();
+        } catch (e) { sr = null; }
+        if (!sr || !cr) return;
+        var margin = (sr.width - cr.width) / 2;
+        if (margin < DOT_MIN + DOT_PAD * 2) {
+          // 右侧空白不够（窄窗口 / 宽卡片）：不硬塞，直接不显示。
+          if (dotHost) dotUnmount();
+          return;
+        }
+        var size = Math.max(DOT_MIN, Math.min(DOT_MAX, Math.round(margin - DOT_PAD * 2)));
+        dotUnmount();
+        if (!dotEnsureEngine()) { dotBroken = true; syncDotState(); return; }
+        var api = dotEngineApi();
+        if (!api) { dotBroken = true; syncDotState(); return; }
+        var host = doc.createElement('div');
+        host.id = 'dshMarDotHost';
+        host.className = 'mar-dot-host';
+        host.setAttribute('aria-hidden', 'true');
+        // 垂直对齐输入卡（不是整个 seat）：seat 里还有上面那条 132px 运行动画
+        // 条带时，seat 的中心并不等于卡片的中心。
+        var top = Math.round((cr.top - sr.top) + cr.height / 2 - size / 2);
+        if (top < 0) top = 0;
+        host.style.cssText = 'width:' + size + 'px;height:' + size + 'px;' +
+          'right:' + Math.round(margin / 2 - size / 2) + 'px;top:' + top + 'px;';
+        try { seat.appendChild(host); } catch (e) { return; }
+        dotHost = host;
+        try { dotEngine = api.create(host, { reduced: runReduced() }); } catch (e) { dotEngine = null; }
+        if (!dotEngine) {
+          dotBroken = true;
+          dotUnmount();
+          syncDotState();
+          return;
+        }
+        dotBroken = false;
+        dotPush();
+        syncDotState();
+      }
+      function dotStateText() {
+        if (!dotEnabled()) return '已关闭';
+        if (!DOT_PAYLOAD) return '点阵引擎缺失（payload 被丢弃）';
+        if (dotBroken) return '点阵动画不可用';
+        if (dotHost) return '运行中 · 显示在输入框右侧';
+        return '待命 · 任务时在输入框右侧显示';
+      }
+      function syncDotState() {
+        try {
+          var el = doc.getElementById('mar-dot-state');
+          if (el) el.textContent = dotStateText();
+        } catch (e) {}
+      }
+      function dotOnResize() {
+        // 卡片宽度 / 窗口宽度变了：摘掉重挂，让右侧空白重新量一次。
+        if (dotHost) { dotUnmount(); dotSyncDom(); }
+      }
+
+      function runApply() {
+        if (runEnabled()) {
+          body.classList.add('mar-run-on');
+          runSyncDom();
+        } else {
+          body.classList.remove('mar-run-on');
+          runUnmount();
+        }
+        if (dotEnabled()) body.classList.add('mar-dot-on');
+        else { body.classList.remove('mar-dot-on'); dotUnmount(); }
+        if (runEnabled() || dotEnabled()) {
+          if (typeof window !== 'undefined' && !runResizeBound) {
+            window.addEventListener('resize', dotOnResize);
+            runResizeBound = true;
+          }
+          runWatch();
+        } else {
+          runUnwatch();
+        }
+        syncRunState();
+        syncDotState();
+      }
+      var runResizeBound = false;
+
+      // 诊断钩子（DevTools / 无头夹具）：开关、挂载点、最近一帧喂给引擎的状态。
+      try {
+        if (typeof window !== 'undefined') {
+          window.__marRunDebug = function () {
+            return {
+              enabled: runEnabled(),
+              payload: !!RUN_PAYLOAD,
+              mounted: !!runHost,
+              engine: !!runEngine,
+              broken: runBroken,
+              reduced: runReduced(),
+              rowPresent: !!(runRow && runRow.isConnected),
+              last: runLast,
+              follow: accentFollow(),
+              metrics: (runEngine && typeof runEngine.metrics === 'function')
+                ? runEngine.metrics() : null,
+              dot: {
+                enabled: dotEnabled(),
+                payload: !!DOT_PAYLOAD,
+                mounted: !!dotHost,
+                engine: !!dotEngine,
+                broken: dotBroken,
+                size: dotHost ? dotHost.getBoundingClientRect().width : 0,
+                rect: dotHost ? (function () {
+                  var r = dotHost.getBoundingClientRect();
+                  return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
+                })() : null
+              }
+            };
+          };
+        }
+      } catch (e) {}
+
       // ---- settings tab: 「主题设置」 -------------------------------------
       // DSH's settings dialog is a nav column + a content column. We append one
       // nav cell and, when it is chosen, cover the content column with our own
@@ -3334,6 +3927,27 @@ try {
             '<input type="checkbox" class="mar-switch" id="mar-boot">' +
             '<span class="mar-val" data-val="boot"></span></div>' +
           '</div>' +
+          // 运行动画（2026-11-05 用户要求）：把输入框上方那条原生“深度求索中”
+          // 提示换成运行动画.html 的条带。默认 ON；两个“为什么”的状态小字写在
+          // 开关下面 —— 引擎缺失 / 减少动态效果时用户能看见原因。
+          '<div class="mar-set-group">' +
+            '<div class="mar-set-head">运行动画</div>' +
+            '<div class="mar-set-row mar-set-switch"><label for="mar-run">启用</label>' +
+            '<input type="checkbox" class="mar-switch" id="mar-run">' +
+            '<span class="mar-val" data-val="run"></span></div>' +
+            '<div class="mar-set-row mar-set-note"><span id="mar-run-state"></span></div>' +
+            // 点阵动画（动画1，2026-11-05 用户要求把开关移进「运行动画」组）：
+            // 仍是独立开关，但和上方的人形条带同属一个分组。
+            '<div class="mar-set-row mar-set-switch"><label for="mar-dot">点阵动画</label>' +
+            '<input type="checkbox" class="mar-switch" id="mar-dot">' +
+            '<span class="mar-val" data-val="dot"></span></div>' +
+            '<div class="mar-set-row mar-set-note"><span id="mar-dot-state"></span></div>' +
+            // 跟随主题色（2026-11-05 用户追加）：一个开关，主动决定两个动画
+            // 是否改用当前主题强调色；默认关 = 保持固定 #C0FE04 / #8F96B2。
+            '<div class="mar-set-row mar-set-switch"><label for="mar-follow">跟随主题色</label>' +
+            '<input type="checkbox" class="mar-switch" id="mar-follow">' +
+            '<span class="mar-val" data-val="follow"></span></div>' +
+          '</div>' +
           '<div class="mar-set-group">' +
             '<div class="mar-set-head">任务完成动画</div>' +
             '<div class="mar-set-row mar-set-switch"><label for="mar-done">启用</label>' +
@@ -3364,6 +3978,9 @@ try {
         var speedIn = pane.querySelector('#mar-bg-speed');
         var alphaIn = pane.querySelector('#mar-bg-alpha');
         var bootIn = pane.querySelector('#mar-boot');
+        var runIn = pane.querySelector('#mar-run');
+        var dotIn = pane.querySelector('#mar-dot');
+        var followIn = pane.querySelector('#mar-follow');
 
         // 启动动画（2026-10-17）：独立开关，**默认 ON**。它没有即时反馈 ——
         // 揭幕只在冷启动那一瞬播，设置页能打开时它早结束了 —— 所以这里只写盘，
@@ -3375,6 +3992,41 @@ try {
             if (!BOOT_STATE.on && bootCleanup) {
               try { bootCleanup(); } catch (e) {}
             }
+            syncPane(pane);
+          });
+        }
+
+        // 运行动画（2026-11-05）：独立开关，默认 ON。关掉 = 立刻摘掉条带、
+        // 把原生提示的可见子节点还回去（body 上的 mar-run-on 没了）；打开 =
+        // 马上开始盯 [data-chat-running]，当前正好在跑就不用等下一轮。
+        if (runIn) {
+          runIn.addEventListener('change', function () {
+            RUN_STATE.on = !!runIn.checked;
+            runSave();
+            runApply();
+            syncPane(pane);
+          });
+        }
+
+        // 点阵动画（动画1，2026-11-05）：与运行动画完全独立的第二个选项。
+        // 关掉 = 摘掉输入框右侧的 canvas、不再观察；打开 = 如果正好在跑，
+        // 立刻让它在右侧生长出来。
+        if (dotIn) {
+          dotIn.addEventListener('change', function () {
+            DOT_STATE.on = !!dotIn.checked;
+            dotSave();
+            runApply();
+            syncPane(pane);
+          });
+        }
+
+        // 跟随主题色：只改配色，不碰两个动画的挂载 / 开关。
+        if (followIn) {
+          followIn.addEventListener('change', function () {
+            FOLLOW_STATE.follow = !!followIn.checked;
+            followSave();
+            runPush();
+            dotPush();
             syncPane(pane);
           });
         }
@@ -3562,6 +4214,16 @@ var head =
         // 名单之外），所以这里不写任何说明文字——用户 2026-10-17 要求删掉那句。
         var bootIn = pane.querySelector('#mar-boot');
         if (bootIn) bootIn.checked = bootEnabled();
+        // 运行动画：开关 + 状态小字（引擎缺失 / 减少动态效果 / 正在替换）
+        var runIn = pane.querySelector('#mar-run');
+        if (runIn) runIn.checked = runEnabled();
+        syncRunState();
+        // 点阵动画：独立开关 + 状态小字（引擎缺失 / 右侧空间不足 / 正在显示）
+        var dotIn = pane.querySelector('#mar-dot');
+        if (dotIn) dotIn.checked = dotEnabled();
+        syncDotState();
+        var followIn = pane.querySelector('#mar-follow');
+        if (followIn) followIn.checked = accentFollow();
         if (BG_STATE.anim) pane.classList.remove('mar-anim-off');
         else pane.classList.add('mar-anim-off');
         var vals = {
@@ -3571,7 +4233,10 @@ var head =
           speed: BG_STATE.speed.toFixed(2),
           billing: billingEnabled() ? '开' : '关',
           done: doneEnabled() ? '开' : '关',
-          boot: bootEnabled() ? '开' : '关'
+          boot: bootEnabled() ? '开' : '关',
+          run: runEnabled() ? '开' : '关',
+          dot: dotEnabled() ? '开' : '关',
+          follow: accentFollow() ? '开' : '关'
         };
         var outs = pane.querySelectorAll('.mar-val');
         for (var k = 0; k < outs.length; k++) {
@@ -4779,6 +5444,10 @@ var displayed = billingDisplayedSessionId();
 // 等它）；真正播不播还要过开关与「减少动态效果」两道闸（见 doneSchedule /
       // playDone）
 attachDone();
+      // 运行动画：挂上 DOM 侧的生命周期（原生运行行出现 → 条带出现；行被宿主
+      // 摘掉 → 条带跟着没）。它不依赖 done 的开关：会话面订阅由 attachDone
+      // 统一装好，这里只读快照。
+      runApply();
       // 重连会重放列表基线，重新确认一次订阅还活着（服务实例被换掉时重挂）
       try {
         if (ctx && typeof ctx.on === 'function') {
@@ -4826,6 +5495,32 @@ attachDone();
             if (typeof window !== 'undefined') window.__marDoneDebug = null;
           },
           function () { stopDone(); },
+          // running animation / dot animation: stop the shared DOM watcher,
+          // destroy both engines, drop the injected engine scripts and forget
+          // the broken flags so a later re-enable starts from a clean slate.
+          function () { runUnwatch(); runUnmount(); dotUnmount(); },
+          function () {
+            if (typeof window !== 'undefined' && runResizeBound) {
+              window.removeEventListener('resize', dotOnResize);
+              runResizeBound = false;
+            }
+          },
+          function () {
+            if (runScriptEl && runScriptEl.parentNode) runScriptEl.parentNode.removeChild(runScriptEl);
+            runScriptEl = null;
+            runBroken = false;
+            runLast = null;
+          },
+          function () {
+            if (dotScriptEl && dotScriptEl.parentNode) dotScriptEl.parentNode.removeChild(dotScriptEl);
+            dotScriptEl = null;
+            dotBroken = false;
+            if (typeof window !== 'undefined') {
+              window.__marRunEngine = null;
+              window.__marDotEngine = null;
+              window.__marRunDebug = null;
+            }
+          },
           function () {
             var blocks = doc.querySelectorAll('[data-mlsb-turn]');
             for (var b = 0; b < blocks.length; b++) {
@@ -4907,11 +5602,13 @@ attachDone();
           // any of the body classes bgTeardown would have removed.
           function () {
             var strays = [doc.getElementById('dshMarBootHost'), doc.getElementById('mar-ascii-bg'),
-                          doc.getElementById('dshMarDoneHost')];
+                          doc.getElementById('dshMarDoneHost'), doc.getElementById('dshMarRunHost'),
+                          doc.getElementById('dshMarDotHost')];
             for (var s = 0; s < strays.length; s++) {
               if (strays[s] && strays[s].parentNode) strays[s].parentNode.removeChild(strays[s]);
             }
             body.classList.remove('theme-marathon', 'mar-bg-on', 'mar-bg-veil', 'mar-bg-light',
+              'mar-run-on', 'mar-dot-on',
               'theme-marathon-void', 'theme-marathon-surface', 'theme-marathon-no-grid',
               'theme-marathon-no-scanlines', 'theme-marathon-no-crt', 'theme-marathon-no-sweep',
               'theme-marathon-no-rgb', 'theme-marathon-no-plates', 'theme-marathon-motion-off',

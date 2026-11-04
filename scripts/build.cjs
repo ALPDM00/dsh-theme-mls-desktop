@@ -146,6 +146,15 @@ const doneCss     = read('src/boot/done.css');
 const doneHtml    = read('src/boot/done.html');
 const doneEngine  = read('src/boot/engine-done.js');
 
+// Running strip (运行动画): a compact canvas engine that replaces the native
+// "深度求索中" row above the composer. It is injected as its own payload for
+// the same reason as the two overlays: the template's settings/DOM half must
+// never have to parse or string-build the engine.
+const runEngine   = read('src/run/engine-run.js');
+// 动画1（点阵有机体）是**独立选项**：自己的小引擎 + 逐帧数据。
+const dotEngine   = read('src/run/engine-dot.js');
+const runThink    = read('src/run/think-anim1.js');
+
 const imgAssets = {
   __IMG_BLUE_B64__:   path.join(root, 'assets', 'boot', 'blue-pixel.png'),
   __IMG_GREEN_B64__:  path.join(root, 'assets', 'boot', 'green-logo.png'),
@@ -190,6 +199,13 @@ const donePayload = {
   engine: doneEngine
 };
 
+// The running strip is engine-only: its host element and the switch live in the
+// template, so there is nothing to inline but the script itself.
+const runPayload = { engine: runEngine };
+// The right-side dot animation travels separately so either option can be
+// enabled without dragging the other engine in.
+const dotPayload = { engine: dotEngine + '\n;\n' + runThink };
+
 // ---- 3) assemble -----------------------------------------------------------
 if (tpl.indexOf('__MARATYPE_BASE64__') === -1) {
   console.error('[build] placeholder __MARATYPE_BASE64__ not found in template');
@@ -205,9 +221,21 @@ if (tpl.indexOf(doneMarker) === -1) {
   console.error('[build] marker "' + doneMarker + '" not found in template — completion payload would be dropped');
   process.exit(1);
 }
+const runMarker = '/*__RUN_PAYLOAD__*/ null';
+if (tpl.indexOf(runMarker) === -1) {
+  console.error('[build] marker "' + runMarker + '" not found in template — running-strip payload would be dropped');
+  process.exit(1);
+}
+const dotMarker = '/*__DOT_PAYLOAD__*/ null';
+if (tpl.indexOf(dotMarker) === -1) {
+  console.error('[build] marker "' + dotMarker + '" not found in template — dot-animation payload would be dropped');
+  process.exit(1);
+}
 
 const payloadJson = JSON.stringify(payload);
 const doneJson = JSON.stringify(donePayload);
+const runJson = JSON.stringify(runPayload);
+const dotJson = JSON.stringify(dotPayload);
 const factionMarker = '/*__FACTION_CSS__*/';
 if (tpl.indexOf(factionMarker) === -1) {
   console.error('[build] marker "' + factionMarker + '" not found in template — 配色 artwork would be dropped');
@@ -216,6 +244,8 @@ if (tpl.indexOf(factionMarker) === -1) {
 let out = tpl.split('__MARATYPE_BASE64__').join(fontB64);
 out = out.split(marker).join(payloadJson);
 out = out.split(doneMarker).join(doneJson);
+out = out.split(runMarker).join(runJson);
+out = out.split(dotMarker).join(dotJson);
 out = out.split(factionMarker).join(factionRules);
 
 if (out.indexOf('__MARATYPE_BASE64__') !== -1) {
@@ -225,8 +255,9 @@ if (out.indexOf('__MARATYPE_BASE64__') !== -1) {
 // NOTE: a plain `indexOf('__IMG_')` false-positives on the inlined base64
 // payload (its alphabet includes the underscore), so match the placeholder shape.
 if (out.indexOf('/*__BOOT_PAYLOAD__*/') !== -1 || out.indexOf('/*__DONE_PAYLOAD__*/') !== -1 ||
+    out.indexOf('/*__RUN_PAYLOAD__*/') !== -1 || out.indexOf('/*__DOT_PAYLOAD__*/') !== -1 ||
     out.indexOf(factionMarker) !== -1 || /__IMG_[A-Z_]+__/.test(out)) {
-  console.error('[build] boot/done/faction placeholder or image token still present after replace');
+  console.error('[build] boot/done/run/dot/faction placeholder or image token still present after replace');
   process.exit(1);
 }
 if (out.indexOf('dshMarBootHost') === -1 || out.indexOf('#mb-canvas') === -1) {
@@ -236,6 +267,15 @@ if (out.indexOf('dshMarBootHost') === -1 || out.indexOf('#mb-canvas') === -1) {
 if (out.indexOf('dshMarDoneHost') === -1 || out.indexOf('#md-scene') === -1 ||
     out.indexOf('#md-banner-text') === -1) {
   console.error('[build] completion payload missing from output');
+  process.exit(1);
+}
+if (out.indexOf('var RUN_PAYLOAD = null') !== -1 || runJson.length < 1000) {
+  console.error('[build] running-strip payload missing from output');
+  process.exit(1);
+}
+if (out.indexOf('var DOT_PAYLOAD = null') !== -1 || dotJson.length < 1000 ||
+    out.indexOf('__marThinkAnim') === -1 || out.indexOf('__marDotEngine') === -1) {
+  console.error('[build] dot-animation payload missing from output');
   process.exit(1);
 }
 
@@ -251,6 +291,9 @@ console.log('[build]   intro       ' + bootIntro.length + ' bytes');
 console.log('[build]   done css    ' + doneCss.length + ' bytes');
 console.log('[build]   done html   ' + doneHtml.length + ' bytes');
 console.log('[build]   done engine ' + doneEngine.length + ' bytes');
+console.log('[build]   run engine  ' + runEngine.length + ' bytes');
+console.log('[build]   dot engine  ' + dotEngine.length + ' bytes');
+console.log('[build]   think anim1 ' + runThink.length + ' bytes');
 console.log('[build]   payload JSON' + payloadJson.length + ' bytes, done JSON ' +
   doneJson.length + ' bytes, font b64 ' + fontB64.length + ')');
 console.log('[build]   配色 artwork  ' + FACTIONS.length + ' faction(s), ' +

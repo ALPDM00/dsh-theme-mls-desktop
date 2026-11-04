@@ -25,13 +25,18 @@
 ## 特性
 
 - **启动动画**：透明窗口 + 绿鲸鱼揭幕 + marathon 像素场，全程程序化绘制（`src/boot/*`）。
+- **运行动画**：两个**独立**选项（同一分组里各自开关）。① 输入框上方原生「深度求索中，
+  用时 N 秒」换成 132px 条带：居中的人形 + 一条短直线 + 光点，三行文字跟随真实状态
+  （标题 / 用时 / 当前工具）。② 《动画1》的 21×21 点阵有机体贴在输入框右侧，从零逐格
+  生长，原生文字不变。另有「跟随主题色」开关：默认固定 `#C0FE04` / `#8F96B2`，
+  打开后才跟随主题强调色。见 [docs/RUNNING.md](docs/RUNNING.md)。
 - **任务完成动画**：一轮正常结束时四拍收尾 —— 反向红 S 扫屏 → **24px 矩阵跟着红扫逐块亮起**
   → 渐黑 + 纯黑静置 → 纯黑方块逐块硬切揭示界面 + 墨色点阵 + 绿色横幅（`//RUN_COMPLETE`）。
   点一下或按任意键就消失，且不吞掉那一次点击。见 [docs/COMPLETION.md](docs/COMPLETION.md)。
 - **每轮 token 结算**：每轮结束在轮次尾巴贴一张 `TOKEN USAGE` 小便签（本轮费用 / 四桶 token /
   命中率 / 用时，含峰谷计价），开关在设置页里。见 [docs/BILLING.md](docs/BILLING.md)。
-- **主题设置页**：外观 / 主题色 / 背景动画 / 任务完成动画 / 每轮 Token 结算 五组，各自独立。
-  见 [docs/SETTINGS.md](docs/SETTINGS.md)。
+- **主题设置页**：外观 / 主题色 / 背景动画 / 启动动画 / 运行动画（含点阵 + 跟随主题色）/
+  任务完成动画 / 每轮 Token 结算 七组，各自独立。见 [docs/SETTINGS.md](docs/SETTINGS.md)。
 - **主题视觉**：浅色 / 深色两套底盘 + 七选一的主题配色（UI 强调色，默认 `#C0FE04`）、
   全直角、HUD 角标、马赛克面板切换、视口转场 ——
   完整设计规则见 [docs/design-language.md](docs/design-language.md)。
@@ -131,7 +136,7 @@ npm run patch:revert    # 用 pristine 备份还原 app.asar
 
 ## 设置
 
-设置 ›「主题设置」，按功能分成六组（每组一个大标题，组内开关紧贴自己的参数）：
+设置 ›「主题设置」，按功能分成七组（每组一个大标题，组内开关紧贴自己的参数）：
 
 | 分组 | 内容 |
 | --- | --- |
@@ -139,6 +144,9 @@ npm run patch:revert    # 用 pristine 备份还原 app.asar
 | **主题色** | 七选一的**主题配色**：`#05C938` / `#E60B10` / `#E7337C` / `#E5710C` / `#C272E9` / `#81E8B1` / `#C0FE04`（默认）。366:237 的色块、**一行 4 个**、**无文本**，点一下即换 UI 强调色**和背景点阵的字形色**；六格画的是阵营标记（赛博艾克米 / 阿拉克尼 / 纽卡洛里 / 特莱克斯 / 米达 / 关口），默认色那格是马拉松 LOGO |
 | **背景动画** | 启用开关 + 点阵密度 + **透明度** + 呼吸速度（关掉时后三行变暗并禁用）；点阵字形色跟着主题色走 |
 | **启动动画** | 启用开关（默认开）。**只在下次冷启动生效** —— 揭幕发生在设置页能打开之前，所以这一组只有一个开关 |
+| **运行动画** | 启用开关（默认开）+ 状态小字。把输入框上方原生「深度求索中」提示换成 132px 条带：居中人形 + 短直线 + 光点；三条文字同色不加粗，跟随真实用时与当前工具 |
+| **点阵动画** | 启用开关（默认开）+ 状态小字。把《动画1》的 21×21 点阵有机体放在输入框右侧空白里，从零逐格生长；新生格绿、成熟格 `#8F96B2`；**不改原生文字提示**；右侧空间不足时自动缩小或隐藏 |
+| **跟随主题色** | 开关（默认关）。关 = 两个动画用固定 `#C0FE04` / `#8F96B2`；开 = 条带墨色与点阵新生格改读当前主题强调色（成熟格仍 `#8F96B2`） |
 | **任务完成动画** | 启用开关 + 完成文案 + 预览按钮 + 状态小字 |
 | **每轮 Token 结算** | 启用开关。⚠️ 结算纸条**固定用最初那支酸绿**，不跟主题色走 |
 
@@ -155,6 +163,7 @@ npm run patch:revert    # 用 pristine 备份还原 app.asar
 | [docs/INSTALL.md](docs/INSTALL.md) | 完整安装步骤（含"让 AI 代装"）、排错、卸载与残留、以及"装好了却没反应"的逐项检查 |
 | [docs/SHELL-PATCH.md](docs/SHELL-PATCH.md) | 壳补丁做了什么、为什么需要、怎么升级与还原、安全模型 |
 | [docs/COMPLETION.md](docs/COMPLETION.md) | 任务完成动画的四拍、每个旋钮、以及它怎么判断"一轮结束了" |
+| [docs/RUNNING.md](docs/RUNNING.md) | 运行动画条带：挂载点与 DOM 契约、三行文字的数据来路、思考 / 运行两种视觉、设置与已知边界 |
 | [docs/SETTINGS.md](docs/SETTINGS.md) | 设置页结构、每一项的默认值与作用、调参位置总表 |
 | [docs/BILLING.md](docs/BILLING.md) | 每轮 token 结算：数据来路、峰谷计价、宿主半边 |
 | [docs/design-language.md](docs/design-language.md) | 设计语言：配色、令牌映射、对比度、动效规则、反模式 |
@@ -183,8 +192,9 @@ index.js                宿主半：预插件期样式注入 + 调度壳补丁 +
 client.js               浏览器半产物（由 src/ 组装；请勿直接编辑）
 cordis.patch.yml        bundle 挂载声明
 src/
-  client.template.js    主题本体模板（唯一手写的大文件：样式 + 设置页 + 收尾动画 + 结算块）
+  client.template.js    主题本体模板（唯一手写的大文件：样式 + 设置页 + 收尾动画 + 结算块 + 运行动画挂载）
   boot/                 启动动画：boot.css / boot.html / engine-intro.js / engine-marathon.js
+  run/                  运行动画：engine-run.js（条带引擎）+ engine-dot.js（右侧点阵引擎）+ think-anim1.js（动画1 数据）
 billing/                计费半侧：host / fold / pricing / ledger
 shell-patch/            桌面壳补丁：发现安装、apply / revert / verify / inspect
 scripts/build.cjs       组装 client.js
