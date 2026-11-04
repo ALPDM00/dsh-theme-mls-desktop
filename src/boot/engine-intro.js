@@ -117,6 +117,77 @@
     try { chrome(visible, 'theme'); chromeSent = visible; } catch (e) { chrome = false; }
   }
 
+  /**
+   * The same channel, *without* the `chromeSent` dedupe, and with the one
+   * side-effect the shell needs to re-measure.
+   *
+   * 2026-11-04 — why the dedupe alone is not enough for the RESTORE.
+   *
+   * The report: on a normal screen the three native window buttons are gone but
+   * still clickable in their own area, and toggling 浅色/深色 in the theme
+   * settings brings them back. That is the caption band sitting on
+   * `color === symbolColor === "rgba(0, 0, 0, 0)"`, i.e. `bootChromeHidden()` —
+   * the one state whose two colours are equal by construction, so it is the only
+   * state that can render as "invisible but clickable" rather than as a coloured
+   * strip. Two independent races can leave it there:
+   *
+   *   1. The shell queues a paint on `window.once("show", apply)` whenever the
+   *      window is not visible yet, and every queued paint reads its own `visible`
+   *      argument. A `show` that lands between this restore call and a later
+   *      hidden request replays the last *queued* state, not the last *intent*.
+   *   2. The shell's own palette measurement (`syncWindowsAppearance` in the
+   *      preload) only re-runs on <head> mutations and on the two body
+   *      attributes `style` / `data-ds-dark-theme`. Switching 浅色/深色 changes
+   *      only body's `class`, which the shell does not watch — so its measured
+   *      pair can stay on the previous scheme. The user's manual toggle makes a
+   *      <head> mutation happen again and that is why it "fixes" the buttons.
+   *
+   * So the restore is re-asserted a few times after teardown instead of exactly
+   * once, and every re-assert also pokes <head> so the measured pair is re-read.
+   * Free on a stock shell (no bridge) and outside the desktop frame.
+   */
+  function pokeHead() {
+    if (typeof document === 'undefined') return;
+    var head = document.head || document.documentElement;
+    if (!head || !head.appendChild) return;
+    try {
+      var poke = document.createElement('style');
+      poke.setAttribute('data-mar-caption-poke', '1');
+      head.appendChild(poke);
+      if (poke.parentNode) poke.parentNode.removeChild(poke);
+    } catch (e) {}
+  }
+
+  function assertChrome(visible, who) {
+    if (chrome === null) setChrome(visible);   // resolves the bridge (and may send)
+    if (chrome === false) return;
+    try {
+      chrome(visible, who || 'theme');
+      chromeSent = visible;
+    } catch (e) { chrome = false; return; }
+    /* Only the visible half needs the measurement re-run: the hidden half is a
+     * pair of constants and re-measuring it can only paint the buttons back. */
+    if (visible) pokeHead();
+  }
+
+  /* Re-assert the restore at the two moments that lose the race in practice: the
+   * end of the overlay fade (so the shell's queued `show` paints land first and
+   * this one wins), and 1.2 s later, by which time a late `once("show", apply)`
+   * from the shell's own DOMContentLoaded measurement has been flushed. The
+   * timers are *not* pushed into `timers`: `stop()` runs a line earlier in
+   * __mbIntroStop and would clear them, which is the one thing that must not
+   * happen to a restore. Two per boot is the whole budget. */
+  var restoreTimers = [];
+  function assertRestoreSteps() {
+    assertChrome(true, 'theme');
+    var delays = [400, 1200];
+    for (var d = 0; d < delays.length; d++) {
+      restoreTimers.push(setTimeout(function () {
+        assertChrome(true, 'theme-restore');
+      }, delays[d]));
+    }
+  }
+
   function later(fn, ms) {
     var id = setTimeout(fn, ms);
     timers.push(id);
@@ -239,7 +310,9 @@
   window.__mbIntroStop = function () {
     stop();
     forceTransparent(false);
-    setChrome(true);
+    // Not `setChrome(true)`: the restore has to survive the shell's own queued
+    // paints and its stale measurement. See assertChrome above.
+    assertRestoreSteps();
   };
 
   // 2026-09-26 — announce ourselves. The host used to call __mbIntroStart()

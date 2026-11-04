@@ -42,11 +42,27 @@ window.__ModuleLoader__.load({
     var DONE_PAYLOAD = /*__DONE_PAYLOAD__*/ null;
 
     function apply(ctx) {
+      var doc = (typeof document !== 'undefined') ? document : null;
+
+      // ---- stale boot flag (#5) --------------------------------------------
+      // `html[data-mar-boot]` is the boot overlay's see-through switch, and
+      // boot.css turns it into `html[data-mar-boot] body > * { visibility:hidden }`.
+      // Its only writer is the boot payload's own intro engine
+      // (src/boot/engine-intro.js → forceTransparent(true)) and its only
+      // remover is `__mbIntroStop()`. A plugin hot reload throws the module away
+      // (and with it the engine) before that hook can run, so the attribute
+      // survives the host being removed: the NEXT stylesheet is injected with
+      // the flag still on and the whole app renders invisible behind an empty
+      // html — the "热重载后整页文字不可见" report.
+      // Cleared HERE, before the idempotency guard, on purpose: a second apply()
+      // that short-circuits two lines below still has to be able to un-hide the
+      // page. removeAttribute is idempotent, so a clean first load pays nothing.
+      if (doc && doc.documentElement) doc.documentElement.removeAttribute('data-mar-boot');
+
       // ---- idempotency -----------------------------------------------------
       if (typeof window !== 'undefined' && window.__dshThemeMarathonApplied) return;
       if (typeof window !== 'undefined') window.__dshThemeMarathonApplied = true;
 
-      var doc = (typeof document !== 'undefined') ? document : null;
       if (!doc) return;
 
       var body = doc.body;
@@ -533,6 +549,37 @@ window.__ModuleLoader__.load({
         '  color:var(--mar-accent-ink)!important;',
         '  fill:var(--mar-accent-ink)!important;',
         '}',
+        '/* #4 (2026-11-04): the selected row lights up, but its SECONDARY content',
+        '   kept its own dark-mode preferences — the age label (`_time` paints',
+        '   --dsw-alias-label-tertiary), the "…" menu wrapper and the icon strokes —',
+        '   so after a selection the row read as half-themed (issue #4).',
+        '   The row itself is a FACE (accent green), so everything inside it has to',
+        '   take the ink of a face. Three constraints:',
+        '     · ONLY `color` is forced, never `fill`. The icons are line icons',
+        '       (`fill:none; stroke:currentColor`), and painting their `fill` would',
+        '       flood every glyph into a solid ink block — that is why the rule',
+        '       above (which pins fill on the ROW for the `_newSession` button) is',
+        '       not repeated here;',
+        '     · the descendants must lose their own surfaces: the menu trigger is',
+        '       a span carrying `background-color:var(--dsw-alias-button-elevated-',
+        '       fill)`, and any nested chip would otherwise leave a dark rectangle',
+        '       on the green face;',
+        '     · the Menu wrapper needs its own rule: the background sits on the',
+        '       span wrapper, and the wrapper is not the button (the first rule',
+        '       would also reach it inside a selected row, but the menu opens in',
+        '       a floating layer outside the row, so it needs the unconditional',
+        '       form). */',
+        'body.theme-marathon [class*="_sessionRow"][class*="_selected"] *{',
+        '  color:var(--mar-accent-ink)!important;',
+        '  background-color:transparent!important;',
+        '  background-image:none!important;',
+        '  box-shadow:none!important;',
+        '}',
+        'body.theme-marathon [class*="_rowActions"] span[class*="_root_"]{',
+        '  background-color:transparent!important;',
+        '  background-image:none!important;',
+        '  box-shadow:none!important;',
+        '}',
         '/* send button: THE THEME ACCENT. Disabled state is intentionally included',
         '   (`:not(:disabled)` was removed) — DSH paints the button blue by default',
         '   whether enabled or not, but more importantly: the button starts DISABLED',
@@ -817,6 +864,20 @@ window.__ModuleLoader__.load({
         '   black band across the lower ~110px of every session. */',
         'body.theme-marathon.mar-bg-on .mar-bg-clear{background-color:transparent!important;',
         '  background-image:none!important;}',
+        '/* #3 (2026-11-04): the composer SEAT stays see-through — that is what makes',
+        '   its dissolve band work — but nothing INSIDE it may. DSH renders both the',
+        '   input card and the ask_user_question card inside [data-composer-seat];',
+        '   the ask card is 320x240, so it cleared the 200x200 plate floor and the',
+        '   background walker marked it `.mar-bg-clear`: the question card turned',
+        '   transparent and floated its text on the dot field (issue #3).',
+        '   The walker now refuses to descend into the seat (see bgPaintWalker), and',
+        '   bgUnmarkComposer sweeps stray marks off on every pass; this rule is the',
+        '   last line of defence for a mark applied by an older revision. It repaints',
+        '   the card with the seat\'s own surface token, so the card is opaque again',
+        '   without touching the seat\'s dissolve band. */',
+        'body.theme-marathon.mar-bg-on [data-composer-seat] [class*="_card"]{',
+        '  background:var(--dsw-specific-input-major)!important;',
+        '  background-image:none!important;}',
         '/* The rail keeps its OWN opaque plate now ("侧边栏不要透明"), and that plate',
         '   must be painted from the THEME palette, not from DSH\'s.',
         '   --dsw-specific-sidebar-fill IS overridden to var(--mar-bg-void), but a',
@@ -861,6 +922,31 @@ window.__ModuleLoader__.load({
         '  box-sizing:border-box;padding:26px 24px;overflow:auto;',
         '  background:var(--dsw-alias-bg-layer-2, var(--mar-bg-panel));color:inherit;',
         '  font-size:13px;line-height:1.6;}',
+        '/* #1 (2026-11-04): 主题设置 has no close button of its own because it is not',
+        '   a host page — the host\'s close button lives in the dialog header cell',
+        '   (`_header > button._close`, 28x28, top-right of the panel grid), and the',
+        '   pane above is absolutely positioned from left:188px/top:0 with z-index:3,',
+        '   so it paints straight OVER that header cell. The button is still in the',
+        '   DOM and still clickable, it is simply covered — hence "设置里没有关闭按钮"',
+        '   once the theme tab is open, while every native tab keeps one (issue #1).',
+        '   `.mar-set-closebar` is a zero-height STICKY row at the top of the pane,',
+        '   so the button (a) lives inside the pane, (b) sits in its top-right',
+        '   corner exactly where the native one sits, (c) is never clipped by the',
+        '   pane and (d) does not scroll away with the settings list — the pane is',
+        '   the scroller, and an absolutely positioned child would leave with the',
+        '   content. It is out of the flow (height:0), so the title keeps its',
+        '   position and nothing is pushed down. Square, transparent until hover,',
+        '   ink-secondary → ink-primary — the theme\'s own control language. */',
+        '.mar-set-closebar{position:sticky;top:0;z-index:4;height:0;display:flex;',
+        '  justify-content:flex-end;pointer-events:none;}',
+        '.mar-set-close{display:none;align-items:center;justify-content:center;',
+        '  width:28px;height:28px;padding:0;margin:2px 0 0 auto;border-radius:0;',
+        '  font:inherit;font-size:18px;line-height:1;cursor:pointer;',
+        '  color:var(--mar-ink-secondary);background:transparent;border:1px solid transparent;',
+        '  pointer-events:auto;}',
+        '.mar-tab-on .mar-set-close{display:inline-flex;}',
+        '.mar-set-close:hover{color:var(--mar-ink-primary);border-color:var(--mar-line-strong);}',
+        '.mar-set-close:focus-visible{outline:1px solid var(--mar-accent);outline-offset:2px;}',
         '.mar-set-pane h4{margin:0 0 4px;font-size:17px;font-weight:700;letter-spacing:.04em;}',
         '.mar-set-pane .mar-set-sub{margin:0 0 24px;font-size:11px;opacity:.55;}',
         '.mar-set-group{margin:0 0 24px;}',
@@ -1685,9 +1771,30 @@ window.__ModuleLoader__.load({
         return (p.length > 3 ? p[3] : 1) > 0.3;
       }
 
+      // #3 (2026-11-04) — the composer SEAT is a boundary, like a modal.
+      // The seat itself is cleared on purpose (its dissolve gradient is the
+      // bottom band of every session, and 1284x146 never reaches the 200x200
+      // floor anyway, so it is cleared via bgAnchorTargets). Everything INSIDE
+      // it is content: the input card, and the ask_user_question card, which is
+      // 320x240 — big enough to pass bgPaints, so the walk used to mark it
+      // `.mar-bg-clear` and the question card became transparent ("提问卡片
+      // 变透明", issue #3). Refuse to MARK and refuse to DESCEND, exactly like
+      // bgModal/bgLayer above. The 0.2.2 host marks the seat with BOTH
+      // `data-composer-seat` (stable semantic hook, set by
+      // dsh-client-ui-conversation ConversationRoot) and the hashed
+      // `..._composerSeat` class; the class form is kept for older builds that
+      // predate the attribute.
+      function bgIsComposerSeat(el) {
+        if (!el || !el.getAttribute) return false;
+        if (el.hasAttribute && el.hasAttribute('data-composer-seat')) return true;
+        var cls = typeof el.className === 'string' ? el.className : '';
+        return /(^|\s)[A-Za-z0-9_-]*composerSeat(\s|$)/.test(cls);
+      }
+
       function bgPaintWalker(el, out, depth) {
         if (!el || el.nodeType !== 1 || depth > 9) return;
         if (bgModal(el) || bgLayer(el)) return;   // 不标记它，也不进它的子树
+        if (bgIsComposerSeat(el)) return;         // #3: 座位内部是内容，见上
         // 我们自己的每轮结算纸条：它是**内容**（转录的一部分），不是界面底板
 // 展开后它— 268x240，正好越— bgPaints — 200x200 底板门槛 —
 // 少了这一条，ASCII 背景模式下纸条会被清成透明（数字浮在网格上）
@@ -1742,6 +1849,25 @@ var bgCleared = [];
         for (var i = 0; i < marked.length; i++) marked[i].classList.remove('mar-bg-clear');
       }
 
+      function bgUnmarkComposer() {
+        // #3 belt-and-braces: the seat ITSELF keeps its mark (that is the
+        // dissolve band), but nothing inside it may. The walk no longer enters
+        // the seat, so this is a no-op on a clean load; it is here for the same
+        // reason as bgUnmarkSidebar — a node marked by an older revision (or by
+        // a pass that ran before the seat was identified) must not stay
+        // see-through for good. Two selectors because 0.2.2 ships the
+        // data attribute while older builds only had the hashed class.
+        var root = doc.getElementById('root');
+        var frame = root ? (root.querySelector(':scope > div > div') || root.firstElementChild) : null;
+        var cc = frame ? frame.querySelector(':scope > [class*="_centerCol"]') : null;
+        if (!cc) return;
+        var seat = cc.querySelector('[data-composer-seat]') ||
+          cc.querySelector('[class*="composerSeat"]');
+        if (!seat) return;
+        var marked = seat.querySelectorAll('.mar-bg-clear');
+        for (var i = 0; i < marked.length; i++) marked[i].classList.remove('mar-bg-clear');
+      }
+
       function bgMarkClear(remove) {
         var i;
         if (remove) {
@@ -1749,11 +1875,13 @@ var bgCleared = [];
           for (i = 0; i < all.length; i++) all[i].classList.remove('mar-bg-clear');
           bgCleared = [];
           bgUnmarkSidebar();
+          bgUnmarkComposer();
           return;
         }
         bgMarkAdd(bgAnchorTargets());
         bgMarkAdd(bgPaintTargets());
         bgUnmarkSidebar();
+        bgUnmarkComposer();
       }
 
       // DSH 换会— / 进出会话都会重建侧栏与中列的根节点，而标记是挂在**节点**上的
@@ -1770,6 +1898,12 @@ var bgCleared = [];
           bgKickRaf = 0;
           if (!BG_STATE.anim) return;
           bgMarkAdd(bgAnchorTargets());
+          // #3: the anchor pass never marks inside the seat, but a DOM swap can
+          // bring in a node that already carries a stale `.mar-bg-clear`
+          // (React reuses nodes across turns). One subtree query per frame is
+          // cheap and keeps the ask card opaque without waiting for the 1.2s
+          // sweep.
+          bgUnmarkComposer();
           var lost = false, i;
           for (i = 0; i < bgCleared.length; i++) {
             if (!doc.contains(bgCleared[i])) { lost = true; break; }
@@ -2975,6 +3109,82 @@ try {
         pane.style.pointerEvents = 'none';
         panel.appendChild(pane);
 
+        // ---- close button (#1, 2026-11-04) ----------------------------------
+        // WHY there is no close button today: the host's own one lives in the
+        // dialog header cell — measured on 0.2.2: `_panel > _header > button._close`
+        // (28x28, the top-right cell of the panel grid) — and the pane above is
+        // absolutely positioned from left:188px / top:0 with z-index:3, i.e. it
+        // paints straight OVER that header cell. The button is still in the DOM
+        // and still clickable; it is simply covered. Every native tab keeps its
+        // own header, so only 主题设置 lost the affordance (issue #1).
+        // The pane therefore supplies one, and it DELEGATES to the host instead
+        // of guessing at state: the settings dialog documents exactly three
+        // close paths (see SettingsPanel in dsh-client-ui-settings-general):
+        //   1. the header close button,
+        //   2. a click on the overlay mask,
+        //   3. document-level Escape (useModalLayer).
+        // In that order, with "hand our column back" as the last resort. Escape
+        // is also honoured by us (onDocKeydown) so the key works even when the
+        // host's own listener is missing — belt and braces, not a replacement.
+        var closingTab = false;
+        function closeSettingsTab() {
+          if (closingTab) return;
+          closingTab = true;
+          try {
+            var hostBtn = panel.querySelector('[class*="_header"] button[class*="_close"]');
+            if (hostBtn && typeof hostBtn.click === 'function') { hostBtn.click(); return; }
+            var mask = panel.querySelector('[class*="_mask"]');
+            if (mask && typeof mask.click === 'function') { mask.click(); return; }
+            try {
+              var esc = new KeyboardEvent('keydown', {
+                key: 'Escape', code: 'Escape', bubbles: true, cancelable: true,
+              });
+              (doc.activeElement || doc.body).dispatchEvent(esc);
+            } catch (e) { /* no KeyboardEvent constructor: fall through */ }
+            if (pane && typeof pane.__marClose === 'function') pane.__marClose();
+          } finally {
+            closingTab = false;
+          }
+        }
+
+        function onDocKeydown(ev) {
+          if (!ev || (ev.key !== 'Escape' && ev.key !== 'Esc' && ev.keyCode !== 27)) return;
+          if (!doc.contains(panel)) {
+            // the dialog was replaced/unmounted: stop holding the document
+            doc.removeEventListener('keydown', onDocKeydown, true);
+            return;
+          }
+          if (!panel.classList.contains('mar-tab-on')) return;   // native tab owns the key
+          closeSettingsTab();
+        }
+        doc.addEventListener('keydown', onDocKeydown, true);
+        panel.__marEsc = onDocKeydown;
+
+        // The button lives INSIDE the pane (that is where the affordance belongs):
+        // a zero-height sticky bar at the top, the button pinned to its right.
+        // A plain absolute child would be clipped/scrolled by the pane's
+        // `overflow:auto`; sticky stays put while the list scrolls. `.mar-tab-on`
+        // gates its display so the native tabs keep their own header untouched.
+        if (!pane.__marCloseBtn) {
+          var closeBar = doc.createElement('div');
+          closeBar.className = 'mar-set-closebar';
+          var closeBtn = doc.createElement('button');
+          closeBtn.type = 'button';
+          closeBtn.className = 'mar-set-close';
+          closeBtn.setAttribute('data-mar-close', '1');
+          closeBtn.setAttribute('aria-label', '关闭设置');
+          closeBtn.title = '关闭设置';
+          closeBtn.innerHTML = '×';
+          closeBtn.addEventListener('click', function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            closeSettingsTab();
+          });
+          closeBar.appendChild(closeBtn);
+          pane.insertBefore(closeBar, pane.firstChild);
+          pane.__marCloseBtn = closeBtn;
+        }
+
         function muteNative(mute) {
           for (var i = 0; i < nativeCells.length; i++) {
             nativeCells[i].classList[mute ? 'add' : 'remove']('mar-nav-muted');
@@ -3384,11 +3594,274 @@ var head =
       // desktop shows through it while the green whale logo and the HUI frames
       // appear one after another. See src/boot/boot.css.
       var bootCleanup = null;
+
+      // ---- stale boot flag watchdog (#5) ------------------------------------
+      // The attribute is written by the payload's intro engine (forceTransparent
+      // in src/boot/engine-intro.js) — that is, only AFTER #dshMarBootHost has
+      // been appended to <body>, so a correctly-running boot always has a host
+      // behind the flag. The failure mode is the OTHER order: an attribute that
+      // survives its host (hot reload, a torn-down module, an engine that died
+      // mid-way), and boot.css then hides every `body > *` behind it. Two
+      // guards, both cheap:
+      //   · an attribute observer reacts the moment the flag is written — if no
+      //     host exists at that instant, it is a leftover and is dropped;
+      //   · an 8s backstop, re-armed on every apply() and on every write, so a
+      //     write that lands before the host (or a host removed right after)
+      //     can never outlive the grace window. 8s > the 18s-bounded reveal's
+      //     own teardown path is not needed: the backstop only acts when the
+      //     host is ALREADY gone.
+      var BOOT_FLAG_GRACE_MS = 8000;
+      var bootFlagTimer = null;
+      var bootFlagObserver = null;
+
+      function bootFlagDrop() {
+        if (!doc || !doc.documentElement) return false;
+        if (!doc.documentElement.hasAttribute('data-mar-boot')) return false;
+        // a live overlay is the ONLY legitimate reason for the flag
+        if (doc.getElementById('dshMarBootHost')) return false;
+        doc.documentElement.removeAttribute('data-mar-boot');
+        return true;
+      }
+
+      function bootFlagArm() {
+        if (typeof setTimeout !== 'function') return;
+        if (bootFlagTimer) clearTimeout(bootFlagTimer);
+        bootFlagTimer = setTimeout(function () {
+          bootFlagTimer = null;
+          bootFlagDrop();
+        }, BOOT_FLAG_GRACE_MS);
+      }
+
+      function bootFlagWatch() {
+        if (!doc || !doc.documentElement) return;
+        bootFlagDrop();
+        bootFlagArm();
+        if (bootFlagObserver || typeof MutationObserver === 'undefined') return;
+        bootFlagObserver = new MutationObserver(function () {
+          // No host at write time = a leftover from a dead boot. Otherwise the
+          // write is legitimate; re-arm so the grace window starts at the write,
+          // not at apply().
+          if (bootFlagDrop()) return;
+          bootFlagArm();
+        });
+        try {
+          bootFlagObserver.observe(doc.documentElement, {
+            attributes: true, attributeFilter: ['data-mar-boot'],
+          });
+        } catch (e) { bootFlagObserver = null; }
+      }
       // Session marker: the animation plays once per cold start. Reopening the
       // window from the tray does not reload the page, and an in-app reload is
       // explicitly excluded below, so together the two cover both "don't replay
       // on a refresh" and "don't replay when the window is restored".
       var BOOT_ONCE_KEY = 'mar.boot.played';
+
+      function bootIsPageLoad() {
+        try {
+          var entries = performance.getEntriesByType('navigation');
+          if (entries && entries.length > 0 && entries[0].type) return entries[0].type === 'navigate';
+        } catch (e) {}
+        // No Navigation Timing (older engines, tests): assume a real load.
+        return true;
+      }
+      function bootAlreadyPlayed() {
+        try { return sessionStorage.getItem(BOOT_ONCE_KEY) === '1'; } catch (e) { return false; }
+      }
+      function markBootPlayed() {
+        try { sessionStorage.setItem(BOOT_ONCE_KEY, '1'); } catch (e) {}
+      }
+
+      // ---- native caption band: self-heal (2026-11-04) ---------------------
+      // 用户报：「正常界面下右上角三个按钮不见了（看不见），但能在大概的位置
+      // 点击，有效果；我在主题设置里切换了一次浅色和深色后又正常了」。
+      //
+      // 三个按钮是 Electron 的 titleBarOverlay：**画面**来自这个页面，**按钮**
+      // 来自窗口框架。所以「看得见形状却看不见按钮」只有一种可能 —— 覆盖层的
+      // color 与 symbolColor 取到了同一个值，也就是壳补丁的隐藏态
+      // bootChromeHidden() = 两者都 "rgba(0, 0, 0, 0)"。那个态是启动动画期间
+      // 用的，动画结束必须由页面再要一次「恢复可见」。这条恢复链有两处会丢：
+      //
+      //   ① 主进程对「窗口还没显示」的请求是排队 window.once('show', apply)，
+      //      而每次排队只带**自己那一次调用**的 visible：只要 show 事件落在
+      //      「恢复之后、更晚的一次隐藏请求之前」，最后画上去的就是隐藏态。
+      //   ② 壳自己的配色测量（preload 的 syncWindowsAppearance）只在 <head>
+      //      变更和 body 的 style / data-ds-dark-theme 上重跑，**不监听
+      //      body.class**；而主题切浅色/深色只改 class。所以壳量到的是上一套
+      //      配色。用户手动切一次时主题会顺带给宿主设 theme（data-ds-dark-theme
+      //      变动），测量才重跑 —— 这才是「切一次就正常」的真相：不是切一下
+      //      能修好，而是碰巧触发了重测。
+      //
+      // 这里不猜主进程的状态，只按我们自己量到的一对颜色做三件确定的事：
+      //   1) 起手 90 秒内每 2 秒、以及 body 的 class/style 一变，就按壳的同一
+      //      口径重新量一次（隐藏 span 取 --dsw-specific-sidebar-fill 当底色、
+      //      --dsw-alias-label-primary 当字形色）；
+      //   2) 与上次送出的不一样，就**无去重地**再要一次「可见」（要去纠的可能
+      //      正是主进程停在隐藏态），并在 <head> 里 append/remove 一个空
+      //      <style> 逼壳重跑测量 —— 两步合起来才同时覆盖上面两条缝；
+      //   3) 启动动画期间（html[data-mar-boot] 或 #dshMarBootHost 还在）一律
+      //      不动，否则会把动画要隐藏的按钮又画回去（0.5.2 修过的「按钮突兀」）。
+      // 非桌面壳（没有 dshDesktopBootChrome）时整段是空转。
+      var CAPTION_PROBE_ID = 'mar-caption-probe';
+      var CAPTION_WINDOW_MS = 90000;
+      var CAPTION_TICK_MS = 2000;
+      var CAPTION_RESEND_MS = 15000;
+      var captionLastKey = '';
+      var captionLastAt = 0;
+      var captionPokes = 0;
+      var captionTimer = null;
+      var captionObserver = null;
+      var captionPending = null;
+      var captionDeep = null;
+
+      function captionBridge() {
+        if (typeof window === 'undefined') return null;
+        var bridge = window.dshDesktopBootChrome;
+        if (bridge && typeof bridge.chrome === 'function') return bridge;
+        var boot = window.dshDesktopBoot;
+        if (boot && typeof boot.chrome === 'function') return boot;
+        return null;
+      }
+
+      // Same measurement the shell's preload does, so both sides agree on the
+      // pair. `position:fixed` keeps the probe out of every theme scan
+      // (bgPaintWalker skips fixed/absolute layers); body's *child* list is not
+      // observed by the shell, so mounting it cannot cause a repaint by itself.
+      function captionMeasure() {
+        if (!body || !body.appendChild) return null;
+        var probe = doc.getElementById(CAPTION_PROBE_ID);
+        if (!probe) {
+          probe = doc.createElement('span');
+          probe.id = CAPTION_PROBE_ID;
+          probe.setAttribute('aria-hidden', 'true');
+          probe.style.cssText = 'position:fixed;left:-8px;top:-8px;width:0;height:0;' +
+            'visibility:hidden;pointer-events:none;overflow:hidden;' +
+            'background-color:var(--dsw-specific-sidebar-fill);' +
+            'color:var(--dsw-alias-label-primary);';
+          try { body.appendChild(probe); } catch (e) { return null; }
+        }
+        if (typeof window === 'undefined' || typeof window.getComputedStyle !== 'function') return null;
+        var cs = window.getComputedStyle(probe);
+        if (!cs) return null;
+        return { fill: cs.backgroundColor, ink: cs.color };
+      }
+
+      function captionBootRunning() {
+        if (doc.documentElement && doc.documentElement.hasAttribute('data-mar-boot')) return true;
+        return !!(doc.getElementById && doc.getElementById('dshMarBootHost'));
+      }
+
+      function captionPokeHead() {
+        var head = doc.head || doc.documentElement;
+        if (!head || !head.appendChild) return;
+        try {
+          var poke = doc.createElement('style');
+          poke.setAttribute('data-mar-caption-poke', '1');
+          head.appendChild(poke);
+          if (poke.parentNode) poke.parentNode.removeChild(poke);
+        } catch (e) {}
+      }
+
+      function captionSync() {
+        if (captionBootRunning()) return false;
+        var pair = captionMeasure();
+        if (!pair || !pair.fill || !pair.ink) return false;
+        // A fully transparent fill means the palette has not resolved yet (the
+        // stylesheet lands after the first paint). Sending it would ask the shell
+        // to paint a see-through band — that is the bug, not the fix.
+        if (/rgba?\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)/.test(pair.fill)) return false;
+        var key = pair.fill + '|' + pair.ink;
+        var changed = key !== captionLastKey;
+        var now = Date.now();
+        // The re-assert is deliberately not deduped on `changed`: the state being
+        // corrected IS "hidden", which our own previous request already asked to
+        // leave. But it also must not be one IPC every tick for 90 s, so a repeat
+        // of the same request is throttled to one per 15 s — six in the window,
+        // and instantly again the moment anything about the palette moves.
+        if (!changed && (now - captionLastAt) < CAPTION_RESEND_MS) return false;
+        captionLastKey = key;
+        captionLastAt = now;
+        var bridge = captionBridge();
+        if (bridge) {
+          try { bridge.chrome(true, 'caption'); } catch (e) {}
+        }
+        // The <head> poke is what makes the SHELL re-measure, and it costs a
+        // document-wide mutation, so it is rationed: on every palette change
+        // (that is the "切浅色/深色" repair path) plus the first few ticks after
+        // mount, which is where a shell that missed the restore is caught.
+        // A throttled re-assert therefore only repeats the visibility request.
+        if (changed || captionPokes < 3) {
+          captionPokes++;
+          captionPokeHead();
+        }
+        return changed;
+      }
+
+      function captionSchedule() {
+        if (typeof setTimeout !== 'function') return;
+        if (captionPending !== null) return;
+        captionPending = setTimeout(function () {
+          captionPending = null;
+          try { captionSync(); } catch (e) {}
+        }, 120);
+      }
+
+      function captionTick() {
+        try { captionSync(); } catch (e) {}
+      }
+
+      function captionMount() {
+        if (typeof setTimeout !== 'function') return;
+        // body.class is the theme's own switch (theme-marathon, mar-bg-light,
+        // mar-bg-on …) and is precisely what the shell does not watch.
+        if (typeof MutationObserver === 'function' && body) {
+          try {
+            captionObserver = new MutationObserver(function () { captionSchedule(); });
+            captionObserver.observe(body, { attributes: true, attributeFilter: ['class', 'style'] });
+            if (doc.documentElement) {
+              captionObserver.observe(doc.documentElement, { attributes: true, attributeFilter: ['lang', 'class'] });
+            }
+          } catch (e) { captionObserver = null; }
+        }
+        if (typeof doc.addEventListener === 'function') {
+          doc.addEventListener('visibilitychange', captionOnVisible);
+        }
+        captionTimer = setInterval(captionTick, CAPTION_TICK_MS);
+        captionDeep = setTimeout(captionTeardownTimer, CAPTION_WINDOW_MS);
+        // Deferred: buildBoot() runs a few lines above and sets
+        // html[data-mar-boot] synchronously, so an immediate call is a no-op.
+        captionSchedule();
+      }
+
+      function captionOnVisible() {
+        if (typeof doc === 'undefined' || doc.hidden) return;
+        captionSchedule();
+      }
+
+      function captionTeardownTimer() {
+        if (captionTimer) { clearInterval(captionTimer); captionTimer = null; }
+        if (captionDeep) { clearTimeout(captionDeep); captionDeep = null; }
+      }
+
+      // Last word on the way out: the plugin may be unloaded while the shell is
+      // still holding a state we asked for (or a restore we asked for never
+      // landed). Ask for "visible" once more, without touching the DOM.
+      function captionAskVisible() {
+        var bridge = captionBridge();
+        if (!bridge) return;
+        try { bridge.chrome(true, 'caption-dispose'); } catch (e) {}
+      }
+
+      function captionDispose() {        captionTeardownTimer();
+        if (captionPending !== null) { clearTimeout(captionPending); captionPending = null; }
+        if (captionObserver) { captionObserver.disconnect(); captionObserver = null; }
+        if (typeof doc.removeEventListener === 'function') {
+          doc.removeEventListener('visibilitychange', captionOnVisible);
+        }
+        captionLastKey = '';
+        var probe = doc.getElementById(CAPTION_PROBE_ID);
+        if (probe && probe.parentNode) probe.parentNode.removeChild(probe);
+      }
+
 
       function bootIsPageLoad() {
         try {
@@ -3493,6 +3966,12 @@ var head =
             window.__mbBootDone = null;
           }
           if (host.parentNode) host.parentNode.removeChild(host);
+          // #5: the host is the flag's ONLY justification. __mbIntroStop above
+          // normally gives the attribute back, but it lives in the payload and
+          // may be missing (CSP, an engine that died early, a torn-down module),
+          // so drop it here as well — removing the host and keeping the flag is
+          // exactly the state that blanked the whole window.
+          bootFlagDrop();
           bootCleanup = null;
         }
 
@@ -4281,6 +4760,15 @@ var displayed = billingDisplayedSessionId();
         'theme-marathon-motion-off', 'theme-marathon-motion-reduced');
 
       buildBoot();
+      // #5: arm the stale-flag guard on every apply — the attribute is written
+      // by the boot payload long after this line, so the observer has to be up
+      // before the reveal starts (and it is what catches the write if the host
+      // is already gone).
+      bootFlagWatch();
+      // 原生窗口按钮的自愈：起手 90 秒内每 2 秒一次 + body class/style 变化时
+      // 一次（见 captionMount）。必须排在 buildBoot() 之后、bgMount() 之前：
+      // 揭幕的那几秒它什么都不做，动画一结束它第一个 tick 正好接上恢复。
+      captionMount();
       bgMount();
       //  The palette is projected here as well, before anything can read it, and
       //  the self-check lands a beat later (after DSH's own presenter has had its
@@ -4384,7 +4872,35 @@ attachDone();
             for (var w = 0; w < cells.length; w++) {
               if (cells[w].parentNode) cells[w].parentNode.removeChild(cells[w]);
             }
+            // #1: the close button lives on the PANEL (not the pane), so it is
+            // not covered by the [data-mar-pane] sweep above. Its Escape hook
+            // sits on the document, so undo it while the panel is still within
+            // reach (onDocKeydown would self-heal on the next keypress, but a
+            // dispose must not leave a listener behind).
+            var closers = doc.querySelectorAll('[data-mar-close]');
+            for (var c = 0; c < closers.length; c++) {
+              var hostPanel = closers[c].parentNode;
+              if (hostPanel && hostPanel.__marEsc) {
+                doc.removeEventListener('keydown', hostPanel.__marEsc, true);
+                hostPanel.__marEsc = null;
+              }
+              if (closers[c].parentNode) closers[c].parentNode.removeChild(closers[c]);
+            }
           },
+          // #5: the stale-flag watchdog must not outlive the theme — its 8s
+          // timer and its attribute observer are both ours.
+          function () {
+            if (bootFlagTimer && typeof clearTimeout === 'function') clearTimeout(bootFlagTimer);
+            bootFlagTimer = null;
+            if (bootFlagObserver) {
+              try { bootFlagObserver.disconnect(); } catch (e) {}
+              bootFlagObserver = null;
+            }
+          },
+          // caption 自愈：定时器、观察器、visibilitychange 监听与那枚度量 span
+          // 都是我们挂的，跟着 dispose 一起收；最后一个动作是把「可见」再要一次，
+          // 插件卸掉之后窗口不该停在一个我们改过的 caption 状态上。
+          function () { captionDispose(); captionAskVisible(); },
           // Sweep by id/selector instead of trusting the references above: the
           // boot host (engine threw before wiring itself up), the background
           // canvas (bgTeardown lost its handle, or the node was re-created), and

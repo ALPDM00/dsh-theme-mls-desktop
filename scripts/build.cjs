@@ -39,12 +39,61 @@ const FACTIONS = [
   ['C0FE04', '马拉松LOGO.svg']    // the default: the Marathon logo
 ];
 const factionDir = path.join(root, 'assets', 'factions');
+
+// ---- 0b) 名字不可信，内容可信 ----------------------------------------------
+// Issue #3 (2026-10-26) reported this repo's artwork as "filenames mangled by a
+// GBK/UTF-8 round-trip, and 赛博艾克米.svg missing entirely". The files were never
+// missing here, and nothing in the repository is GBK: the cause is a checkout
+// whose file *names* were written as raw UTF-8 bytes and then read back through
+// the ANSI code page (cp936 on a Chinese Windows), which turns
+// `赛博艾克米.svg` into `璧涘崥鑹惧厠绫?svg`. Node then reads that mojibake name
+// back faithfully, so `readFileSync` still works -- only the *lookup by literal
+// name* in this script fails, which is exactly the symptom the reporter hit
+// ("missing faction artwork: …/赛博艾克米.svg").
+//
+// Every plate carries its own `<title>`, so resolve by that first: the lookup
+// then survives any filename encoding, any rename, and any archive tool that
+// re-mangles names on extract. Falls back to the literal name for a stock
+// checkout, and fails with a list of what IS there when neither works.
+const factionFiles = (() => {
+  try { return fs.readdirSync(factionDir).filter((n) => /\.svg$/i.test(n)); }
+  catch { return []; }
+})();
+const factionByTitle = new Map();
+for (const candidate of factionFiles) {
+  let text = '';
+  try { text = fs.readFileSync(path.join(factionDir, candidate), 'utf8'); } catch { continue; }
+  const m = /<title>([\s\S]*?)<\/title>/i.exec(text);
+  if (m) {
+    const title = m[1].trim();
+    if (title && !factionByTitle.has(title)) factionByTitle.set(title, candidate);
+  }
+}
+const rescued = [];
+function resolveFaction(file) {
+  const direct = path.join(factionDir, file);
+  if (fs.existsSync(direct)) return direct;
+  const base = file.replace(/\.svg$/i, '');
+  const byTitle = factionByTitle.get(base);
+  if (byTitle) {
+    rescued.push(base + '.svg -> ' + byTitle);
+    return path.join(factionDir, byTitle);
+  }
+  return null;
+}
+
 const factionRules = FACTIONS.map(([hex, file]) => {
-  const p = path.join(factionDir, file);
-  if (!fs.existsSync(p)) {
-    console.error('[build] missing faction artwork:', p);
+  const resolved = resolveFaction(file);
+  if (resolved === null) {
+    console.error('[build] missing faction artwork: ' + path.join(factionDir, file));
+    console.error('[build] files actually present: ' + (factionFiles.join(', ') || '(none)'));
+    console.error('[build] titles read from them: ' + (Array.from(factionByTitle.keys()).join(', ') || '(none)'));
+    console.error('[build] if the names above look like 璧涘崥鑹惧厠绫?svg, this checkout stored ' +
+      'UTF-8 bytes under an ANSI code page; the content lookup should have covered that, ' +
+      'so a missing <title> or a renamed plate is the real cause.');
     process.exit(1);
   }
+  const p = resolved;
   // data:image/svg+xml with the SVG's own text percent-encoded. Smaller than
   // base64 for source-like text, and it stays readable in the built file.
   // WHAT MUST NEVER SURVIVE ENCODING: the generated rule is spliced into the
@@ -191,7 +240,10 @@ if (out.indexOf('dshMarDoneHost') === -1 || out.indexOf('#md-scene') === -1 ||
 }
 
 fs.writeFileSync(path.join(root, 'client.js'), out);
-console.log('[build] wrote client.js (' + out.length + ' bytes)');
+// Bytes, not UTF-16 length: the bundle carries a lot of Chinese, so the in-memory
+// string is ~7% shorter than the file and a report that printed it read as a
+// truncated write.
+console.log('[build] wrote client.js (' + Buffer.byteLength(out, 'utf8') + ' bytes)');
 console.log('[build]   boot css    ' + bootCss.length + ' bytes');
 console.log('[build]   boot html   ' + bootHtml.length + ' bytes');
 console.log('[build]   marathon    ' + bootMarathon.length + ' bytes');
@@ -203,3 +255,13 @@ console.log('[build]   payload JSON' + payloadJson.length + ' bytes, done JSON '
   doneJson.length + ' bytes, font b64 ' + fontB64.length + ')');
 console.log('[build]   配色 artwork  ' + FACTIONS.length + ' faction(s), ' +
   factionRules.length + ' bytes of generated CSS');
+if (rescued.length > 0) {
+  // Loud on purpose: the build now succeeds either way, but the checkout is
+  // carrying mis-encoded file names and the *next* tool (an editor, an archive
+  // step, `git status`) will keep tripping over them. Re-clone, or make git and
+  // the shell agree on UTF-8 (Windows: `chcp 65001`, or the "Beta: Use Unicode
+  // UTF-8 for worldwide language support" option).
+  console.log('[build]   ! resolved by <title>, not by filename [' + rescued.join('; ') + ']');
+  console.log('[build]   ! this checkout stored UTF-8 file names under the ANSI code page — ' +
+    'cosmetic for the build, but fix the checkout (re-clone / UTF-8 code page) before committing.');
+}

@@ -5,6 +5,155 @@
 次版本号 = 向后兼容的新功能；
 修订号 = 向后兼容的 bug 修复。
 
+## [0.5.4] - 2026-11-04
+
+**三处用户可见的缺陷（热重载后整页文字不可见 / 提问卡片被清成透明 / 侧栏选中行的次级内容与「…」按钮），
+外加一条 caption 加固（右上角三个原生按钮「看不见但能点」）；主题设置面板补上自己的关闭按钮。**
+
+> 版本号说明：全部是向后兼容的修复，外加一个纯增量的小按钮，按维护者的约定打修订号 `0.5.4`。
+
+### 修复
+
+- **热重载后整页文字不可见（议题 #5）。** 症状：热重载 / 停用再启用主题（或揭幕播放途中被停掉）
+  之后，页面只剩背景，所有文字与控件都不可见；开发者工具里 `<html>` 上仍挂着 `data-mar-boot`。
+  根因：`data-mar-boot` 是揭幕的阶段标记，`boot.css` 把它翻译成
+  `html[data-mar-boot] body > *:not(#dshMarBootHost){visibility:hidden}`（藏起界面、只留揭幕）。
+  它原本只在 `dispose()` 的最后一步摘掉，但"热重载"实际是**同一页面里再跑一次 `apply()`** ——
+  旧实例没走完 dispose，属性就留在 html 上；下一次启用重新注入样式表，属性立刻生效，
+  而遮罩宿主已经不在，于是整个应用被藏进一层看不见的遮罩后面。
+  修法：把摘除提到 `apply()` 的入口，**无条件、幂等**执行；属性只在**遮罩宿主确实挂进 DOM 之后**
+  才写；watchdog 每次 `apply()` 重设（不继承上一次的定时器状态）；再加一道兜底 ——
+  8 秒内 `#dshMarBootHost` 仍不存在而属性还在，就直接摘掉，覆盖"引擎脚本被异常/CSP 打断"这条路。
+- **提问卡片被背景动画清成透明（议题 #3）。** 症状：开背景动画后，`ask_user_question` 弹出来的
+  提问卡片整块变透明，文字直接浮在点阵上；卡片越大越容易中招。
+  根因：背景动画的"清底"扫描（`bgPaintWalker`）遍历中列时，会把尺寸 ≥200×200、带不透明底色的
+  容器打上 `.mar-bg-clear`（把底色让给点阵）。提问卡片正好落在输入区 `[data-composer-seat]` 里、
+  又比门槛大，于是被当成"界面底板"清掉了。
+  修法三层：① 扫描器遇到 `[data-composer-seat]` 直接返回，**不进座位内部**（座位本身该清，
+  里面的卡片是内容）；② 新增 `bgUnmarkComposer()`，在每次清底 / 补扫时把座位内部遗留的
+  `.mar-bg-clear` 摘掉，覆盖"节点被复用、标记跟着旧节点留下来"这条；
+  ③ CSS 兜底：座位里的卡片强制回 `--dsw-specific-input-major` 并清空背景图 ——
+  即使前两层都失手，卡片也不会透。
+- **侧栏选中行里的次级内容仍是深色，「…」按钮底下还压着一块方底（议题 #4）。** 症状：选中行整行是
+  主题色填充（这是对的），但行内第二层信息（时间标签一类）还是浅灰 / 深灰，读起来像没被选中；
+  行右端「…」按钮下面有一块深色方底，鼠标移上去更明显。
+  根因：旧规则只把**行根节点**的前景色钉成 `--mar-accent-ink`，行内那些自己声明颜色的后代不受继承影响；
+  「…」按钮的底色不在 `button` 上，而在外层 `[class*="_rowActions"] span[class*="_root_"]` 的包装层上，
+  所以只压按钮压不掉。
+  修法：选中行内**一切前景**统一到 `--mar-accent-ink`，行内后代自带的
+  `background-color` / `background-image` / `box-shadow` 一律清掉，`_rowActions` 下那层 span 单独压一次；
+  **不再强灌 `fill`** —— 行内那批图标是 `fill:none` + `stroke:currentColor` 的线性图标，
+  给 `fill` 灌色会把它们糊成实心墨块（旧规则就是这个坑，这次一并收窄）。
+- **右上角三个原生窗口按钮「看不见，但点得到」。** 症状：正常界面下三个原生窗口按钮看不见，
+  但按钮位置仍可点击生效；在「主题设置 → 外观」里切一次浅色 / 深色后恢复正常。
+  为什么会看不见：壳补丁把主窗口做成 `transparent` + `titleBarStyle:'hidden'`，三个按钮是 Electron 的
+  `titleBarOverlay` —— 当底色 `color` 与字形 `symbolColor` 同值时，按钮就"隐形但仍占点击区域"。
+  启动动画期间壳正是这样隐藏它们的（两者都是 `rgba(0, 0, 0, 0)`），动画结束必须再由页面要一次
+  「恢复可见」。所以问题不在绘制，而在**恢复链丢了**。恢复链有两处会丢：
+  ① 主进程对"窗口还没显示"的请求是排队 `window.once('show', apply)`，**每次排队只带自己那一次调用的
+  `visible`**；只要 `show` 事件落在「恢复之后、更晚的一次隐藏请求之前」，最后画上去的就是隐藏态。
+  ② 壳自己的配色测量（preload 的 `syncWindowsAppearance`）只在 `<head>` 变更和 `<body>` 的
+  `style` / `data-ds-dark-theme` 上重跑，**不监听 `body.class`**；主题切浅色 / 深色只改 `class`，
+  所以壳量到的是上一套配色。用户手动切一次时主题会顺带给宿主设 theme（`data-ds-dark-theme` 变动），
+  壳才重测 —— 这就是「切一次就正常」的真相：不是切一下能修好，而是碰巧触发了重测。
+  修法（0.5.4，三条在页面侧、一条在壳补丁里）：
+  - `src/boot/engine-intro.js`：动画结束的恢复改成 `assertChrome`（旁路 `chromeSent` 去重）+
+    400ms / 1200ms 各再断言一次，抢在壳排队的 `show` 之后落地；每次要「可见」都顺手 poke 一次
+    `<head>`（append / remove 一个空 `<style>`）逼壳重测。调色板变化后的持续对齐由下面
+    `client.template.js` 的 caption 自愈负责。
+  - `src/client.template.js`：新增 **caption 自愈** —— 起手 90 秒内每 2 秒按壳的同一口径重新量一次
+    （隐藏 span 取 `--dsw-specific-sidebar-fill` / `--dsw-alias-label-primary`）；
+    **一对颜色变了就立刻无去重地要一次「可见」并 poke `<head>`，没变时最多每 15 秒补一次「可见」**
+    （90 秒窗口内约 6 次，只重发、不再 poke；poke 另外限前 3 次）；启动动画期间
+    （`html[data-mar-boot]` 或 `#dshMarBootHost` 还在）一律不动，避免把动画要隐藏的按钮又画回去。
+  - `shell-patch/patches.cjs`（`lib/main.js` 的 `windowsAppearance` handler）：`parkedCaptionPalette`
+    改成**每次有效测量都更新**，`bootChromeSuppressed` 只决定"画不画"、不再决定"记不记"。
+    原来只有启动动画期间才记，导致恢复之后任何一次「要可见」都会重放启动期那一对颜色，把刚测到的
+    新配色盖回去。**这是 0.5.4 唯一一处壳补丁改动，`patch-revision` 变了（`lib/main.js`
+    `bbea47336549`、`lib/preload-app.cjs` `f5937c0a5fa6`、`dist/index.html` `782304e689f7`），
+    需要重打一次。**
+  用户侧：**需要对壳补丁做一次重打** —— `node shell-patch/auto.cjs --repair`（它会先用 pristine 备份
+  还原再打，所以先确认你没有手改过 `app.asar`，这条路会丢弃对它的其它手动改动），打完重启桌面端。
+  0.5.3 及更早的安装会被 `auto.cjs` 判成 `STALE`（旧 revision），这是设计上的"要人来决定"；
+  本机这份安装本次已经重打完毕，只需要重启。
+
+### 新增
+
+- **主题设置面板有了自己的关闭按钮（议题 #1）。** 设置 ›「主题设置」面板的右上角现在有关闭按钮
+  （方角、跟随主题的次级墨色，hover 变主墨色，不参与内容流、不遮任何一行）。
+  它不改宿主的设置弹窗结构：优先点宿主**自己的**关闭控件，探测不到就退到宿主的状态切换，
+  Escape 键兜底。`sweepSettingsPanel` / `[data-mar-pane]` 那套清理机制照旧，按钮跟着面板一起摘。
+
+### 核实
+
+- **分发包里的素材是完整的，`assets/factions/` 下七个文件一张不少。**
+  `马拉松LOGO.svg` / `赛博艾克米.svg` / `阿拉克尼.svg` / `纽卡洛里.svg` / `米达.svg` /
+  `特莱克斯.svg` / `关口.svg` —— 文件名是正常 UTF-8，内容都是合法 SVG；`node scripts/build.cjs`
+  在本机成功，七个 SVG 全部按 `FACTIONS` 内联进 `client.js`。
+- 会看到乱码文件名或"缺一张"的只有一种情况：**取包通道不是 UTF-8**。`git clone` 在非 UTF-8 locale
+  的机器上（或被中间层转成八进制转义）、以及某些镜像重打 tarball 时只保留 ASCII 文件名，
+  都会让 `assets/factions/*.svg` 变成乱码名；镜像若还按扩展名 / 去重过滤，就会看起来少一张。
+- 处理办法：用 GitHub 官方 zip / tarball 重新取一次；或明确让 git 走 UTF-8
+  （`git config --global i18n.logOutputEncoding utf-8`、`core.quotepath false`），
+  并在 UTF-8 代码页下解压。验收入口：`assets/factions/` 下正好 7 个 `.svg`，名字就是上面那七个，
+  `npm run build` 不报 `ENOENT`。细节写进 [docs/INSTALL.md](docs/INSTALL.md) 第六节。
+- **并且让"名字坏了"不再挡住构建。** `scripts/build.cjs` 现在不只看字面文件名：每张图都带自己的
+  `<title>`，所以先按 `<title>` 解析，命中就把那份图读进来；两条路都失败才报错，并把目录里实际
+  有的文件名与读到的 `<title>` 全列出来。这样即使某次检出把 UTF-8 文件名按 ANSI 代码页写坏
+  （`赛博艾克米.svg` → `璧涘崥鑹惧厠绫?svg`），构建照样成功，只在结尾打一行警告 ——
+  构建能过，但检出该修（重新 clone / 切 UTF-8 代码页）。
+  实测（`.generated/verify-faction-names.cjs`）：把 `赛博艾克米.svg` 改成乱码名后构建仍成功、
+  打出一行 rescue 警告，`client.js` 里仍是 7 条 swatch 规则。
+  顺带修了构建日志把字符串长度（UTF-16）当磁盘字节数打的那个 bug（495963 vs 462019），
+  现在打的是 `Buffer.byteLength`。
+
+### 校验
+
+- **被测构建**：`client.js` **495785 bytes**，sha256
+  `94B27DA1EF7CFC25EB52DFDCDF5E8B16660AB93F5C0E4CE73C68595C28189BF5`。
+  `.generated/verify-issues-all.cjs` 一次跑完五组、对 pre / new 双跑，机器可读结果在
+  `.generated/probe-out/issues-all.json`。
+- **五组矩阵（`.generated/client.pre-issuefix.js`（0.5.3）→ 0.5.4 构建）**：
+  - 议题 #1：`FAIL 2P/2F` → `PASS 10P/0F`
+  - 议题 #3：`FAIL 9P/3F` → `PASS 12P/0F`
+  - 议题 #4：`FAIL 10P/6F` → `PASS 16P/0F`
+  - 议题 #5：`FAIL 9P/3F` → `PASS 12P/0F`
+  - caption：`FAIL 11P/13F` → `PASS 24P/0F`。同一份构建用 `--old-parked`（旧主进程语义）跑
+    caption 是 `FAIL 20P/3F`，失败项正是「壳语义」「D: color 跟着变」
+    「D: 恢复后 chrome(true) 重放最后一次测量」—— 所以 caption 组是真绿，不是放宽断言。
+- **caption 关键实测**（`.generated/verify-caption.cjs`：无头页面里搭「假主进程 + 假壳 preload」，
+  照抄真实 `syncWindowsAppearance` 与补丁过的 handler）：
+  - **A（启动动画期间）**：最后一次覆盖层 `color` / `symbolColor` 都是 `rgba(0,0,0,0)`；
+    期间测到并 park 的一对是 `rgba(11,13,11,1)` / `rgba(223,222,224,1)`（`suppressed=true`）——
+    动画期间不会把按钮画回来。
+  - **B（动画结束 3 秒内）**：恢复为 `rgba(11,13,11,1)` / `rgba(223,222,224,1)`，对比度 **14.55**；
+    这次恢复用的就是 boot 期 park 的那一对（`usedParked=true`）。
+  - **B（人为补一发晚到的隐藏请求）**：自愈 **187ms** 内回到可见。
+  - **C（竞态：先留在隐藏态）**：自愈 **111ms**，对比度 **14.55**。
+  - **D（切浅色 / 深色）**：壳的测量被重新触发（`preloadSends` 2→3），覆盖层 `color` 从
+    `rgba(11,13,11,1)` 变成 `rgba(255,255,255,1)`、`symbol` `rgba(11,13,11,1)`、对比度 **19.51**；
+    之后再强制一次 `chrome(true)`，重放的是**最后一次测量**（白），boot 期那对深色不再回来。
+    这两条正是壳改动（`parked` 每次测量都更新）的验收点。
+- **`check.cjs` 新增 5 条守卫**（#5 的 `data-mar-boot` 入口清理 + 8s 兜底、#3 的 `bgUnmarkComposer`
+  与座位内卡片 CSS 兜底、#4 的选中行不得再强灌 `fill`、#1 的关闭按钮必须挂在 `.mar-set-pane` 里、
+  caption 自愈不得在揭幕期间动手），并**证明会红**：`MLS_CLIENT_JS` 指向 pre-issuefix 构建时这 5 条
+  全部 FAIL，对 0.5.4 构建全 PASS；其余既有守卫一条没失效。
+- **`test/*.test.cjs` 全绿**：plugin 158/158、dispose 28/28、boot-engine 全过、done-engine 全过、
+  billing-ui 37/37、auto-apply 47/47、`test/shell-patch.test.cjs` 23/23；
+  `node shell-patch/tests.cjs` 10/10。
+- **壳补丁这一处改动单独验证**：`.generated/simulate-pristine.cjs` 从 pristine 备份整组重放 ——
+  9 条锚点全部命中一次、三个文件重放后都是 `current`、`node --check` 全过，并断言了两条新语义
+  （`parked on every measurement: true` / `painting still gated by suppression: true`）；
+  `.generated/verify-installed.cjs` 对本机安装包逐条 OK（含新加的那两条：park 每次测量都更新、
+  paint 仍受 suppressed 闸门）。本机安装已用 `auto.cjs --repair` 重打成新 revision，
+  `auto.cjs --check` 显示 `already patched (this revision)`。
+- `node scripts/build.cjs` 成功（包括按 `<title>` 找图的兜底），最终构建已产出。
+
+### 致谢
+
+- **议题 #2（`dsh-TUI`）是社区成员用同一套视觉语言做的 CLI 版本**，与桌面主题是两个独立项目、
+  不属于本插件的功能或缺陷范围，这里只致谢。想用 CLI 版请直接去那个仓库。
+
 ## [0.5.3] - 2026-11-04
 
 **修「设置页先点别的选项卡、再点主题设置时，上一页的信息残留」。**

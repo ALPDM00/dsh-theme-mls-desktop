@@ -282,6 +282,15 @@ node node_modules/dsh-theme-mls-desktop/shell-patch/auto.cjs --check --app "<桌
 `link:` 装法）→ 第一次启动时钩子打好补丁，**再启动一次**才看得到（因为被改的那个壳
 正在运行中）。
 
+**升级时检查一次 revision**：补丁集本身也会变（例如 0.5.4 改了 caption 一处语义，
+`lib/main.js` 的 `patch-revision` 变成 `bbea47336549`）。升级后先跑
+`node shell-patch/auto.cjs --check`：
+
+- 显示 `already patched (this revision)` → 不用做任何事，重启桌面端即可；
+- 显示 `STALE`（盘上是上一版补丁）→ 跑一次 `node shell-patch/auto.cjs --repair`
+  （先从 pristine 备份还原再打，会连带丢掉对 `app.asar` 的其它手改，确认没有手改再跑），
+  然后重启桌面端。这一条**故意不自动**：见上面"旧修订不猜"。
+
 ---
 
 ## 六、装完能拿到什么
@@ -297,6 +306,18 @@ node node_modules/dsh-theme-mls-desktop/shell-patch/auto.cjs --check --app "<桌
 | 首帧就不黑屏 | `shell-patch` 改打包的 `dist/index.html` | ✅ 同上 |
 | 启动即最大化 | `shell-patch` 改 `lib/main.js` | ✅ 同上 |
 | 插件确实被挂载 | `profiles/desktop/package.json` 的 `bundles` | ❌ 安装/启用动作本身 |
+
+> **取包后先验一下素材文件名。** `assets/factions/` 下必须是这七个：
+> `马拉松LOGO.svg`、`赛博艾克米.svg`、`阿拉克尼.svg`、`纽卡洛里.svg`、`米达.svg`、
+> `特莱克斯.svg`、`关口.svg`（正常 UTF-8 文件名）。看到乱码名或数量不对，那不是包的问题，
+> 是取包 / 解压通道没走 UTF-8：用 GitHub 官方 zip 或 tarball 重取，或者先
+> `git config --global i18n.logOutputEncoding utf-8`、`git config --global core.quotepath false`
+> 再 clone，并用 UTF-8 代码页解压（`tar -xzf` 或 7-Zip）。`npm run build` 报 `ENOENT`
+> 多半就是这一步。
+>
+> **0.5.4 起构建对文件名免疫**：`scripts/build.cjs` 先按 SVG 自带的 `<title>` 找图，找不到才按字面
+> 文件名 —— 所以即使检出把 UTF-8 名字按 ANSI 代码页写坏（`赛博艾克米.svg` → `璧涘崥鑹惧厠绫?svg`），
+> `npm run build` 也能过，只在结尾打一行警告提醒去修检出。
 
 ---
 

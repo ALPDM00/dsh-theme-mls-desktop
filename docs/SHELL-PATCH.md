@@ -79,6 +79,45 @@ parked 这件事**必须打日志** —— "被压制的重绘"和"什么都没�
 `show: false` 时 `apply()` 会被推迟到 `show`（见上面 934ms vs 3821ms 两行），
 状态若跟着一起推迟，早期那几条重绘就压不住了。
 
+### 0.5.4：恢复链丢了一次（「看不见但能点」）—— **patch-revision 变了，要重打**
+
+0.5.2 修的是"启动期间按钮被画回来"；0.5.4 修的是另一个方向：**启动结束之后**按钮停在隐藏态。
+三个按钮是 `titleBarOverlay`：`color` 与 `symbolColor` 同值时它们"隐形但仍占点击区域"，
+启动动画正是用 `rgba(0, 0, 0, 0)` / `rgba(0, 0, 0, 0)` 藏它们的，动画结束必须再由页面要一次"恢复可见"。
+恢复链有两处会丢：
+
+1. 主进程对"窗口还没显示"的请求排队 `window.once('show', apply)`，**每次排队只带自己那一次调用的
+   `visible`** —— `show` 落在"恢复之后、更晚的一次隐藏请求之前"，最后画上去的就是隐藏态；
+2. 壳自己的测量（preload 的 `syncWindowsAppearance`）只在 `<head>` 变动和 `body` 的
+   `style` / `data-ds-dark-theme` 上重跑，**不监听 `body.class`**；切浅色 / 深色只改 class，
+   所以量到的是上一套配色。手动切一次会顺带设 `data-ds-dark-theme`，壳才重测 ——
+  这就是"切一次就正常"的真相，不是切一下能修好，而是碰巧触发了重测。
+
+**修法三条在页面侧、一条在壳补丁里**：
+
+- `engine-intro.js` 的恢复改成 `assertChrome`（旁路 `chromeSent` 去重）+ 400ms / 1200ms 各再断言一次，
+  且每次要「可见」都顺手 poke 一次 `<head>` 逼壳重测；
+- `client.template.js` 的 caption 自愈负责持续对齐 —— 起手 90 秒内每 2 秒按壳同一口径重新量，
+  变了立刻无去重地重发「可见」并 poke，没变时最多每 15 秒补一次（只重发、不 poke）；
+- `shell-patch/patches.cjs`（`lib/main.js` 的 `windowsAppearance` handler）：`parkedCaptionPalette`
+  改成**每次有效测量都更新**，`bootChromeSuppressed` 只决定"画不画"、不再决定"记不记"。
+  原来的语义是"启动窗口期那一对颜色"，于是恢复之后任何一次「要可见」都会把启动期那一对重放回去 ——
+  实测 boot 结束后 3 秒，浅色底盘的 `rgba(255,255,255,1)` 已经测到并画上去了，紧接着 400ms 的
+  再断言（`who=theme-restore`）又把它盖回 `rgba(11,13,11,1)`，caption 心跳（`who=caption`）同样会盖。
+  现在的 `parked` 含义是"最近一次已知正确的一对颜色"。
+
+**patch-revision 变了，需要重打一次**：`lib/main.js` = `bbea47336549`、
+`lib/preload-app.cjs` = `f5937c0a5fa6`、`dist/index.html` = `782304e689f7`。
+
+```bash
+node shell-patch/auto.cjs --check     # 旧安装会报 STALE（旧 revision）
+node shell-patch/auto.cjs --repair    # 先用 pristine 备份还原，再打新 revision
+```
+
+为什么不是自动的：`auto.cjs` 的 `needsPatch()` 只认 `unpatched`；`STALE` 必须由人显式 `--repair`，
+因为重打会丢弃你对 `app.asar` 的其它手动改动 —— 这条路留成 opt-in，而不是默认替你决定。
+打完重启桌面端。本机这份安装本次已重打完毕，只需要重启。
+
 ### 为什么连打包好的 `index.html` 也要改
 
 桌面端**不把** webserver 的 `webserver/index-inject` 行拼进文档：它由
