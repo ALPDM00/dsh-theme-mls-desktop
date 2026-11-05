@@ -48,3 +48,6 @@ preview.html
 /shell-patch/selftest.cjs
 /shell-patch/tests.cjs
 /shell-patch/verify.cjs
+
+# Git push kit's local CA/config (machine-specific, never commit)
+.dsh-github/
