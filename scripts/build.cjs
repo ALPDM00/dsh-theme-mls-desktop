@@ -279,11 +279,24 @@ if (out.indexOf('var DOT_PAYLOAD = null') !== -1 || dotJson.length < 1000 ||
   process.exit(1);
 }
 
-fs.writeFileSync(path.join(root, 'client.js'), out);
-// Bytes, not UTF-16 length: the bundle carries a lot of Chinese, so the in-memory
-// string is ~7% shorter than the file and a report that printed it read as a
-// truncated write.
-console.log('[build] wrote client.js (' + Buffer.byteLength(out, 'utf8') + ' bytes)');
+// 2026-11-05 用户反馈：只是推送（push）时界面也闪成了任务完成动画。根因不是 git，
+// 而是推送前习惯性地跑了一次 build：即使源码没变，fs.writeFileSync 也会刷新
+// client.js 的 mtime，DSH 的 client-hmr 按 bundle 的 mtime/ctime/size 判断“重编译”，
+// 于是把正在跑的客户端插件热重载了一次，收尾动画 / 运行动画被从中间截断。
+// 因此内容完全一致时**不写盘**：推送、复查构建都不再可能触发 HMR；源码真的变了才写。
+const outPath = path.join(root, 'client.js');
+let previous = null;
+try { previous = fs.readFileSync(outPath, 'utf8'); } catch (e) { previous = null; }
+if (previous === out) {
+  console.log('[build] client.js unchanged (' + Buffer.byteLength(out, 'utf8') +
+    ' bytes) — not rewriting, so client-hmr stays quiet');
+} else {
+  fs.writeFileSync(outPath, out);
+  // Bytes, not UTF-16 length: the bundle carries a lot of Chinese, so the in-memory
+  // string is ~7% shorter than the file and a report that printed it read as a
+  // truncated write.
+  console.log('[build] wrote client.js (' + Buffer.byteLength(out, 'utf8') + ' bytes)');
+}
 console.log('[build]   boot css    ' + bootCss.length + ' bytes');
 console.log('[build]   boot html   ' + bootHtml.length + ' bytes');
 console.log('[build]   marathon    ' + bootMarathon.length + ' bytes');
