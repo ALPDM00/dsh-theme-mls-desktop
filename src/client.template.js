@@ -75,8 +75,26 @@ window.__ModuleLoader__.load({
       if (doc && doc.documentElement) doc.documentElement.removeAttribute('data-mar-boot');
 
       // ---- idempotency -----------------------------------------------------
-      if (typeof window !== 'undefined' && window.__dshThemeMarathonApplied) return;
+      // 2026-11-06: DSH 的 client HMR（dsh-client-modules `replace()`）在重跑本插件
+      // 前会先 `removeOwnedStyles(id)` —— 直接摘掉我们的 <style data-plugin=…>，然后
+      // 才 import + refresh。如果上一次的 dispose 没跑完（或没被调用），下面这行闸门
+      // 会让新 apply 直接 return，页面就停在「样式表被摘掉、旧节点还在」的半死状态：
+      // 主题整体变淡，点阵失去 `position:absolute` 变成普通块，掉到输入框左下角。
+      // 所以闸门以「我们的样式表还在」为条件：样式表没了就当作全新 apply（旧 host
+      // 会在 runApply / dotSyncDom 里按 id 清掉）。
+      if (typeof window !== 'undefined' && window.__dshThemeMarathonApplied) {
+        var marSheet = doc
+          ? (doc.querySelector('style[data-plugin="' + PLUGIN_ID + '"]') ||
+             doc.querySelector('style[data-dyn="' + PLUGIN_ID + '"]'))
+          : null;
+        if (marSheet) return;
+        window.__dshThemeMarathonApplied = false;
+      }
       if (typeof window !== 'undefined') window.__dshThemeMarathonApplied = true;
+      // 本次安装的实例号：旧实例（HMR 半拆除）在下一个 tick 看到令牌不一致会退场。
+      INSTANCE_TOKEN = (typeof window !== 'undefined')
+        ? (window.__marThemeRunToken = (window.__marThemeRunToken || 0) + 1)
+        : 0;
 
       if (!doc) return;
 
@@ -3644,7 +3662,13 @@ try {
             runObserver.observe(doc.body, { childList: true, subtree: true });
           }
         } catch (e) { runObserver = null; }
-        runTimer = setInterval(function () { runSyncDom(); dotSyncDom(); }, 400);
+        runTimer = setInterval(function () {
+          // HMR 半拆除时旧实例的定时器可能还活着：新实例 apply 后令牌会变，旧实例
+          // 在这里自行退场（只摘自己的两个动画，不碰主题）。
+          if (staleInstance()) { retireStale(); return; }
+          runSyncDom();
+          dotSyncDom();
+        }, 400);
         runSyncDom();
         dotSyncDom();
       }
@@ -3652,6 +3676,21 @@ try {
         if (runTimer) { clearInterval(runTimer); runTimer = null; }
         if (runKickTimer) { clearTimeout(runKickTimer); runKickTimer = 0; }
         if (runObserver) { try { runObserver.disconnect(); } catch (e) {} runObserver = null; }
+      }
+      // ---- instance token（2026-11-06） --------------------------------------
+      // DSH 的 client HMR 会重跑 apply()。如果上一次的 dispose 没跑完（实测：
+      // removeOwnedStyles 先摘了样式表，但旧实例的 400ms 定时器还活着），旧实例会
+      // 继续往座位里挂点阵/条带，和新实例打架。每次真正安装都递增一个全局令牌，
+      // 旧实例在下一个 tick 自行退场。
+      var INSTANCE_TOKEN;   // 赋值在 apply 顶部的安装路径里（见 __marThemeRunToken）
+      function staleInstance() {
+        return typeof window !== 'undefined' &&
+          window.__marThemeRunToken !== INSTANCE_TOKEN;
+      }
+      function retireStale() {
+        runUnwatch();
+        runUnmount();
+        dotUnmount();
       }
       function runStateText() {
         if (!runEnabled()) return '已关闭';
@@ -3695,7 +3734,10 @@ try {
       function dotEnabled() { return DOT_STATE.on !== false; }
 
       var dotHost = null, dotEngine = null, dotScriptEl = null, dotBroken = false;
-      var dotObserver = null;
+      var dotObserver = null, dotAnchor = null;
+      // 原生输入卡的基准几何（只看可见卡时更新）：审批/提问接管期间沿用它，
+      // 点阵因此不会因为接管卡宽窄不同而挪位。见 dotBaseOf()。
+      var dotBase = null;
 
       function dotEngineApi() {
         var api = (typeof window !== 'undefined') ? window.__marDotEngine : null;
@@ -3719,6 +3761,7 @@ try {
       }
       function dotUnmount() {
         if (dotObserver) { try { dotObserver.disconnect(); } catch (e) {} dotObserver = null; }
+        dotAnchor = null;
         if (dotEngine) {
           try { if (typeof dotEngine.destroy === 'function') dotEngine.destroy(); } catch (e) {}
           dotEngine = null;
@@ -3739,62 +3782,143 @@ try {
       // 2026-11-05 bug 修复：输入框高度/宽度变化后（textarea 变高、窗口缩放）
       // 必须**重新量**，否则绝对定位的宿主会停在旧坐标上“乱跑”。现在每次
       // 400ms 轮询 + ResizeObserver 都会调用 dotPlace() 重算 top/right/size。
-      function dotGeom(seat, card) {
+      //
+      // 2026-11-06 bug：审批卡 / 提问卡接管 composer 时，slot 链的 overlay
+      // fallback 把原生 composer 留在 DOM 里，只给外层套一个 display:none
+      // （dsh-client-ui-renderer 的 renderChainResult）。隐藏卡的 rect 全是 0，
+      // 旧公式 top = 0 - seat.top - size - 8 被 clamp 到 0，点阵于是跳到 seat
+      // 顶部——用户看到它“自己跑到输入框上面”，审批消失（卡恢复可见）又落回
+      // 右下角。锚点必须取**当前可见**的那张卡：
+      //   · 平时：[data-composer-card]；
+      //   · 审批/提问接管：[data-approval-key] / [data-question-key] 里的
+      //     card（根节点的第一个元素子节点）。
+      // 一个都量不到（例如揭幕/animation 期间整体隐藏）就收起点阵，宁可没有
+      // 也不要把 top 钳在 0 上停在半空。
+      //
+      // 2026-11-06 第二轮（用户：“审批出现时点阵会略微改变位置，想固定住”）：审批卡
+      // 的 max-width 是 chat-content-width，输入卡是它 +32，所以接管时右侧留白
+      // 变宽 16px，按接管卡重算就会横移 8px。位置必须**钉在审批出现前的那一帧**：
+      // 基准卡（宽度 + 底边距）只在原生输入卡可见时更新，接管期间沿用缓存。
+      // 纵向改用 seat 底边做锚（两种卡都贴 seat 底部），高度变化不影响。
+      function dotAnchorOf(seat) {
+        var i, r, el;
+        try {
+          var cards = seat.querySelectorAll('[data-composer-card]');
+          for (i = 0; i < cards.length; i++) {
+            r = cards[i].getBoundingClientRect();
+            if (r.width > 1 && r.height > 1) return { el: cards[i], takeover: false };
+          }
+          var roots = seat.querySelectorAll('[data-approval-key],[data-question-key]');
+          for (i = 0; i < roots.length; i++) {
+            el = roots[i].firstElementChild;
+            if (!el) continue;
+            r = el.getBoundingClientRect();
+            if (r.width > 1 && r.height > 1) return { el: el, takeover: true };
+          }
+        } catch (e) {}
+        return null;
+      }
+      function dotBaseOf(seat, anchor) {
         var sr = null, cr = null;
         try {
           sr = seat.getBoundingClientRect();
-          cr = card.getBoundingClientRect();
+          cr = anchor.el.getBoundingClientRect();
         } catch (e) { return null; }
-        if (!sr || !cr) return null;
-        var margin = (sr.width - cr.width) / 2;
+        if (!sr || !cr || cr.width < 2 || cr.height < 2) return null;
+        // seat 宽度变了（窗口缩放）说明缓存已过期：接管期间量不到输入卡，只能
+        // 先用接管卡兜底，等接管结束再用输入卡重建基准。
+        if (anchor.takeover) {
+          if (dotBase && Math.abs(sr.width - dotBase.seatWidth) <= 2) return dotBase;
+          return { width: cr.width, bottomGap: sr.bottom - cr.bottom, seatWidth: sr.width };
+        }
+        dotBase = { width: cr.width, bottomGap: sr.bottom - cr.bottom, seatWidth: sr.width };
+        return dotBase;
+      }
+      function dotGeom(seat, anchor) {
+        var sr = null, base = null;
+        try { sr = seat.getBoundingClientRect(); } catch (e) { return null; }
+        // 零尺寸 = display:none 的 fallback 卡；量不出就返回 null（收起），
+        // 绝不让位置落进 clamp 变成 0。
+        base = dotBaseOf(seat, anchor);
+        if (!sr || !base || base.width < 2) return null;
+        var margin = (sr.width - base.width) / 2;
         if (margin < DOT_MIN + DOT_PAD * 2) return null;
         var size = Math.max(DOT_MIN, Math.min(DOT_MAX, Math.round(margin - DOT_PAD * 2)));
-        // 固定在输入卡的**右下角**：右边居中于右侧空白，底边距卡片底
-        // DOT_BOTTOM_PAD（卡片长高时它跟着底边走，不会往上漂）。
-        var top = Math.round((cr.bottom - sr.top) - size - DOT_BOTTOM_PAD);
-        if (top < 0) top = 0;
+        // 固定在卡的**右下角**：右边居中于右侧空白，底边距卡片底
+        // DOT_BOTTOM_PAD（卡片长高时它跟着底边走，不会往上漂）。以 seat 底边
+        // 为锚，审批卡与输入卡切换时纵向也不动。
+        var bottom = Math.round(base.bottomGap + DOT_BOTTOM_PAD);
+        if (bottom < 0) bottom = 0;
         return {
           size: size,
-          top: top,
+          bottom: bottom,
           right: Math.round(margin / 2 - size / 2)
         };
       }
-      function dotPlace(seat, card) {
+      function dotPlace(seat, anchor) {
         if (!dotHost) return false;
-        var g = dotGeom(seat, card);
+        var g = dotGeom(seat, anchor);
         if (!g) return false;
+        // 定位必须是内联的：HMR 重载会先摘掉主题样式表，若这时旧 host 还活着，
+        // 只靠样式表里的 `position:absolute` 会让它变成 seat 里的普通块（掉到输入
+        // 框左下）。内联 position 让点阵在任何「半拆除」状态下都还在右下角。
+        if (dotHost.style.position !== 'absolute') {
+          dotHost.style.position = 'absolute';
+          dotHost.style.pointerEvents = 'none';
+          dotHost.style.zIndex = '1';
+        }
         var px = g.size + 'px';
         if (dotHost.style.width !== px) {
           dotHost.style.width = px;
           dotHost.style.height = px;
         }
         dotHost.style.right = g.right + 'px';
-        dotHost.style.top = g.top + 'px';
+        dotHost.style.bottom = g.bottom + 'px';
         return true;
+      }
+      // 锚点会在「正常输入卡 ⇄ 审批/提问卡」之间切换，观察对象要跟着换。
+      function dotObserve(seat, anchor) {
+        if (dotObserver && dotAnchor && dotAnchor.el === anchor.el) return;
+        if (dotObserver) { try { dotObserver.disconnect(); } catch (e) {} dotObserver = null; }
+        dotAnchor = anchor;
+        if (typeof ResizeObserver !== 'function') return;
+        try {
+          dotObserver = new ResizeObserver(function () {
+            if (dotHost && dotAnchor) { dotPlace(seat, dotAnchor); dotPush(); }
+          });
+          dotObserver.observe(seat);
+          dotObserver.observe(anchor.el);
+        } catch (e) { dotObserver = null; }
       }
       function dotSyncDom() {
         if (!dotEnabled()) { if (dotHost) dotUnmount(); return; }
         if (!DOT_PAYLOAD && !dotEngineApi()) return;
-        var row = null, seat = null, card = null;
+        var row = null, seat = null;
         try {
           row = doc.querySelector('[data-chat-running]');
           seat = doc.querySelector('[data-composer-seat]');
-          card = doc.querySelector('[data-composer-card]');
         } catch (e) { row = null; }
-        if (!row || row.hasAttribute('data-holding') || !runRowVisible(row) || !seat || !card) {
+        if (!row || row.hasAttribute('data-holding') || !runRowVisible(row) || !seat) {
+          if (dotHost) dotUnmount();
+          return;
+        }
+        // 可见的卡：平时是输入卡，被审批/提问接管时换成接管卡。
+        var anchor = dotAnchorOf(seat);
+        if (!anchor) {
           if (dotHost) dotUnmount();
           return;
         }
         if (dotHost && dotHost.parentNode === seat) {
-          if (!dotPlace(seat, card)) {
+          if (!dotPlace(seat, anchor)) {
             // 右侧空白被压到放不下 64px：收起，等空间回来再挂。
             dotUnmount();
             return;
           }
+          dotObserve(seat, anchor);
           dotPush();
           return;
         }
-        var g = dotGeom(seat, card);
+        var g = dotGeom(seat, anchor);
         if (!g) {
           if (dotHost) dotUnmount();
           return;
@@ -3803,12 +3927,22 @@ try {
         if (!dotEnsureEngine()) { dotBroken = true; syncDotState(); return; }
         var api = dotEngineApi();
         if (!api) { dotBroken = true; syncDotState(); return; }
+        // 同上：把上一个实例留下的同名 host 清掉。
+        try {
+          var staleDots = doc.querySelectorAll('#dshMarDotHost');
+          for (var sd = 0; sd < staleDots.length; sd++) {
+            if (staleDots[sd] !== dotHost && staleDots[sd].parentNode) {
+              staleDots[sd].parentNode.removeChild(staleDots[sd]);
+            }
+          }
+        } catch (e) {}
         var host = doc.createElement('div');
         host.id = 'dshMarDotHost';
         host.className = 'mar-dot-host';
         host.setAttribute('aria-hidden', 'true');
-        host.style.cssText = 'width:' + g.size + 'px;height:' + g.size + 'px;' +
-          'right:' + g.right + 'px;top:' + g.top + 'px;';
+        host.style.cssText = 'position:absolute;pointer-events:none;z-index:1;' +
+          'width:' + g.size + 'px;height:' + g.size + 'px;' +
+          'right:' + g.right + 'px;bottom:' + g.bottom + 'px;';
         try { seat.appendChild(host); } catch (e) { return; }
         dotHost = host;
         try { dotEngine = api.create(host, { reduced: runReduced() }); } catch (e) { dotEngine = null; }
@@ -3819,17 +3953,9 @@ try {
           return;
         }
         dotBroken = false;
-        // 输入框尺寸变化（textarea 长高、卡片换宽、seat 因条带出现而变高）时
-        // 立刻重新贴合右下角，不用等下一次 400ms 轮询。
-        try {
-          if (typeof ResizeObserver === 'function') {
-            dotObserver = new ResizeObserver(function () {
-              if (dotHost) { dotPlace(seat, card); dotPush(); }
-            });
-            dotObserver.observe(seat);
-            dotObserver.observe(card);
-          }
-        } catch (e) { dotObserver = null; }
+        // 输入框 / 接管卡尺寸变化（textarea 长高、卡片换宽、审批卡展开、seat
+        // 因条带出现而变高）时立刻重新贴合右下角，不用等下一次 400ms 轮询。
+        dotObserve(seat, anchor);
         dotPush();
         syncDotState();
       }
@@ -3852,6 +3978,17 @@ try {
       }
 
       function runApply() {
+        // 上一次实例（HMR 半拆除）可能把 #dshMarRunHost / #dshMarDotHost 留在
+        // 座位里。按 id 兜底清掉，别让两个实例各挂一份（点阵会闪、条带会叠）。
+        try {
+          var staleHosts = doc.querySelectorAll('#dshMarRunHost, #dshMarDotHost');
+          for (var sh = 0; sh < staleHosts.length; sh++) {
+            if (staleHosts[sh] !== runHost && staleHosts[sh] !== dotHost &&
+                staleHosts[sh].parentNode) {
+              staleHosts[sh].parentNode.removeChild(staleHosts[sh]);
+            }
+          }
+        } catch (e) {}
         if (runEnabled()) {
           body.classList.add('mar-run-on');
           runSyncDom();
@@ -3920,9 +4057,12 @@ try {
         '<rect x="1.6" y="1.6" width="12.8" height="12.8" stroke="currentColor" stroke-width="1.2"/>' +
         '<path d="M8 4.4v7.2M4.4 8h7.2" stroke="currentColor" stroke-width="1.2"/></svg>';
 
-      // ---- update check（2026-11-05，用户选项 2：轻量提示，不自动安装）------
-      // 已安装用户不会从 DSH 得到更新提示（本包不在 npm registry，`updateRefusal`
-      // 只认 registry 来源）。这里由客户端轻量地读 GitHub main 的 package.json，
+      // ---- update check（2026-11-05；2026-11-06 起 npm registry 优先）------
+      // 0.6.11 起本包发布在 npm registry：从 registry 安装的用户，DSH 插件管理器
+      // 自己就会列出新版本并一键更新（它只对 registry 来源的包做 listVersions /
+      // updateBundle，见 @deepseek-ai/dsh-plugin-manager）。客户端这份检查是给
+      // 「GitHub tarball / 手工拷贝」用户的兜底：先问 npm registry 的 /latest
+      // （与插件管理器同一个事实来源、发布后即时可见），失败再退 GitHub。
       // 版本比本地新时：
       //   · 在「主题设置」nav 格右上角点一个**跟主题色**的小圆点；
       //   · 在主题设置面板最上方显示「可更新 / 检查更新 / 不再提示」横幅。
@@ -3930,9 +4070,11 @@ try {
       // 版本时还会再提示。网络/代理失败时静默，用户点「检查更新」才显示失败原因。
       var UPDATE_STORE_KEY = 'mar.update.v1';
       var UPDATE_TTL = 6 * 60 * 60 * 1000;
-      // API 的 contents 接口没有 raw 那条 5 分钟 CDN 缓存（实测 push 后 raw 仍给
-      // 旧版本），所以优先 API；两个 raw 入口作为限流/网络失败时的备选。
+      // npm registry 的 /latest 是权威来源，发布后即时可见；GitHub API 的 contents
+      // 接口没有 raw 那条 5 分钟 CDN 缓存（实测 push 后 raw 仍给旧版本），留作
+      // 第二兜底；两个 raw 入口再兜限流/网络失败。
       var UPDATE_SOURCES = [
+        { url: 'https://registry.npmjs.org/dsh-theme-mls-desktop/latest', kind: 'npm' },
         { url: 'https://api.github.com/repos/ALPDM00/dsh-theme-mls-desktop/contents/package.json?ref=main&_=', kind: 'api' },
         { url: 'https://raw.githubusercontent.com/ALPDM00/dsh-theme-mls-desktop/main/package.json', kind: 'raw' },
         { url: 'https://gh-proxy.com/https://raw.githubusercontent.com/ALPDM00/dsh-theme-mls-desktop/main/package.json', kind: 'raw' }
@@ -4085,6 +4227,7 @@ try {
           var req = null;
           var options = { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined };
           if (src.kind === 'api') options.headers = { Accept: 'application/vnd.github+json' };
+          if (src.kind === 'npm') options.headers = { Accept: 'application/json' };
           try { req = fetch(url, options); }
           catch (e) { clearTimeout(timer); attempt(); return; }
           req.then(function (res) {

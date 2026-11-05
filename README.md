@@ -30,9 +30,10 @@
   （标题 / 用时 / 当前工具）。② 《动画1》的 21×21 点阵有机体贴在输入框右侧，从零逐格
   生长，原生文字不变。另有「跟随主题色」开关：默认固定 `#C0FE04` / `#8F96B2`，
   打开后才跟随主题强调色。见 [docs/RUNNING.md](docs/RUNNING.md)。
-- **更新提示**：读取 GitHub `main` 的 `package.json` 与本地版本比较；有新版本时
-  设置 ›「主题设置」的 nav 右上角点一个**跟主题色**的小圆点，进入后顶部横幅显示
-  「可更新 / 检查更新 / 不再提示」。**只提示，不自动安装**（用户仍需按安装步骤手动覆盖并重启）。
+- **更新提示**：已发布到 npm registry。从 registry 安装的用户，DSH 插件管理器自己会列出
+  新版本并**一键更新**；另外设置 ›「主题设置」也会读 npm 的 `latest` 与本地版本比较，
+  有新版本时在 nav 右上角点一个**跟主题色**的小圆点，进入后顶部横幅显示
+  「可更新 / 检查更新 / 不再提示」（GitHub 安装的用户同样能收到）。不自动安装。
 - **任务完成动画**：一轮正常结束时四拍收尾 —— 反向红 S 扫屏 → **24px 矩阵跟着红扫逐块亮起**
   → 渐黑 + 纯黑静置 → 纯黑方块逐块硬切揭示界面 + 墨色点阵 + 绿色横幅（`//RUN_COMPLETE`）。
   点一下或按任意键就消失，且不吞掉那一次点击。见 [docs/COMPLETION.md](docs/COMPLETION.md)。
@@ -64,11 +65,42 @@
 > 报错本身不提任何替代路径 ——
 > 完整对照表与逐项排错见 [docs/INSTALL.md](docs/INSTALL.md)。
 
+### 从 npm 安装（0.6.11 起，推荐：装一次，以后一键更新）
+
+本包已发布为 npm 包 **`dsh-theme-mls-desktop`**（`npm view dsh-theme-mls-desktop version`）。
+用 DSH 自带的插件管理器安装，是唯一「装一次、之后一键更新」的路：
+
+1. 设置 › **插件**（插件管理器）→ 安装 → 输入包名 `dsh-theme-mls-desktop`。
+   （在 DSH 会话里，也可以让 AI 用 `plugin_manager` 工具的 `install_bundle`，
+   `target` 同样填包名。）
+2. 插件管理器安装时会**顺带把包名写进 `dsh.profile.bundles` 并启用** ——
+   这跟 `dsh plugin --profile desktop add` 不一样，后者在桌面端会被闸门挡掉、
+   而且不写 `bundles`（见下面的手工安装）。
+3. 装完重启桌面端一次。壳补丁由 `postinstall` 或「插件加载时的钩子」自动打，
+   即使被 pnpm 拦下也不影响主题。
+
+以后更新：插件管理器里这个包的版本列表会显示**可更新**，选中新版本点更新即可。
+它先用 `pnpm view` 校验新版本、再原地替换，**安装失败会回滚到旧版本**；更新完重启桌面端。
+想钉死某个版本就装 `dsh-theme-mls-desktop@0.6.10` 这种精确版本。
+
+> 主题设置页的「可更新」小圆点/横幅同样改读 npm registry 的 `latest`，
+> 给 GitHub tarball / 手工拷贝安装的用户兜底；它**只提示，不自动安装**。
+
+### 手工安装（没有插件管理器 / 想从源码跑）
+
 desktop profile 启动时只认两件事：**在 `node_modules` 里能解析到本包**，
 以及 **`dsh.profile.bundles` 里有它的包名**。达成这两件事就有主题。
 
 ```bash
-# ① 取包 —— 不要指望 git
+# ① 取包 —— 首选 npm registry（0.6.11 起）
+#    npm 的 tarball 由 registry 直接给，字节稳定，不会像镜像那样反复重打包、
+#    导致 pnpm 的完整性校验来回失败：
+npm pack dsh-theme-mls-desktop@latest
+#    → dsh-theme-mls-desktop-0.6.11.tgz；解出来按 ② 拷进 node_modules 即可
+#    （也可以 npm install --prefix <临时目录> dsh-theme-mls-desktop，再把
+#     node_modules/dsh-theme-mls-desktop 整个拷过去。）
+
+#    只有 npm 不可达时，才退回 GitHub 镜像：
 #    本机 git 的 schannel 常建不起 TLS（SEC_E_NO_CREDENTIALS），
 #    `github:` 这类 spec 无论交给 dsh 还是 pnpm 都会死在取包上。
 #    改用 node 直接抓 codeload 的 tar.gz（走镜像，绕开 github.com 直连不通）：
@@ -84,8 +116,8 @@ tar -xzf mls.tar.gz
 #      <解压目录>  ->  $DSH_HOME/profiles/desktop/node_modules/dsh-theme-mls-desktop
 
 # ③ 让 desktop profile 真挂上这个 bundle
-#    —— desktop profile 的 CLI 不会自己写 `bundles`（上游行为，不是本包能改的），
-#       所以**无论用哪条路装的，这一步都得手工补**
+#    —— 手工路径（拷目录 / CLI 转发 pnpm）不会自己写 `bundles`，
+#       所以这一步得手工补；走插件管理器安装则不用（它自己写并启用）
 node -e "
   const fs = require('fs')
   const p = (process.env.DSH_HOME || '') + '/profiles/desktop/package.json'
@@ -150,7 +182,7 @@ npm run patch:revert    # 用 pristine 备份还原 app.asar
 | **运行动画** | 启用开关（默认开）+ 状态小字。把输入框上方原生「深度求索中」提示换成 132px 条带：居中人形 + 短直线 + 光点；三条文字同色不加粗，跟随真实用时与当前工具 |
 | **点阵动画** | 启用开关（默认开）+ 状态小字。把《动画1》的 21×21 点阵有机体放在输入框右侧空白里，从零逐格生长；新生格绿、成熟格 `#8F96B2`；**不改原生文字提示**；右侧空间不足时自动缩小或隐藏 |
 | **跟随主题色** | 开关（默认关）。关 = 两个动画用固定 `#C0FE04` / `#8F96B2`；开 = 条带墨色与点阵新生格改读当前主题强调色（成熟格仍 `#8F96B2`） |
-| **更新提示** | 不是设置项：「主题设置」nav 右上角的小圆点（跟主题色）+ 顶部横幅「可更新 / 检查更新 / 不再提示」。检查 GitHub `main` 的 `package.json`，结果缓存 6 小时；只提示，不自动安装 |
+| **更新提示** | 不是设置项：「主题设置」nav 右上角的小圆点（跟主题色）+ 顶部横幅「可更新 / 检查更新 / 不再提示」。读 npm registry 的 `latest`（失败退 GitHub），结果缓存 6 小时；只提示，不自动安装。从 registry 安装的话，插件管理器本身也能一键更新 |
 | **任务完成动画** | 启用开关 + 完成文案 + 预览按钮 + 状态小字 |
 | **每轮 Token 结算** | 启用开关。⚠️ 结算纸条**固定用最初那支酸绿**，不跟主题色走 |
 
@@ -164,7 +196,8 @@ npm run patch:revert    # 用 pristine 备份还原 app.asar
 
 | 文档 | 内容 |
 | --- | --- |
-| [docs/INSTALL.md](docs/INSTALL.md) | 完整安装步骤（含"让 AI 代装"）、排错、卸载与残留、以及"装好了却没反应"的逐项检查 |
+| [docs/INSTALL.md](docs/INSTALL.md) | 完整安装步骤（npm / 插件管理器、手工安装、"让 AI 代装"）、排错、卸载与残留、以及"装好了却没反应"的逐项检查 |
+| [docs/PUBLISHING.md](docs/PUBLISHING.md) | 维护者发布指南：npm 账号与首次发布、每次发版的检查清单、GitHub Actions 自动发布、以及"用户怎么一键更新" |
 | [docs/SHELL-PATCH.md](docs/SHELL-PATCH.md) | 壳补丁做了什么、为什么需要、怎么升级与还原、安全模型 |
 | [docs/COMPLETION.md](docs/COMPLETION.md) | 任务完成动画的四拍、每个旋钮、以及它怎么判断"一轮结束了" |
 | [docs/RUNNING.md](docs/RUNNING.md) | 运行动画条带：挂载点与 DOM 契约、三行文字的数据来路、思考 / 运行两种视觉、设置与已知边界 |

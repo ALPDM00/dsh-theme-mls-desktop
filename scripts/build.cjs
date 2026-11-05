@@ -133,7 +133,8 @@ const fontB64 = fs.readFileSync(fontPath).toString('base64');
 // ---- 2) boot payload sources ----------------------------------------------
 const tplPath = path.join(root, 'src', 'client.template.js');
 const tpl = read('src/client.template.js');
-// The client half compares this against the latest package.json on GitHub main.
+// The client half compares this against the npm registry's `latest` (falling back
+// to package.json on GitHub main).
 const pluginVersion = JSON.parse(read('package.json')).version;
 
 const bootCss     = read('src/boot/boot.css');

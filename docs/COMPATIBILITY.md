@@ -93,7 +93,8 @@ DSH 的组件、路由与**数据**从不被写；运行条带只**读**会话�
 | `[data-chat-running][data-holding]` | 回合已结束、动作行尚未替换（整行 `visibility:hidden`） | 出现即卸载条带 |
 | `[data-chat-running] [role="status"]` | 宿主自己的本地化「深度求索中」文案 | 标题行直接读它，中英文跟宿主 |
 | `[data-composer-seat]` | `position:sticky; bottom:0` 的输入框座位 | 两个动画都挂它：条带是 firstChild；点阵是它内部的绝对定位层 |
-| `[data-composer-card]` | 输入卡本身（宿主自己的 `GRgSLq_card` 带这个 data 属性） | 点阵按它的实测宽度算右侧空白与垂直中心 |
+| `[data-composer-card]` | 输入卡本身（宿主自己的 `GRgSLq_card` 带这个 data 属性） | 点阵的**基准几何**：按它的实测宽度算右侧空白，底边距只有它可见时更新；接管态里它被 `display:none` 包着（rect 全 0），此时沿用上一帧缓存，点阵完全不动 |
+| `[data-approval-key]` / `[data-question-key]` | 审批卡 / 提问卡接管 composer 时的根节点（`dsh-client-ui-approval` / `dsh-client-ui-user-questions`） | 点阵的兜底锚点：根节点的第一个元素子节点就是可见卡片；没有缓存（例如一进来就在审批）或 seat 宽度变了才用它重算 |
 | `--dsh-composer-side-clearance` / `--dsh-composer-dock-inset` / `--dsh-composer-card-max-width` | 输入卡宽度预算（继承自 `.an3WzG_body`） | 条带宽度按 queue dock 同一公式算，缺变量时回落到 16 / 8 / 952 |
 | `ConversationSnapshot.turnTimings` / `.runningCalls` / `.partial` | 用时 / 当前工具 / 生成阶段 | 只读；缺失时逐项降级（用时退回「第一次看见运行行」） |
 
@@ -101,6 +102,15 @@ React 侧结论：`RunningStatus` 的 children 是 3 个无 key 的 span，`hold
 running / holding 共用同一个 key `"running"` —— 是 props 更新不是 remount。两个动画都挂在
 `[data-composer-seat]`（React children 只有 composer）里，因此不进 React 的 diff；运行行被
 整个卸载时由我们自己的 DOM 轮询撤销。详见 [docs/RUNNING.md](RUNNING.md)。
+
+### client HMR（`dsh-client-modules` 的 `replace()`）
+
+`replace()` 的顺序是：`tearDownEntryFiber` → `removeOwnedStyles(id)`（按
+`style[data-plugin="<包名>"]` 直接摘样式表）→ `modules.import` → `entry.refresh()`。
+实测旧实例的 dispose 不一定跑完，因此主题侧做了三层兜底：幂等闸门以“样式表还在”为
+条件（被摘掉就当作全新 apply，主题自愈）、点阵 host 的关键定位内联、每次安装递增
+`window.__marThemeRunToken` 让旧实例的 400ms 定时器自行退场，并在挂载前按 id 清掉
+上一个实例留下的 `#dshMarRunHost` / `#dshMarDotHost`。
 
 ## 已知限制
 

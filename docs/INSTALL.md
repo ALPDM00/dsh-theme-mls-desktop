@@ -7,26 +7,29 @@
 
 ## 〇、如果你让 AI 代装（在 DSH 会话里）
 
-越来越多的人是**把仓库链接丢给自己的 AI，让它装**。这条路在这台机器上实测会连撞五道墙，
-其中两道是结构性的（不是"再试一次就好"）。先看这张表，能省一整轮排查：
+越来越多的人是**把仓库链接丢给自己的 AI，让它装**。下面这张表是 2026-10-11 在
+「从 GitHub 取包 + 手工拷」这条路上的实测：五道墙，其中两道是结构性的。
+**0.6.11 起本包发布到了 npm registry**（见第一节）：让插件管理器按包名安装即可，
+第 ①、⑤ 道墙不再存在；下表留着给「只能从 GitHub 取包」的情况排错。
 
 | # | 关卡 | 实测结果 | 属于谁 |
 | --- | --- | --- | --- |
 | 1 | 拿到仓库 | `web_fetch` 抓 `github.com` / `raw.githubusercontent.com` 报 `resolves to a non-public IP address` | 网络环境 |
 | 2 | 调用 `dsh` | 命中 `dsh.ps1`，默认执行策略报 `无法加载文件…禁止运行脚本`（`npm.ps1` 同理） | 环境 / 写法 |
-| 3 | `dsh plugin --profile desktop add …` | **被闸门拒绝，exit 1**（详见第一节） | 宿主闸门 |
-| 4 | 手工补 `bundles`（第四节，**必需**） | **`EPERM: operation not permitted`** + `[sandbox: file access denied under workspace-write mode]` | 会话沙箱 |
+| 3 | `dsh plugin --profile desktop add …` | **被闸门拒绝，exit 1**（详见第二节） | 宿主闸门 |
+| 4 | 手工补 `bundles`（手工路径第五节；插件管理器会自动写） | **`EPERM: operation not permitted`** + `[sandbox: file access denied under workspace-write mode]` | 会话沙箱 |
 | 5 | 取包本体 | `git clone` → `schannel: AcquireCredentialsHandle failed: SEC_E_NO_CREDENTIALS` | git 后端 |
 
-第 3 与第 4 是致命的：第 ① 步被拒之后，本文第四节说"无论走哪条路都必需"，
-而**第四节恰恰是最先死的一步**，且死的时候报的是与插件无关的 `EPERM`。
+第 3 与第 4 是致命的：走手工路径时，本文第五节说「手工路径必需」，
+而**第五节恰恰是最先死的一步**（AI 的会话沙箱写不了 `$DSH_HOME`），
+死的时候报的还是与插件无关的 `EPERM`。走插件管理器就没有这两步。
 
 ### 唯一走得通的取包通道：node 抓 codeload tarball
 
 关键对比：**git 的 schannel 建不起 TLS，但 node 自己的网络栈是好的。**
 
 ```bash
-# node 能连通 registry（对本包返回 404 = 未发布到 npm，不是网络不通）
+# node 能连通 registry（0.6.11 起对本包返回 200 = 已发布；404 = 没发布 / 网络不通）
 node -e "fetch('https://registry.npmjs.org/dsh-theme-mls-desktop').then(r=>console.log(r.status))"
 
 # 所以直接抓 GitHub 的 tar.gz（走镜像绕开 github.com 直连）：
@@ -65,17 +68,61 @@ dsh: pnpm printed nothing for 600000ms and was terminated
 ```
 
 镜像来回重打包，字节不稳定 → 校验和对不上，最后卡满 10 分钟被终止。
-**要装 tarball 就自己 `tar -xzf` 解进 `node_modules`（第二节路径），别把它当 pnpm 依赖 spec。**
+**要装 tarball 就自己 `tar -xzf` 解进 `node_modules`（第四节路径），别把它当 pnpm 依赖 spec。**
 
 ### 本地开发用 `link:`
 
 改本机代码时，profile 里写 `link:D:/PythonCode/ma/dsh-theme-mls-desktop213` 最省事：pnpm 只建
 链接，改完 `npm run build` 后重启就能看到。注意 `link:` 依赖**不跑生命周期脚本**，
-所以壳补丁只能靠插件加载时的钩子兜底（见第五节）。
+所以壳补丁只能靠插件加载时的钩子兜底（见第六节）。
 
 ---
 
-## 一、先看这一节：`dsh plugin` 未必给你走
+## 一、npm registry 安装（0.6.11 起，推荐）
+
+本包已发布到 npm：包名 **`dsh-theme-mls-desktop`**。先确认 registry 上有它：
+
+```bash
+npm view dsh-theme-mls-desktop version
+# PowerShell 执行策略拦 npm.ps1 时用 npm.cmd
+```
+
+### 走插件管理器（唯一能一键更新的路）
+
+设置 › **插件**（插件管理器）→ 安装 → 包名 `dsh-theme-mls-desktop`；在 DSH 会话里也可以
+用 `plugin_manager` 工具的 `install_bundle`（`target` = 包名）。插件管理器安装时会：
+
+- 用 pnpm 把包装进 profile，并**把包名写进 `dsh.profile.bundles` 后启用**
+  —— 不需要再按第五节手工补；
+- 尽量通过 HMR 立刻应用；`postinstall` 被 pnpm 拦下（`ERR_PNPM_IGNORED_BUILDS`）也没关系，
+  壳补丁还有「插件加载时的钩子」兜底。
+
+**更新**：插件管理器会列出该包比当前新的已发布版本；选中目标版本点更新即可。它先用
+`pnpm view` 校验目标版本（存在、声明 `dsh.bundle`、兼容当前 DSH），再原地替换，
+**装失败会回滚到旧版本**。更新完重启桌面端（壳补丁 revision 变了时见第六节）。
+想钉死某个版本就装 `dsh-theme-mls-desktop@0.6.10` 这种精确版本。
+
+> 主题设置页 nav 上的「可更新」小圆点 / 横幅也会读 npm 的 `latest`，给下面这条
+> 「npm pack + 手工拷贝」的路兜底；它只提示，不自动安装。
+
+### 不走插件管理器：npm pack 再手工拷
+
+npm 的 tarball 字节稳定，比 GitHub 镜像可靠（镜像重打包会让 pnpm 的完整性校验来回失败）：
+
+```bash
+npm.cmd pack dsh-theme-mls-desktop@latest   # → dsh-theme-mls-desktop-0.6.11.tgz
+tar -xzf dsh-theme-mls-desktop-0.6.11.tgz
+# 把解出来的 package/ 内容拷进
+#   <DSH_HOME>/profiles/desktop/node_modules/dsh-theme-mls-desktop
+# 再按第五节手工补 bundles
+```
+
+这条路的包与 registry 上的完全一致，但 profile 里没有「registry 来源」记录，
+插件管理器不会替它做一键更新 —— 下次更新只能重新 pack + 覆盖 + 重启。
+
+---
+
+## 二、先看这一节：`dsh plugin` 未必给你走
 
 `@deepseek-ai/dsh/lib/bin.js` 里对 `profile === "desktop"` 有一道闸门：
 
@@ -114,7 +161,7 @@ npm 全局装的那份（0.1.5-rc.1）更干脆 —— `rejectElectronProfile(pl
 
 ---
 
-## 二、CLI 路径（手上那份 dsh 不带闸门时）
+## 三、CLI 路径（手上那份 dsh 不带闸门时）
 
 ```bash
 # ① 装插件本体（依赖、shell-patch/、client.js 全跟着进）
@@ -149,7 +196,7 @@ Run "pnpm approve-builds" to pick which dependencies should be allowed to run sc
 
 ---
 
-## 三、全手工安装（不依赖任何 CLI）
+## 四、全手工安装（不依赖任何 CLI）
 
 profile 启动时真正需要的只有两样东西：**能在 `node_modules` 里解析到本包**，
 以及 **`dsh.profile.bundles` 里有它**。任何能达成这两件事的做法都可以。
@@ -164,9 +211,13 @@ profile 启动时真正需要的只有两样东西：**能在 `node_modules` 里
 
 ---
 
-## 四、补 `bundles`（无论哪条路都必需）
+## 五、补 `bundles`（手工路径必需；插件管理器会自动写）
 
-⚠️ **`dsh plugin add` 不会替你挂载插件 —— 装完必须再手工补一行 `bundles`。**
+⚠️ **手工路径（`dsh plugin add` / 拷目录）不会替你挂载插件 —— 装完必须再手工补一行 `bundles`。**
+
+> 走插件管理器安装的话**跳过本节**：它在安装成功后会调用 `selectBundle()`，把包名写进
+> `dsh.profile.bundles` 并启用（见第一节）；只有「CLI 转发 pnpm」和「手工拷目录」两条路
+> 才需要下面这一步。
 
 这不是配置习惯问题，是 desktop profile 的代码路径决定的。0.2.0-rc.2 的
 `@deepseek-ai/dsh/lib/plugin-BGnVfe_D.js` 里，分支长这样：
@@ -222,7 +273,7 @@ node <那个 dsh 安装>/node_modules/@deepseek-ai/dsh/lib/bin.js --profile desk
 
 ---
 
-## 五、桌面壳补丁（透明窗口 + 隐藏原生按钮 + 首帧透明 + 启动即最大化）
+## 六、桌面壳补丁（透明窗口 + 隐藏原生按钮 + 首帧透明 + 启动即最大化）
 
 这一步改的是宿主应用的 `app.asar`，不可能靠"页面里的代码"完成，所以有两条自动路径：
 
@@ -293,7 +344,7 @@ node node_modules/dsh-theme-mls-desktop/shell-patch/auto.cjs --check --app "<桌
 
 ---
 
-## 六、装完能拿到什么
+## 七、装完能拿到什么
 
 补丁本身是可选的，行为契约见 [docs/SHELL-PATCH.md](SHELL-PATCH.md)。
 
@@ -321,7 +372,7 @@ node node_modules/dsh-theme-mls-desktop/shell-patch/auto.cjs --check --app "<桌
 
 ---
 
-## 七、两个必须知道的边界
+## 八、两个必须知道的边界
 
 ⚠️ **不要同时启用 `dsh-theme-marathon` 和本包** —— 两者是同一套主题的网页/桌面两份，
 同时挂载会重复注入启动覆盖层。二选一。
@@ -337,7 +388,7 @@ node node_modules/dsh-theme-mls-desktop/shell-patch/auto.cjs --check --app "<桌
 
 ---
 
-## 八、卸载与残留：为什么"卸载了动画还在放"
+## 九、卸载与残留：为什么"卸载了动画还在放"
 
 先说结论：**卸载会把磁盘清干净，但不会把主题从正在运行的窗口里拔掉 —— 要重载/重启。**
 

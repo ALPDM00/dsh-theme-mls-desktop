@@ -5,6 +5,61 @@
 次版本号 = 向后兼容的新功能；
 修订号 = 向后兼容的 bug 修复。
 
+## [0.6.11] - 2026-11-06
+
+**发布准备：本版起发布到 npm registry，更新检查改读 npm；发布后从 registry 安装的用户
+可以在 DSH 插件管理器里一键更新。**
+
+### 新增
+
+- npm 发布配置：`publishConfig`（`registry.npmjs.org` + `public`）、
+  `prepublishOnly`（发布前自动 `node scripts/build.cjs`，保证 `client.js` 与 `src/` 同步）、
+  `files` 精确白名单（约 410 KB tarball，**不含** `src/`、`scripts/`、测试脚本、
+  以及本机的 `shell-patch/.target.json` 与日志）。
+- `docs/PUBLISHING.md`：首次发布、每次发版顺序（先改版本 → 构建 → 回归 → commit/tag →
+  publish）、常见 npm 报错、以及「用户怎么一键更新」。
+- `.github/workflows/publish.yml`：推 `v*` tag 时自动 `npm publish`（需仓库 Secret
+  `NPM_TOKEN`；先校验 tag 与 `package.json` 版本一致）。
+- README / `docs/INSTALL.md` 增加 npm 安装路径：插件管理器按包名安装会自己写
+  `dsh.profile.bundles` 并启用；之后 `listVersions` / `updateBundle` 提供可更新提示与
+  一键更新（失败回滚）。INSTALL 章节顺延重排，npm 成为第一节。
+
+### 调整
+
+- 客户端更新检查（`mar-has-update` 小圆点 + 「可更新」横幅）改为**优先读**
+  `https://registry.npmjs.org/dsh-theme-mls-desktop/latest`，失败再退 GitHub API
+  contents → raw → gh-proxy。npm 是插件管理器判断更新的同一来源，发布后即时可见，
+  不受 raw 的 CDN 缓存影响。
+- README「更新提示」与 `docs/SETTINGS.md` 的对应表述同步。
+- 回归：`verify-run.cjs` **103 项全绿**（含 npm 版本 v0.6.11 的可更新横幅）；
+  `check.cjs` 与文档相对链接检查全过。
+
+### 修复
+
+- **审批 / 提问卡接管 composer 时，点阵动画跳到输入框上方**（2026-11-06 用户报：
+  审批一出现，右下角点阵跑到输入框上面；审批消失又恢复）。根因：接管时 slot 链的
+  overlay fallback 只给原生 composer 套了一层 `display:none`，`[data-composer-card]`
+  仍在 DOM 里但 rect 全 0，旧 `top = card.bottom - seat.top - size - 8` 变成负数并被
+  clamp 到 0 → 点阵停在 seat 顶部。现在锚点取**当前可见**的卡：平时是输入卡，接管
+  时是 `[data-approval-key]` / `[data-question-key]` 里的卡片；零尺寸卡直接拒绝，
+  一张可见卡都量不到时收起（不再钳到 0）。
+- **审批出现时点阵还会轻微横移**（同日第二轮：审批卡 `max-width` 是
+  `chat-content-width`，输入卡是它 +32，按接管卡重算会让点阵左移 8px）。现在基准
+  几何（宽度 + 底边距）**只在原生输入卡可见时更新**，接管期间沿用缓存；纵向改用
+  seat 底边做锚。实测审批出现/消失前后点阵 rect 完全一致（`l=1385,t=712,w=120`），
+  真正“钉住”。
+- **插件热更新（client HMR）后点阵掉到输入框左下、主题变淡**（用户第一轮问的
+  “只要改插件就会这样”）。根因：`dsh-client-modules` 的 `replace()` 会先
+  `removeOwnedStyles(id)` 摘掉我们的 `<style data-plugin>`，再重跑 `apply()`；上一次的
+  dispose 不一定跑完，幂等闸门让新 apply 直接 return，页面停在“样式表没了、旧实例
+  还在”的半死状态 —— 点阵失去 `position:absolute`，变成座位里的普通块。
+  修法：① 幂等闸门改成“样式表还在才短路”，样式表被摘掉就当作全新 apply（主题自愈）；
+  ② 点阵 host 的 `position:absolute / pointer-events / z-index` 内联，不依赖样式表；
+  ③ 每次安装递增实例令牌，旧实例的 400ms 定时器在下一个 tick 自行退场；
+  ④ `runApply` / 挂载前按 id 清掉上一个实例留下的 host。
+- `verify-run.cjs` 新增 6 项接管/冻结 + 7 项 HMR（脏/干净路径）回归
+  （先复现失败再修，**103 项全绿**）。
+
 ## [0.6.10] - 2026-11-05
 
 **最终版：空心描边回到 12，其余保持（手臂/腿 41、臂隙 18、颈隙 13、

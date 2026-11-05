@@ -1,0 +1,55 @@
+# 推 v* tag 时自动发布到 npm（见 docs/PUBLISHING.md 第五节）。
+# 一次性配置：在 GitHub 仓库 Secrets 里加 NPM_TOKEN（Granular token，开启 Bypass 2FA）。
+name: publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  npm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      # tag 是 v0.6.12 而 package.json 还是 0.6.11 时，宁可失败也不要发错版本。
+      - name: Check tag matches package.json version
+        shell: bash
+        run: |
+          node -e '
+            const v = require("./package.json").version;
+            const t = process.env.GITHUB_REF_NAME.replace(/^v/, "");
+            if (v !== t) {
+              console.error(`tag ${process.env.GITHUB_REF_NAME} != package.json ${v}`);
+              process.exit(1);
+            }
+            console.log(`releasing ${v}`);
+          '
+
+      # 首次发布或手动 `npm publish` 之后再推 tag 时，这个版本可能已经在 registry 上。
+      # 那样就跳过发布，别让工作流红一次。
+      - name: Skip when this version is already published
+        id: existing
+        shell: bash
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if npm view "dsh-theme-mls-desktop@${version}" version >/dev/null 2>&1; then
+            echo "dsh-theme-mls-desktop@${version} already on the registry — skipping publish"
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # prepublishOnly 会先跑 node scripts/build.cjs，把 src/ 组装成 client.js。
+      - name: Publish
+        if: steps.existing.outputs.published != 'true'
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
