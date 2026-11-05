@@ -5,6 +5,28 @@
 次版本号 = 向后兼容的新功能；
 修订号 = 向后兼容的 bug 修复。
 
+## [0.6.4] - 2026-11-05
+
+**v0.6.3 更新提示的两个收尾修复：① nav 小圆点被主题的「所有伪元素一律直角」
+总规则压成了方块 → 已用更高特异性抢回圆形，选中格上改用 `--mar-accent-ink`
+保证可见；② 更新源改为 GitHub API contents 优先（raw.githubusercontent 有约 5 分钟
+CDN 缓存，刚发版会读到旧版本），两个 raw 入口留作限流/网络失败备选。**
+
+### 修复
+
+- **nav 小圆点形状**：`body.theme-marathon *::after{border-radius:0!important}` 会
+  覆盖 `border-radius:50%`；新增
+  `body.theme-marathon [data-mar-nav].mar-has-update::after{border-radius:50%!important}`。
+  选中状态（整格是主题色面）下圆点改用 `--mar-accent-ink` + `--mar-accent` 外圈，
+  未选中时仍是主题色实心点。
+- **更新检查的新鲜度**：优先
+  `api.github.com/repos/.../contents/package.json?ref=main`（响应无长 CDN 缓存，
+  浏览器 CORS 可用；实测 push 后立即返回新版本）；失败再退到
+  `raw.githubusercontent.com` 与 `gh-proxy.com`。API 未认证限流 60 次/小时/IP，
+  配合 6 小时缓存足够。
+- 新增 `window.__marUpdateDebug()`（当前版本 / 最新版本 / 检查时间 / skip 版本 /
+  状态），排查“为什么没提示”时直接读它。
+
 ## [0.6.3] - 2026-11-05
 
 **新增轻量「更新提示」（只提示、不自动安装）。已安装用户不会从 DSH 得到更新通知

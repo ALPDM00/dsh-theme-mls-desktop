@@ -28,7 +28,7 @@ window.__ModuleLoader__.load({
     var PLUGIN_ID = 'dsh-theme-mls-desktop';
     // 本地版本号（构建时由 scripts/build.cjs 从 package.json 注入）。更新检查把它
     // 与 GitHub main 分支的 package.json 版本比较；见 updateCheck()。
-    var PLUGIN_VERSION = '0.6.3';
+    var PLUGIN_VERSION = '0.6.4';
 
     // Boot payload (namespaced CSS + DOM + marathon engine + intro engine, plus
     // base64-embedded PNGs) is injected here at build time by scripts/build.cjs —
@@ -3930,10 +3930,30 @@ try {
       // 版本时还会再提示。网络/代理失败时静默，用户点「检查更新」才显示失败原因。
       var UPDATE_STORE_KEY = 'mar.update.v1';
       var UPDATE_TTL = 6 * 60 * 60 * 1000;
-      var UPDATE_URLS = [
-        'https://raw.githubusercontent.com/ALPDM00/dsh-theme-mls-desktop/main/package.json',
-        'https://gh-proxy.com/https://raw.githubusercontent.com/ALPDM00/dsh-theme-mls-desktop/main/package.json'
+      // API 的 contents 接口没有 raw 那条 5 分钟 CDN 缓存（实测 push 后 raw 仍给
+      // 旧版本），所以优先 API；两个 raw 入口作为限流/网络失败时的备选。
+      var UPDATE_SOURCES = [
+        { url: 'https://api.github.com/repos/ALPDM00/dsh-theme-mls-desktop/contents/package.json?ref=main&_=', kind: 'api' },
+        { url: 'https://raw.githubusercontent.com/ALPDM00/dsh-theme-mls-desktop/main/package.json', kind: 'raw' },
+        { url: 'https://gh-proxy.com/https://raw.githubusercontent.com/ALPDM00/dsh-theme-mls-desktop/main/package.json', kind: 'raw' }
       ];
+      function updateVersionFromPayload(json) {
+        if (!json) return null;
+        if (json.name === 'dsh-theme-mls-desktop' && typeof json.version === 'string') return json.version.trim();
+        if (typeof json.content === 'string') {
+          try {
+            var bin = atob(json.content.replace(/\s+/g, ''));
+            var bytes = new Uint8Array(bin.length);
+            for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            var text = (typeof TextDecoder === 'function') ? new TextDecoder('utf-8').decode(bytes) : bin;
+            var pkg = JSON.parse(text);
+            if (pkg && pkg.name === 'dsh-theme-mls-desktop' && typeof pkg.version === 'string') {
+              return pkg.version.trim();
+            }
+          } catch (e) { return null; }
+        }
+        return null;
+      }
       function updateParseVersion(value) {
         var m = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/.exec(String(value || '').trim());
         if (!m) return null;
@@ -4056,23 +4076,25 @@ try {
           updateRender();
         }
         function attempt() {
-          if (idx >= UPDATE_URLS.length) { finish(null); return; }
-          var url = UPDATE_URLS[idx++];
+          if (idx >= UPDATE_SOURCES.length) { finish(null); return; }
+          var src = UPDATE_SOURCES[idx++];
+          var url = src.url + (src.kind === 'api' ? String(Date.now()) : '');
           var ctrl = null;
           try { if (typeof AbortController === 'function') ctrl = new AbortController(); } catch (e) { ctrl = null; }
           var timer = setTimeout(function () { try { if (ctrl) ctrl.abort(); } catch (e) {} }, 8000);
           var req = null;
-          try { req = fetch(url, { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined }); }
+          var options = { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined };
+          if (src.kind === 'api') options.headers = { Accept: 'application/vnd.github+json' };
+          try { req = fetch(url, options); }
           catch (e) { clearTimeout(timer); attempt(); return; }
           req.then(function (res) {
             if (!res || !res.ok) throw new Error('HTTP');
             return res.json();
           }).then(function (json) {
             clearTimeout(timer);
-            if (!json || json.name !== 'dsh-theme-mls-desktop' || typeof json.version !== 'string') {
-              throw new Error('unexpected payload');
-            }
-            finish(json.version.trim(), null);
+            var version = updateVersionFromPayload(json);
+            if (!version) throw new Error('unexpected payload');
+            finish(version, null);
           }).catch(function () {
             clearTimeout(timer);
             attempt();
@@ -4093,6 +4115,22 @@ try {
           updateRender();
         });
       }
+      try {
+        if (typeof window !== 'undefined') {
+          window.__marUpdateDebug = function () {
+            return {
+              current: PLUGIN_VERSION,
+              latest: UPDATE_STATE.latest,
+              checkedAt: UPDATE_STATE.checkedAt,
+              skipVersion: UPDATE_STATE.skipVersion,
+              status: UPDATE_STATE.status,
+              error: UPDATE_STATE.error,
+              fetching: updateFetching,
+              available: updateAvailable()
+            };
+          };
+        }
+      } catch (e) {}
 
       //  The seven swatches. No visible text — the colour/artwork IS the label; the
       //  hex only survives as an aria-label so the group is still usable from a
