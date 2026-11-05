@@ -86,19 +86,23 @@
   var FIG = {
     W: 164,
     H: 291,
+    // 2026-11-05 用户按参考图调整：肩膀与躯干之间留出约一个腿宽的空隙，
+    // 头与躯干之间也拉开；四肢/躯干相应收窄，整体宽度保持不变。
+    // 局部单位（164×291）：头 50×53、颈隙 26、躯干 50×91、臂 24×91、
+    // 臂—躯干隙 29、腿 25×121、腿隙 56。
     rects: [
-      [ 49,   0,  65,  68],   // 头（与躯干间留 3px 颈隙）
-      [  0,  71,  40, 111],   // 左臂 → 底 182
-      [ 49,  71,  65, 111],   // 躯干 → 底 182
-      [124,  71,  40, 111]    // 右臂 → 底 182
+      [ 57,   0,  50,  53],   // 头（与躯干间留 26 颈隙）
+      [  4,  79,  24,  91],   // 左臂 → 底 170
+      [ 57,  79,  50,  91],   // 躯干 → 底 170
+      [136,  79,  24,  91]    // 右臂 → 底 170
     ],
-    legs: [[24, 41], [100, 41]],
+    legs: [[29, 25], [110, 25]],
     legY: 170,
     legBottom: 291,
     titleBottom: 182,
     headDy: { L: 0, R: -6 },
     rad: 4.5,
-    inset: 12,
+    inset: 6,                 // 空心描边：参考图里约 2px / 99px 高，按比例取 6 局部单位
     pad: 9                    // 源文件离屏画布 HP：给描边留的边距
   };
 
@@ -705,7 +709,16 @@
           ink: colors.ink,
           titleWeight: TEXT.titleWeight,
           lineWeight: TEXT.lineWeight,
-          titleDots: 0
+          titleDots: 0,
+          figure: {
+            headW: FIG.rects[0][2],
+            torsoW: FIG.rects[2][2],
+            armW: FIG.rects[1][2],
+            legW: FIG.legs[0][1],
+            armGap: FIG.rects[2][0] - (FIG.rects[1][0] + FIG.rects[1][2]),
+            neckGap: FIG.rects[1][1] - (FIG.rects[0][1] + FIG.rects[0][3]),
+            hollowInset: FIG.inset
+          }
         };
       },
       // 验收/截图辅助：暂停 RAF 并把画面定格在指定时间（秒）。
