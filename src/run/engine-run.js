@@ -42,24 +42,14 @@
    * ========================================================================= */
 
   /* ---- 传送线 -------------------------------------------------------------
-   * 源文件：y(x) = y0 + k*(x-cx)^2，x0=377 / x1=1549 / cx=962.5 / k=4.05e-5，
-   * y0=451.7。线段跨度 1172 源像素，两端比中心低 13.88 源像素。
-   * 在条带里我们按“跨度比例”重算下弯量：13.88 / 1172 ≈ 1.19%，再夹到
-   * 1.5~6 CSS px，避免 560px 宽时弯得过分、820px 宽时又看不出来。
-   * halfH 对应源文件 11px 线厚（含 S=1/3 后约 3.7px / 人形高 97px）；
-   * 条带人形只有 44px 高，按同比例取 1.8px 线厚，DPR=2 时等价 3.6 设备像素。
+   * 2026-11-05 用户：改成一条**标准直线**——矩形截面、两端各 1.5px 圆角，
+   * 不再做原文件那种两端渐细（尖头）。线厚仍按人形高比例取 ~1.9px。
    */
   var BEAM = {
-    sagRatio: 0.0058,       // 条带下弯量 ≈ 宽度 × 0.58%（820 → 4.8px）
-    sagMin: 1.5,
-    sagMax: 6.0,
-    widthRatio: 0.041,      // 线厚 = 人形高 × 4.1%（44 → 1.8px）
+    widthRatio: 0.041,      // 线厚 = 人形高 × 4.1%（46 → 1.9px）
     widthMin: 1.2,
-    widthMax: 2.0,
-    fadeRatio: 0.02,        // 两端渐细长度 ≈ 跨度 × 2%（源文件 fade/跨度≈0.77%）
-    fadeMin: 6,
-    fadeMax: 18,
-    samples: 96             // 曲线采样数：820px 宽下每段 <6px，肉眼平滑
+    widthMax: 2.4,
+    capRadius: 1.5          // 两端圆角（CSS px；不超过半线厚）
   };
 
   /* ---- 光点（视频逐帧实测，原样保留）-------------------------------------
@@ -279,7 +269,7 @@
         cy: cy,
         sag: 0,                    // 2026-11-05：直线（原弧线取消）
         halfH: lineW / 2,
-        fade: clamp(span * BEAM.fadeRatio, BEAM.fadeMin, BEAM.fadeMax)
+        cap: Math.min(BEAM.capRadius, lineW / 2)
       },
       pkt: {
         x0: x0 + span * PKT.insetRatio,
@@ -299,38 +289,35 @@
   }
 
   function beamYAt(L, x) {
-    var half = (L.beam.x1 - L.beam.x0) / 2;
-    var t = half > 0 ? (x - L.beam.cx) / half : 0;
-    return L.beam.cy + L.beam.sag * t * t;
-  }
-
-  function beamHalf(L, x) {
-    var d = Math.min(x - L.beam.x0, L.beam.x1 - x);
-    if (d <= 0) return 0;
-    return L.beam.halfH * Math.min(1, d / L.beam.fade);
+    return L.beam.cy + L.beam.sag;
   }
 
   /* =========================================================================
    * 四、绘制：传送线 / 人形 / 光点
    * ========================================================================= */
 
+  // 一条标准直线：矩形截面 + 两端 1.5px 圆角（不再是两端渐细的尖头）。
   function drawBeam(c, L, color, alpha) {
     var b = L.beam;
-    var N = BEAM.samples;
-    var i, x, y;
+    var x = b.x0;
+    var y = b.cy - b.halfH;
+    var w = b.x1 - b.x0;
+    var h = b.halfH * 2;
+    var r = Math.max(0, Math.min(b.cap == null ? 1.5 : b.cap, w / 2, h / 2));
+    if (w <= 0) return;
     c.save();
     c.globalAlpha = alpha == null ? 1 : alpha;
     c.fillStyle = color;
     c.beginPath();
-    for (i = 0; i <= N; i++) {
-      x = b.x0 + (b.x1 - b.x0) * i / N;
-      y = beamYAt(L, x) - beamHalf(L, x);
-      if (i) c.lineTo(x, y); else c.moveTo(x, y);
-    }
-    for (i = N; i >= 0; i--) {
-      x = b.x0 + (b.x1 - b.x0) * i / N;
-      c.lineTo(x, beamYAt(L, x) + beamHalf(L, x));
-    }
+    c.moveTo(x + r, y);
+    c.lineTo(x + w - r, y);
+    c.quadraticCurveTo(x + w, y, x + w, y + r);
+    c.lineTo(x + w, y + h - r);
+    c.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    c.lineTo(x + r, y + h);
+    c.quadraticCurveTo(x, y + h, x, y + h - r);
+    c.lineTo(x, y + r);
+    c.quadraticCurveTo(x, y, x + r, y);
     c.closePath();
     c.fill();
     c.restore();
@@ -706,8 +693,13 @@
         return {
           width: W,
           height: height,
+          beamX0: L.beam.x0,
+          beamX1: L.beam.x1,
+          beamCy: L.beam.cy,
           beamSpan: L.beam.x1 - L.beam.x0,
           sag: L.beam.sag,
+          beamHalfH: L.beam.halfH,
+          beamCap: L.beam.cap == null ? 0 : L.beam.cap,
           figH: L.figH,
           textLineY: L.text.lineY.slice(),
           ink: colors.ink,

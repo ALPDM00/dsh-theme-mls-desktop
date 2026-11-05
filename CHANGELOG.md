@@ -5,6 +5,82 @@
 次版本号 = 向后兼容的新功能；
 修订号 = 向后兼容的 bug 修复。
 
+## [0.6.1] - 2026-11-05
+
+**「主题设置 → 外观·配色」接进 DSH 的「通用设置 → 外观」：浅色 / 深色 / 跟随系统
+三格双向同步，跟随系统会随 Windows 的深浅色自动切换；两处任一入口都能改整个界面的
+深浅，切换时同样播 0.341s 拼块「灌注」动画。另修两个运行动画反馈：点阵随输入框
+尺寸重贴右下角、人形传送线改为矩形圆头。**
+
+> 版本号说明：纯新增功能 + 一处行为修正，数据格式向后兼容；按 SemVer 打修订号
+> `0.6.1`。**这次没有改壳补丁**，不需要 `--repair`；重载页面 / 重启桌面端即可。
+
+### 新增
+
+- **外观·配色改成三格：浅色 / 深色 / 跟随系统**，并在三格下面加了一行小字说明
+  「跟随系统：随 Windows 的深浅色自动切换，与『通用设置 → 外观』同步」。
+  三格的选中态跟的是 DSH 的 `preference`，不是解析后的 `active.colorScheme`——
+  跟随系统时选中的永远是「跟随系统」，哪怕它此刻解析成深色。
+- **双向同步**：DSH 的主题偏好成为唯一数据源。点击本页任一格 = `theme.setTheme(pref)`
+  （通用设置那边立刻跟着选中）；反过来在通用设置里改、或系统切黑白，插件在
+  `theme/change` 里重新读 `getTheme()` 并换底盘。两条路径都走同一个拼块「灌注」
+  动画入口（`themeAdoptScheme(scheme, animate)` → `vtPour(bgApplyMode)`）。
+- **没有主题服务的宿主**（网页版 / 旧宿主）退化为自己读
+  `matchMedia('(prefers-color-scheme: dark)')`，并监听它的 `change` 事件。
+
+### 修复
+
+- **真机复现的根因：`theme` 服务在 apply 时还没注册，旧代码把它缓存成了 `null`。**
+  2026-11-05 从桌面端 `mar.debug.v1` 读到 `themeService:false` —— DSH 的客户端服务由各
+  插件自己注册，激活顺序不保证，插件 apply 时 `ctx.get('theme')` 是空的；只取一次就把
+  整条服务路径（`overrideTokens` / `getTheme` / `setTheme`）钉死成 null。表现正是用户
+  报的：**通用设置点「深色」只改了一部分卡片，主题设置还停在浅色，也没有动画。**
+  修法（与 `sessions` 服务 2026-10-10 那次同一个教训）：
+  - 改成 `themeSvc()` **每次现取**、只缓存真正拿到的实例；`overrideTokens` 也改成
+    可重试（`themeOverrideTokens()`，巡扫里补挂一次）。
+  - 再加一层不依赖服务的兜底：presenter 会把偏好投到
+    `html[data-ds-theme-source]`、把解析结果投到 `body[data-ds-dark-theme]`，插件直接读
+    这两个属性，并用 `MutationObserver` 监听它们 —— 通用设置一改，哪怕服务句柄还拿不到，
+    也会在同一帧换底盘并播放「灌注」动画。
+  - 万一服务句柄一直拿不到：点击三格时改由插件自己写 presenter 那三个信号
+    （`color-scheme` / `data-ds-theme-source` / `data-ds-dark-theme`），界面和原生
+    标题栏仍会立刻跟着走；等 DSH 自己的投影回来时再由它接管。
+  - `mar.debug.v1` 的 `themeService` 现在反映**实时**可见性，自查不再被缓存误导。
+- **「跟随系统」以前不生效**：旧版 `syncThemePreference()` 在挂载、换配色和每 1.2s 巡扫里
+  都会把 DSH 的偏好强制改写成显式 `light`/`dark`，等于把用户在通用设置里选的
+  「跟随系统」顶掉；同时插件自己的底盘又不会跟着通用设置变，两处会各说各话。
+  现在删掉了这条反向写入，改为只读并对齐。
+- `mar.debug.v1` 自检增加 `preference` / `colorScheme` 两个字段，排查"到底谁说了算"时
+  不用再猜。
+
+### 测试 / 文档
+
+- `check.cjs` 增加双向读写的静态断言（`themeSnapshot` / `themeSetPreference` /
+  `themeAdopt` / 三格 / 说明行），并禁止旧的强制写入回潮。
+- `test/plugin.test.cjs` 增加四组：三格与说明行的结构断言、用假主题服务验证
+  「主题设置 → 通用设置」「通用设置 → 主题设置」「系统翻转」三条链路、**服务晚注册**
+  （apply 时 null、之后可见）和**只靠 presenter 属性**（无服务句柄）两条真机路径
+  （共 170 项）。
+- `.generated/verify-accent.cjs` 增加真浏览器场景 4（跟随系统选中 + 偏好落盘），
+  并把主题服务换成有状态的假实现（原来 `setTheme` 是空函数，测不出真实路径）。
+- [docs/SETTINGS.md](docs/SETTINGS.md)、[README.md](README.md)、
+  [docs/INSTALL.md](docs/INSTALL.md) 同步更新外观三格的说明。
+
+### 运行动画修复（2026-11-05）
+
+- **输入框改变大小后点阵“乱跑”。** 症状：输入框长高 / 变宽后，右侧点阵仍停在原来的
+  绝对坐标，不再贴着输入卡右下角。根因：宿主只在挂载时量一次 `right/top`，之后仅监听
+  `window.resize`；而 textarea 长高只改变 card / seat 的尺寸，不触发 window resize。
+  修法：抽出 `dotGeom()/dotPlace()`，把锚点改成**输入卡右下角**（右边居中于右侧空白、
+  底边距卡片底 8px）；用 `ResizeObserver` 同时观察 `[data-composer-seat]` 与
+  `[data-composer-card]`，加上 400ms 轮询兜底，尺寸一变就重算 top / right / size。
+- **传送线两端变尖。** 原实现沿弧线采样、两端按 `fade` 把半高收到 0，所以在直线模式下
+  两端是尖头。改成一条**标准直线**：矩形截面、两端各 1.5px 圆角（不超过半线厚），
+  不再有渐细段；线厚仍按人形高 × 4.1%。
+
+无头夹具 `.generated/verify-run.cjs` 扩到 **77 项**：新增端部与中部同厚、
+矩形圆角、输入框变高变宽后重贴右下角、恢复后回位等断言。
+
 ## [0.6.0] - 2026-11-05
 
 **新增两个**互相独立**的运行动画选项，各自有设置页开关（默认都开）：**

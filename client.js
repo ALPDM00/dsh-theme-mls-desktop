@@ -45,7 +45,7 @@ window.__ModuleLoader__.load({
     // the native [data-chat-running] row above the composer. Same build-time
     // contract as BOOT/DONE above; null in a raw template run, in which case
     // the strip simply never mounts and the native status row is left alone.
-    var RUN_PAYLOAD = {"engine":"/* ===========================================================================\n * dsh-theme-mls-desktop213 — 输入框上方「运行提示」紧凑条带引擎\n * -----------------------------------------------------------------------------\n * 视觉来源：D:\\PythonCode\\ma\\运行动画.html（1920×1080，S=1/3 逻辑缩放）。\n * 原动画是整屏构图：左空心人形 + 右实心人形 + 一条微下弯传送线 + 每轮两个\n * 光点 + 三行居中文字。这里把同一套几何／节奏压进输入框上方 132px 高的条带：\n *\n *   ┌──────────────────────────────────────────────┐\n *   │  空心人形  ───────●──────────────  实心人形   │  视觉带 52px\n *   │              深度求索中 ○ ○ ○                 │  ← 13px / 22px 行高\n *   │              用时 12 秒                        │\n *   │              调用工具 · read                   │\n *   └──────────────────────────────────────────────┘\n *\n * 关键取舍：\n *   1. 背景保持透明，不填任何底色 —— DSH 自己的面板透出来。\n *   2. 人形按高度重新标定（原图 291 局部单位 → 44 CSS px），横向只保留\n *      原图 11.5% / 88.5% 的中心位置关系，所以 560~1000px 宽都能容纳。\n *   3. 传送线保持“两端低于中点”的微下弯（原图 sag≈13.9 源像素），光点严格\n *      沿用原动画的 3.0s 轮、0.433s 间隔、1.03s 行程与 P 曲线。\n *   4. 所有动态都在 RAF 里；prefers-reduced-motion / state.reduced 时只画\n *      一帧（三个标题点全亮，光点定格在传送线中点）。\n *\n * 对外 API（不依赖 import / require / 网络 / 外部资源）：\n *\n *   var inst = window.__marRunEngine.create(host, { height: 132 });\n *   inst.set({ mode:'run', title:'深度求索中', meta:'用时 12 秒',\n *              action:'调用工具 · read', ink:null, dim:null, reduced:false });\n *   inst.renderAt(0.6);   // 验收辅助：暂停 RAF 并定格到 t=0.6s（可选）\n *   inst.destroy();\n *\n * host 由插件创建；本引擎只负责在 host 内追加一个 <canvas>。\n * ========================================================================= */\n(function () {\n  'use strict';\n\n  var DEFAULT_HEIGHT = 132;                 // 交付口径：132 CSS px\n  var FONT_STACK = \"'Microsoft YaHei','Noto Sans SC','PingFang SC',sans-serif\";\n\n  /* =========================================================================\n   * 一、参数区（全部来自 运行动画.html，转换关系写在每条旁边）\n   * ========================================================================= */\n\n  /* ---- 传送线 -------------------------------------------------------------\n   * 源文件：y(x) = y0 + k*(x-cx)^2，x0=377 / x1=1549 / cx=962.5 / k=4.05e-5，\n   * y0=451.7。线段跨度 1172 源像素，两端比中心低 13.88 源像素。\n   * 在条带里我们按“跨度比例”重算下弯量：13.88 / 1172 ≈ 1.19%，再夹到\n   * 1.5~6 CSS px，避免 560px 宽时弯得过分、820px 宽时又看不出来。\n   * halfH 对应源文件 11px 线厚（含 S=1/3 后约 3.7px / 人形高 97px）；\n   * 条带人形只有 44px 高，按同比例取 1.8px 线厚，DPR=2 时等价 3.6 设备像素。\n   */\n  var BEAM = {\n    sagRatio: 0.0058,       // 条带下弯量 ≈ 宽度 × 0.58%（820 → 4.8px）\n    sagMin: 1.5,\n    sagMax: 6.0,\n    widthRatio: 0.041,      // 线厚 = 人形高 × 4.1%（44 → 1.8px）\n    widthMin: 1.2,\n    widthMax: 2.0,\n    fadeRatio: 0.02,        // 两端渐细长度 ≈ 跨度 × 2%（源文件 fade/跨度≈0.77%）\n    fadeMin: 6,\n    fadeMax: 18,\n    samples: 96             // 曲线采样数：820px 宽下每段 <6px，肉眼平滑\n  };\n\n  /* ---- 光点（视频逐帧实测，原样保留）-------------------------------------\n   * loop 3.0s 一轮；每轮 emit 两个球，间隔 0.433s（13 帧）；单球 travel\n   * 1.03s（31 帧）；两个球都消失后空窗 1.54s。\n   * 源文件飞行范围 x 432→1490，相对传送线两端各内缩 ≈4.7%。\n   * 半径源值 r0=10 / rMax=19（直径 20→38→20），按“人形高”比例换算到条带：\n   * 19/291 = 6.5% × 44 ≈ 3.0px；r0 / rMax = 10/19 ≈ 0.526，两端小、中点大。\n   */\n  var PKT = {\n    loop: 3.0,\n    emit: [0, 0.433],\n    travel: 1.03,\n    insetRatio: 0.047,\n    r0OfMax: 0.526,         // 源文件 r0/rMax = 10/19：两端半径是最峰值的 52.6%\n    rMaxRatio: 0.068,       // 半径峰 ≈ 人形高 × 6.8%（44 → 3.0px）\n    rMin: 2.6,\n    rMaxLimit: 3.8,\n    // 位移 LUT：源文件实测基本线性、略 S 形，两端速度慢、中段快。\n    ease: [\n      [0.00, 0.00], [0.10, 0.05], [0.20, 0.13], [0.30, 0.23],\n      [0.40, 0.35], [0.50, 0.49], [0.60, 0.63], [0.70, 0.75],\n      [0.80, 0.86], [0.90, 0.95], [1.00, 1.00]\n    ]\n  };\n\n  /* ---- 人形（源文件局部坐标 164×291，原样搬过来）-------------------------\n   * rects: [x, y, w, h] → 头 / 左臂 / 躯干 / 右臂；腿是两条 41 宽的竖条。\n   * 身体底边 182，腿顶 170：重叠 12 源像素恰好并成一条胯线（原注释）。\n   * headDy：右人形头单独上移 6 源像素；hollow：左边空心、右边实心。\n   * rad=4.5 / inset=12 是源文件的圆角与空心描边厚度；缩放后分别约\n   * 0.7px / 1.8px，因此空心描边在 132px 高时仍然清楚。\n   */\n  var FIG = {\n    W: 164,\n    H: 291,\n    rects: [\n      [ 49,   0,  65,  68],   // 头（与躯干间留 3px 颈隙）\n      [  0,  71,  40, 111],   // 左臂 → 底 182\n      [ 49,  71,  65, 111],   // 躯干 → 底 182\n      [124,  71,  40, 111]    // 右臂 → 底 182\n    ],\n    legs: [[24, 41], [100, 41]],\n    legY: 170,\n    legBottom: 291,\n    titleBottom: 182,\n    headDy: { L: 0, R: -6 },\n    rad: 4.5,\n    inset: 12,\n    pad: 9                    // 源文件离屏画布 HP：给描边留的边距\n  };\n\n  /* ---- 文字 --------------------------------------------------------------\n   * 源文件 60px / 行距 ≈ 79.5px（1.325 倍），按整屏 1080 折算到 132px 条带\n   * 会只剩 7px 左右，太糊；交付明确“字号约 13px、行高 22px”，这里以可读性\n   * 为准，只保留源文件的“三行居中、第一行带点”的结构。\n   * 标题点：半径 1.55px、点间距 5.2px、文字后留白 4.5px，亮度依次呼吸。\n   */\n  var TEXT = {\n    titleSize: 13,\n    lineSize: 13,\n    lineHeight: 22,\n    // 2026-11-05 用户：三条文字颜色统一、不加粗、不要标题后的呼吸点动画，\n    // 视觉上跟左边空心人形一致 —— 全部 400 字重、同一支固定墨色、行高不变。\n    titleWeight: 400,\n    lineWeight: 400,\n    gap: 10,                  // 视觉带底 → 第一行文字顶端\n    padX: 24                  // 文字左右安全边距\n  };\n\n  /* ---- 条带布局 ----------------------------------------------------------\n   * 2026-11-05 用户按原始游戏截图（人形 + 短线）要求改成**居中紧凑构图**：\n   * 两个人形之间是一条**直线**，长度固定约 220px（源 1920 构图里 1172px 是\n   * 61% 宽，铺满 820px 条带会显得线太长）；人形高度 46px。整个装置居中，\n   * 不再把人形顶到左右边缘。视觉带 54px；文字仍居中放在下方。\n   */\n  var STRIP = {\n    bandTop: 4,\n    figH: 46,\n    figHMin: 38,\n    figHSmallBelow: 520,      // 更窄时把人形缩到 38\n    figBeamY: 0.55,           // 直线穿过人形高度的 55%（参考截图）\n    lineLen: 220,             // 直线长度（CSS px）\n    lineLenMin: 160,\n    lineLenMax: 260,\n    sideGap: 10,              // 人形边缘 → 直线端点\n    bandH: 54\n  };\n\n  /* =========================================================================\n   * 二、工具\n   * ========================================================================= */\n  var clamp01 = function (v) { return v < 0 ? 0 : v > 1 ? 1 : v; };\n  var clamp = function (v, a, b) { return v < a ? a : v > b ? b : v; };\n  var ss = function (a, b, v) {\n    var x = clamp01((v - a) / (b - a));\n    return x * x * (3 - 2 * x);\n  };\n\n  // 颜色归一化探针：随便给一个 CSS 颜色，浏览器把它解析成 #rrggbb / rgba()。\n  // 解析失败时 fillStyle 保持上一次的值，我们用哨兵判断。\n  var probe = document.createElement('canvas').getContext('2d');\n  function normalizeColor(value) {\n    if (!value) return '';\n    try {\n      probe.fillStyle = '#010203';\n      probe.fillStyle = String(value).trim();\n      var out = probe.fillStyle;\n      return out === '#010203' ? '' : out;\n    } catch (e) {\n      return '';\n    }\n  }\n\n  function alphaColor(cssColor, alpha) {\n    var c = normalizeColor(cssColor);\n    var m;\n    if (!c) return '';\n    if (c.charAt(0) === '#') {\n      var hex = c.slice(1);\n      if (hex.length === 3) hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];\n      if (hex.length === 6 || hex.length === 8) {\n        var r = parseInt(hex.slice(0, 2), 16);\n        var g = parseInt(hex.slice(2, 4), 16);\n        var b = parseInt(hex.slice(4, 6), 16);\n        return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';\n      }\n    }\n    m = /^rgba?\\(\\s*([\\d.]+)[,\\s]+([\\d.]+)[,\\s]+([\\d.]+)/i.exec(c);\n    if (m) return 'rgba(' + m[1] + ',' + m[2] + ',' + m[3] + ',' + alpha + ')';\n    return '';\n  }\n\n  function lut(L, u) {\n    if (u <= L[0][0]) return L[0][1];\n    for (var i = 1; i < L.length; i++) {\n      if (u <= L[i][0]) {\n        var t = (u - L[i - 1][0]) / (L[i][0] - L[i - 1][0]);\n        var s = 0.5 - 0.5 * Math.cos(Math.PI * t);\n        return L[i - 1][1] + (L[i][1] - L[i - 1][1]) * s;\n      }\n    }\n    return L[L.length - 1][1];\n  }\n\n  function rr(c, x, y, w, h, r) {\n    r = Math.max(0, Math.min(r, w / 2, h / 2));\n    c.beginPath();\n    c.moveTo(x + r, y);\n    c.arcTo(x + w, y, x + w, y + h, r);\n    c.arcTo(x + w, y + h, x, y + h, r);\n    c.arcTo(x, y + h, x, y, r);\n    c.arcTo(x, y, x + w, y, r);\n    c.closePath();\n  }\n\n  /* =========================================================================\n   * 三、布局 / 几何\n   * ========================================================================= */\n\n  function figRects(hollow) {\n    var dy = FIG.headDy[hollow ? 'L' : 'R'];\n    var out = [];\n    var i, r;\n    for (i = 0; i < FIG.rects.length; i++) {\n      r = FIG.rects[i];\n      out.push(i === 0 ? [r[0], r[1] + dy, r[2], r[3]] : r);\n    }\n    var lh = FIG.legBottom - FIG.legY;\n    for (i = 0; i < FIG.legs.length; i++) {\n      out.push([FIG.legs[i][0], FIG.legY, FIG.legs[i][1], lh]);\n    }\n    return out;\n  }\n\n  function computeLayout(w, h) {\n    var sv = h / DEFAULT_HEIGHT;                 // 垂直缩放（默认高度时=1）\n    var figH = (w < STRIP.figHSmallBelow ? STRIP.figHMin : STRIP.figH) * sv;\n    var figW = figH * (FIG.W / FIG.H);\n    var bandTop = STRIP.bandTop * sv;\n\n    // 居中的“人形—短线—人形”装置。线长固定，不随条带宽度拉长；窗口太窄\n    // 时把人形往里收，最后才让线段略微缩短。\n    var lineLen = clamp(STRIP.lineLen * sv, STRIP.lineLenMin, STRIP.lineLenMax);\n    var maxHalf = Math.max(24, w / 2 - figW - 16 - STRIP.sideGap * sv);\n    var half = Math.min(lineLen / 2, maxHalf);\n    var x0 = w / 2 - half;\n    var x1 = w / 2 + half;\n    var gap = STRIP.sideGap * sv;\n    var centerL = x0 - gap - figW / 2;\n    var centerR = x1 + gap + figW / 2;\n    var span = x1 - x0;\n    var cy = bandTop + figH * STRIP.figBeamY;\n    var lineW = clamp(figH * BEAM.widthRatio, BEAM.widthMin, BEAM.widthMax);\n\n    var textTop = bandTop + figH + TEXT.gap * sv;\n    var lineH = TEXT.lineHeight * sv;\n    var lineY = [textTop + lineH / 2, textTop + lineH * 1.5, textTop + lineH * 2.5];\n\n    var rMax = clamp(figH * PKT.rMaxRatio, PKT.rMin, PKT.rMaxLimit);\n    return {\n      w: w,\n      h: h,\n      sv: sv,\n      bandTop: bandTop,\n      figH: figH,\n      figW: figW,\n      figTop: bandTop,\n      figBottom: bandTop + figH,\n      centerL: centerL,\n      centerR: centerR,\n      lineW: lineW,\n      beam: {\n        x0: x0,\n        x1: x1,\n        cx: w / 2,\n        cy: cy,\n        sag: 0,                    // 2026-11-05：直线（原弧线取消）\n        halfH: lineW / 2,\n        fade: clamp(span * BEAM.fadeRatio, BEAM.fadeMin, BEAM.fadeMax)\n      },\n      pkt: {\n        x0: x0 + span * PKT.insetRatio,\n        x1: x1 - span * PKT.insetRatio,\n        r0: rMax * PKT.r0OfMax,\n        rMax: rMax\n      },\n      text: {\n        cx: w / 2,\n        lineY: lineY,\n        lineH: lineH,\n        titleSize: TEXT.titleSize * sv,\n        lineSize: TEXT.lineSize * sv,\n        maxW: w - TEXT.padX * 2\n      }\n    };\n  }\n\n  function beamYAt(L, x) {\n    var half = (L.beam.x1 - L.beam.x0) / 2;\n    var t = half > 0 ? (x - L.beam.cx) / half : 0;\n    return L.beam.cy + L.beam.sag * t * t;\n  }\n\n  function beamHalf(L, x) {\n    var d = Math.min(x - L.beam.x0, L.beam.x1 - x);\n    if (d <= 0) return 0;\n    return L.beam.halfH * Math.min(1, d / L.beam.fade);\n  }\n\n  /* =========================================================================\n   * 四、绘制：传送线 / 人形 / 光点\n   * ========================================================================= */\n\n  function drawBeam(c, L, color, alpha) {\n    var b = L.beam;\n    var N = BEAM.samples;\n    var i, x, y;\n    c.save();\n    c.globalAlpha = alpha == null ? 1 : alpha;\n    c.fillStyle = color;\n    c.beginPath();\n    for (i = 0; i <= N; i++) {\n      x = b.x0 + (b.x1 - b.x0) * i / N;\n      y = beamYAt(L, x) - beamHalf(L, x);\n      if (i) c.lineTo(x, y); else c.moveTo(x, y);\n    }\n    for (i = N; i >= 0; i--) {\n      x = b.x0 + (b.x1 - b.x0) * i / N;\n      c.lineTo(x, beamYAt(L, x) + beamHalf(L, x));\n    }\n    c.closePath();\n    c.fill();\n    c.restore();\n  }\n\n  /* 人形离屏精灵：空心用“填充并集 → destination-out 内缩区”，和源文件一致。\n   * 这样相邻块（臂底 / 躯干底 / 腿顶）的边会自然并成同一条线，不会出现\n   * 一条条独立描边叠在一起的脏边。每个尺寸 / DPR / 颜色只重建一次。 */\n  function buildFigureSprite(figH, dpr, color, hollow) {\n    var scale = figH / FIG.H;\n    var pad = FIG.pad;\n    var wCss = Math.ceil((FIG.W + pad * 2) * scale);\n    var hCss = Math.ceil((FIG.H + pad * 2) * scale);\n    var cv = document.createElement('canvas');\n    cv.width = Math.max(1, Math.round(wCss * dpr));\n    cv.height = Math.max(1, Math.round(hCss * dpr));\n    var c = cv.getContext('2d');\n    var unit = scale * dpr;\n    c.setTransform(unit, 0, 0, unit, pad * scale * dpr, pad * scale * dpr);\n\n    var rects = figRects(hollow);\n    var i, r;\n    c.fillStyle = color;\n    for (i = 0; i < rects.length; i++) {\n      r = rects[i];\n      rr(c, r[0], r[1], r[2], r[3], FIG.rad);\n      c.fill();\n    }\n    if (hollow) {\n      c.globalCompositeOperation = 'destination-out';\n      for (i = 0; i < rects.length; i++) {\n        r = rects[i];\n        var ins = FIG.inset;\n        rr(c, r[0] + ins, r[1] + ins, r[2] - ins * 2, r[3] - ins * 2,\n          Math.max(FIG.rad - ins, 1));\n        c.fill();\n      }\n      c.globalCompositeOperation = 'source-over';\n    }\n    return { canvas: cv, wCss: wCss, hCss: hCss, scale: scale, pad: pad };\n  }\n\n  function drawFigure(c, sprite, cx, top, figH) {\n    var scale = figH / FIG.H;\n    var x = cx - (FIG.W / 2 + sprite.pad) * scale;\n    var y = top - sprite.pad * scale;\n    c.drawImage(sprite.canvas, x, y, sprite.wCss, sprite.hCss);\n  }\n\n  function drawPacket(c, L, u, color, fixedMax) {\n    var p = lut(PKT.ease, clamp01(u));\n    var x = L.pkt.x0 + (L.pkt.x1 - L.pkt.x0) * p;\n    var y = beamYAt(L, x);\n    var b = Math.sin(Math.PI * clamp01(p));\n    var r = fixedMax ? L.pkt.rMax : L.pkt.r0 + (L.pkt.rMax - L.pkt.r0) * b;\n    var a = fixedMax ? 1 : ss(0, 0.03, u) * (1 - ss(0.97, 1, u));\n\n    c.save();\n    c.translate(x, y);\n    c.scale(1, 0.95);                 // 源文件同样是轻微压扁的圆\n    c.globalAlpha = a;\n    c.fillStyle = color;\n    c.beginPath();\n    c.arc(0, 0, r, 0, Math.PI * 2);\n    c.fill();\n    c.restore();\n  }\n\n  /* =========================================================================\n   * 五、绘制：两种模式的视觉带\n   * ========================================================================= */\n\n  // mode='run'：完整复刻源动画的视觉带\n  function drawRunBand(c, L, t, colors, reduced) {\n    drawBeam(c, L, colors.ink, 1);\n\n    drawFigure(c, L.sprites.L, L.centerL, L.figTop, L.figH);\n    drawFigure(c, L.sprites.R, L.centerR, L.figTop, L.figH);\n\n    if (reduced) {\n      // 静止帧：一个光点定格在传送线中点（p=0.5 时 x 基本就是线段中点）\n      drawPacket(c, L, 0.5, colors.ink, true);\n      return;\n    }\n    var tt = t % PKT.loop;\n    for (var i = 0; i < PKT.emit.length; i++) {\n      var age = (tt - PKT.emit[i] + PKT.loop) % PKT.loop;\n      if (age <= PKT.travel) drawPacket(c, L, age / PKT.travel, colors.ink, false);\n    }\n  }\n\n  /* =========================================================================\n   * 六、绘制：三行文字\n   * ========================================================================= */\n\n  function ellipsize(ctx, text, maxW) {\n    if (ctx.measureText(text).width <= maxW) return text;\n    var chars = Array.from(text);\n    while (chars.length > 1) {\n      chars.pop();\n      var trial = chars.join('') + '…';\n      if (ctx.measureText(trial).width <= maxW) return trial;\n    }\n    return '…';\n  }\n\n  function fitLine(ctx, text, weight, size, maxW) {\n    var s = size;\n    text = text == null ? '' : String(text);\n    ctx.font = weight + ' ' + s + 'px ' + FONT_STACK;\n    while (s > size * 0.8 && ctx.measureText(text).width > maxW) {\n      s -= 0.5;\n      ctx.font = weight + ' ' + s + 'px ' + FONT_STACK;\n    }\n    if (ctx.measureText(text).width > maxW) {\n      text = ellipsize(ctx, text, maxW);\n      ctx.font = weight + ' ' + s + 'px ' + FONT_STACK;\n    }\n    return { text: text, font: weight + ' ' + s + 'px ' + FONT_STACK, width: ctx.measureText(text).width };\n  }\n\n  function buildMetrics(ctx, L, state) {\n    var title = fitLine(ctx, state.title, TEXT.titleWeight, L.text.titleSize, L.text.maxW);\n    var meta = fitLine(ctx, state.meta, TEXT.lineWeight, L.text.lineSize, L.text.maxW);\n    var action = fitLine(ctx, state.action, TEXT.lineWeight, L.text.lineSize, L.text.maxW);\n\n    return {\n      title: title,\n      meta: meta,\n      action: action,\n      startX: L.text.cx - title.width / 2\n    };\n  }\n\n  function drawText(c, L, M, t, colors, reduced) {\n    if (!M) return;\n    c.textAlign = 'left';\n    c.textBaseline = 'middle';\n    // 三条文字同色（固定墨色，不跟主题色）、同字重、无标题点动画。\n    c.fillStyle = colors.ink;\n    c.globalAlpha = 1;\n\n    c.font = M.title.font;\n    c.fillText(M.title.text, M.startX, L.text.lineY[0]);\n\n    c.font = M.meta.font;\n    c.fillText(M.meta.text, L.text.cx - M.meta.width / 2, L.text.lineY[1]);\n\n    c.font = M.action.font;\n    c.fillText(M.action.text, L.text.cx - M.action.width / 2, L.text.lineY[2]);\n\n    c.globalAlpha = 1;\n  }\n\n  /* =========================================================================\n   * 七、引擎实例\n   * ========================================================================= */\n\n  function create(host, opts) {\n    if (!host || !host.appendChild) throw new Error('[marRunEngine] host is required');\n    opts = opts || {};\n\n    var height = clamp(parseInt(opts.height, 10) || DEFAULT_HEIGHT, 96, 240);\n    var explicitReduced = opts.reduced != null;\n    var reducedMq = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;\n\n    var state = {\n      mode: opts.mode === 'think' ? 'think' : 'run',\n      title: opts.title != null ? String(opts.title) : '深度求索中',\n      meta: opts.meta != null ? String(opts.meta) : '用时 0 秒',\n      action: opts.action != null ? String(opts.action) : '调用工具 · read',\n      ink: opts.ink != null ? opts.ink : null,\n      dim: opts.dim != null ? opts.dim : null,\n      reduced: explicitReduced ? !!opts.reduced : !!(reducedMq && reducedMq.matches)\n    };\n\n    var cv = document.createElement('canvas');\n    cv.className = 'mar-run-canvas';\n    cv.setAttribute('aria-hidden', 'true');\n    cv.style.display = 'block';\n    cv.style.width = '100%';\n    cv.style.height = height + 'px';\n    cv.style.pointerEvents = 'none';\n    host.appendChild(cv);\n\n    var ctx = cv.getContext('2d');\n    var W = 0, dpr = 1, L = null, M = null;\n    var colors = { ink: '#C0FE04', dim: 'rgba(192,254,4,0.72)', dimAlpha: 1 };\n    var sprites = { key: '', L: null, R: null };\n    var raf = 0;\n    var destroyed = false;\n    var t0 = (window.performance && performance.now ? performance.now() : Date.now());\n    var hiddenAt = 0;\n    var observer = null;\n\n    function nowMs() {\n      return (window.performance && performance.now) ? performance.now() : Date.now();\n    }\n\n    function readInk() {\n      // 2026-11-05 用户：两个动画都**不跟主题色**走，固定用我们设定的颜色。\n      var ink = state.ink || '#C0FE04';\n      ink = normalizeColor(ink) || '#C0FE04';\n      colors.ink = ink;\n      colors.dim = alphaColor(ink, 0.72) || ink;\n      colors.dimAlpha = 1;\n    }\n\n    function ensureSprites() {\n      var key = dpr + '|' + L.figH + '|' + colors.ink;\n      if (sprites.key === key) return;\n      sprites.key = key;\n      sprites.L = buildFigureSprite(L.figH, dpr, colors.ink, true);\n      sprites.R = buildFigureSprite(L.figH, dpr, colors.ink, false);\n    }\n\n    function rebuild() {\n      if (!L) return;\n      L.sprites = sprites;\n      ensureSprites();\n      M = buildMetrics(ctx, L, state);\n    }\n\n    function layout() {\n      var w = Math.round(host.clientWidth || 0);\n      if (w < 1) w = opts.fallbackWidth ? Math.round(opts.fallbackWidth) : 0;\n      if (w < 1) return false;\n      var d = Math.min(window.devicePixelRatio || 1, 3);\n      if (w === W && d === dpr && L) return false;\n\n      W = w;\n      dpr = d;\n      cv.width = Math.max(1, Math.round(W * dpr));\n      cv.height = Math.max(1, Math.round(H() * dpr));\n      cv.style.width = '100%';\n      cv.style.height = height + 'px';\n      L = computeLayout(W, height);\n      sprites.key = '';\n      readInk();\n      rebuild();\n      return true;\n    }\n\n    function H() { return height; }\n\n    function render(t) {\n      if (!L) return;\n      ctx.setTransform(1, 0, 0, 1, 0, 0);\n      ctx.clearRect(0, 0, cv.width, cv.height);\n      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);\n\n      drawRunBand(ctx, L, t, colors, state.reduced);\n      drawText(ctx, L, M, t, colors, state.reduced);\n    }\n\n    function tick(now) {\n      raf = 0;\n      if (destroyed || state.reduced || document.hidden) return;\n      var t = ((now == null ? nowMs() : now) - t0) / 1000;\n      render(t);\n      raf = requestAnimationFrame(tick);\n    }\n\n    function start() {\n      if (destroyed || raf) return;\n      if (state.reduced || document.hidden) {\n        render(state.reduced ? 0.35 : (nowMs() - t0) / 1000);\n        return;\n      }\n      raf = requestAnimationFrame(tick);\n    }\n\n    function stop() {\n      if (raf) {\n        cancelAnimationFrame(raf);\n        raf = 0;\n      }\n    }\n\n    function onResize() {\n      if (destroyed) return;\n      if (layout()) {\n        if (state.reduced) render(0.35); else start();\n      }\n    }\n\n    function onVisibility() {\n      if (destroyed) return;\n      if (document.hidden) {\n        hiddenAt = nowMs();\n        stop();\n      } else {\n        if (hiddenAt) {\n          t0 += nowMs() - hiddenAt;\n          hiddenAt = 0;\n        }\n        start();\n      }\n    }\n\n    function onMotionPreference() {\n      if (explicitReduced || destroyed) return;\n      state.reduced = !!(reducedMq && reducedMq.matches);\n      if (state.reduced) { stop(); render(0.35); } else start();\n    }\n\n    function set(patch) {\n      if (destroyed || !patch) return api;\n      if (patch.mode != null) state.mode = patch.mode === 'think' ? 'think' : 'run';\n      if (patch.title != null) state.title = String(patch.title);\n      if (patch.meta != null) state.meta = String(patch.meta);\n      if (patch.action != null) state.action = String(patch.action);\n      if (patch.ink !== undefined) state.ink = patch.ink == null ? null : patch.ink;\n      if (patch.dim !== undefined) state.dim = patch.dim == null ? null : patch.dim;\n      if (patch.reduced != null) {\n        state.reduced = !!patch.reduced;\n        explicitReduced = true;\n      }\n      readInk();\n      rebuild();\n      if (state.reduced) {\n        stop();\n        render(0.35);\n      } else {\n        start();\n      }\n      return api;\n    }\n\n    function destroy() {\n      if (destroyed) return;\n      destroyed = true;\n      stop();\n      if (observer) {\n        try { observer.disconnect(); } catch (e) { /* noop */ }\n        observer = null;\n      }\n      window.removeEventListener('resize', onResize);\n      document.removeEventListener('visibilitychange', onVisibility);\n      if (reducedMq && reducedMq.removeEventListener) {\n        reducedMq.removeEventListener('change', onMotionPreference);\n      }\n      if (cv.parentNode) cv.parentNode.removeChild(cv);\n    }\n\n    // ---- 首次布局 + 监听 ---------------------------------------------------\n    layout();\n    if (L) {\n      start();\n    } else {\n      // host 还没有尺寸（例如刚插入 DOM）：等一帧再量。\n      requestAnimationFrame(function () { onResize(); });\n    }\n\n    if (window.ResizeObserver) {\n      observer = new ResizeObserver(onResize);\n      try { observer.observe(host); } catch (e) { observer = null; }\n    }\n    window.addEventListener('resize', onResize);\n    document.addEventListener('visibilitychange', onVisibility);\n    if (reducedMq && reducedMq.addEventListener) {\n      reducedMq.addEventListener('change', onMotionPreference);\n    }\n\n    var api = {\n      set: set,\n      destroy: destroy,\n      canvas: cv,\n      resize: onResize,\n      // 验收用：当前布局（居中人形 + 直线；sag 必须为 0）。\n      metrics: function () {\n        if (!L) return null;\n        return {\n          width: W,\n          height: height,\n          beamSpan: L.beam.x1 - L.beam.x0,\n          sag: L.beam.sag,\n          figH: L.figH,\n          textLineY: L.text.lineY.slice(),\n          ink: colors.ink,\n          titleWeight: TEXT.titleWeight,\n          lineWeight: TEXT.lineWeight,\n          titleDots: 0\n        };\n      },\n      // 验收/截图辅助：暂停 RAF 并把画面定格在指定时间（秒）。\n      renderAt: function (seconds) {\n        var v = parseFloat(seconds);\n        if (destroyed || !isFinite(v)) return api;\n        stop();\n        render(v);\n        return api;\n      },\n      pause: function () { stop(); return api; },\n      resume: function () { start(); return api; }\n    };\n    return api;\n  }\n\n  window.__marRunEngine = {\n    create: create,\n    version: '0.1.0'\n  };\n})();\n"};
+    var RUN_PAYLOAD = {"engine":"/* ===========================================================================\n * dsh-theme-mls-desktop213 — 输入框上方「运行提示」紧凑条带引擎\n * -----------------------------------------------------------------------------\n * 视觉来源：D:\\PythonCode\\ma\\运行动画.html（1920×1080，S=1/3 逻辑缩放）。\n * 原动画是整屏构图：左空心人形 + 右实心人形 + 一条微下弯传送线 + 每轮两个\n * 光点 + 三行居中文字。这里把同一套几何／节奏压进输入框上方 132px 高的条带：\n *\n *   ┌──────────────────────────────────────────────┐\n *   │  空心人形  ───────●──────────────  实心人形   │  视觉带 52px\n *   │              深度求索中 ○ ○ ○                 │  ← 13px / 22px 行高\n *   │              用时 12 秒                        │\n *   │              调用工具 · read                   │\n *   └──────────────────────────────────────────────┘\n *\n * 关键取舍：\n *   1. 背景保持透明，不填任何底色 —— DSH 自己的面板透出来。\n *   2. 人形按高度重新标定（原图 291 局部单位 → 44 CSS px），横向只保留\n *      原图 11.5% / 88.5% 的中心位置关系，所以 560~1000px 宽都能容纳。\n *   3. 传送线保持“两端低于中点”的微下弯（原图 sag≈13.9 源像素），光点严格\n *      沿用原动画的 3.0s 轮、0.433s 间隔、1.03s 行程与 P 曲线。\n *   4. 所有动态都在 RAF 里；prefers-reduced-motion / state.reduced 时只画\n *      一帧（三个标题点全亮，光点定格在传送线中点）。\n *\n * 对外 API（不依赖 import / require / 网络 / 外部资源）：\n *\n *   var inst = window.__marRunEngine.create(host, { height: 132 });\n *   inst.set({ mode:'run', title:'深度求索中', meta:'用时 12 秒',\n *              action:'调用工具 · read', ink:null, dim:null, reduced:false });\n *   inst.renderAt(0.6);   // 验收辅助：暂停 RAF 并定格到 t=0.6s（可选）\n *   inst.destroy();\n *\n * host 由插件创建；本引擎只负责在 host 内追加一个 <canvas>。\n * ========================================================================= */\n(function () {\n  'use strict';\n\n  var DEFAULT_HEIGHT = 132;                 // 交付口径：132 CSS px\n  var FONT_STACK = \"'Microsoft YaHei','Noto Sans SC','PingFang SC',sans-serif\";\n\n  /* =========================================================================\n   * 一、参数区（全部来自 运行动画.html，转换关系写在每条旁边）\n   * ========================================================================= */\n\n  /* ---- 传送线 -------------------------------------------------------------\n   * 2026-11-05 用户：改成一条**标准直线**——矩形截面、两端各 1.5px 圆角，\n   * 不再做原文件那种两端渐细（尖头）。线厚仍按人形高比例取 ~1.9px。\n   */\n  var BEAM = {\n    widthRatio: 0.041,      // 线厚 = 人形高 × 4.1%（46 → 1.9px）\n    widthMin: 1.2,\n    widthMax: 2.4,\n    capRadius: 1.5          // 两端圆角（CSS px；不超过半线厚）\n  };\n\n  /* ---- 光点（视频逐帧实测，原样保留）-------------------------------------\n   * loop 3.0s 一轮；每轮 emit 两个球，间隔 0.433s（13 帧）；单球 travel\n   * 1.03s（31 帧）；两个球都消失后空窗 1.54s。\n   * 源文件飞行范围 x 432→1490，相对传送线两端各内缩 ≈4.7%。\n   * 半径源值 r0=10 / rMax=19（直径 20→38→20），按“人形高”比例换算到条带：\n   * 19/291 = 6.5% × 44 ≈ 3.0px；r0 / rMax = 10/19 ≈ 0.526，两端小、中点大。\n   */\n  var PKT = {\n    loop: 3.0,\n    emit: [0, 0.433],\n    travel: 1.03,\n    insetRatio: 0.047,\n    r0OfMax: 0.526,         // 源文件 r0/rMax = 10/19：两端半径是最峰值的 52.6%\n    rMaxRatio: 0.068,       // 半径峰 ≈ 人形高 × 6.8%（44 → 3.0px）\n    rMin: 2.6,\n    rMaxLimit: 3.8,\n    // 位移 LUT：源文件实测基本线性、略 S 形，两端速度慢、中段快。\n    ease: [\n      [0.00, 0.00], [0.10, 0.05], [0.20, 0.13], [0.30, 0.23],\n      [0.40, 0.35], [0.50, 0.49], [0.60, 0.63], [0.70, 0.75],\n      [0.80, 0.86], [0.90, 0.95], [1.00, 1.00]\n    ]\n  };\n\n  /* ---- 人形（源文件局部坐标 164×291，原样搬过来）-------------------------\n   * rects: [x, y, w, h] → 头 / 左臂 / 躯干 / 右臂；腿是两条 41 宽的竖条。\n   * 身体底边 182，腿顶 170：重叠 12 源像素恰好并成一条胯线（原注释）。\n   * headDy：右人形头单独上移 6 源像素；hollow：左边空心、右边实心。\n   * rad=4.5 / inset=12 是源文件的圆角与空心描边厚度；缩放后分别约\n   * 0.7px / 1.8px，因此空心描边在 132px 高时仍然清楚。\n   */\n  var FIG = {\n    W: 164,\n    H: 291,\n    rects: [\n      [ 49,   0,  65,  68],   // 头（与躯干间留 3px 颈隙）\n      [  0,  71,  40, 111],   // 左臂 → 底 182\n      [ 49,  71,  65, 111],   // 躯干 → 底 182\n      [124,  71,  40, 111]    // 右臂 → 底 182\n    ],\n    legs: [[24, 41], [100, 41]],\n    legY: 170,\n    legBottom: 291,\n    titleBottom: 182,\n    headDy: { L: 0, R: -6 },\n    rad: 4.5,\n    inset: 12,\n    pad: 9                    // 源文件离屏画布 HP：给描边留的边距\n  };\n\n  /* ---- 文字 --------------------------------------------------------------\n   * 源文件 60px / 行距 ≈ 79.5px（1.325 倍），按整屏 1080 折算到 132px 条带\n   * 会只剩 7px 左右，太糊；交付明确“字号约 13px、行高 22px”，这里以可读性\n   * 为准，只保留源文件的“三行居中、第一行带点”的结构。\n   * 标题点：半径 1.55px、点间距 5.2px、文字后留白 4.5px，亮度依次呼吸。\n   */\n  var TEXT = {\n    titleSize: 13,\n    lineSize: 13,\n    lineHeight: 22,\n    // 2026-11-05 用户：三条文字颜色统一、不加粗、不要标题后的呼吸点动画，\n    // 视觉上跟左边空心人形一致 —— 全部 400 字重、同一支固定墨色、行高不变。\n    titleWeight: 400,\n    lineWeight: 400,\n    gap: 10,                  // 视觉带底 → 第一行文字顶端\n    padX: 24                  // 文字左右安全边距\n  };\n\n  /* ---- 条带布局 ----------------------------------------------------------\n   * 2026-11-05 用户按原始游戏截图（人形 + 短线）要求改成**居中紧凑构图**：\n   * 两个人形之间是一条**直线**，长度固定约 220px（源 1920 构图里 1172px 是\n   * 61% 宽，铺满 820px 条带会显得线太长）；人形高度 46px。整个装置居中，\n   * 不再把人形顶到左右边缘。视觉带 54px；文字仍居中放在下方。\n   */\n  var STRIP = {\n    bandTop: 4,\n    figH: 46,\n    figHMin: 38,\n    figHSmallBelow: 520,      // 更窄时把人形缩到 38\n    figBeamY: 0.55,           // 直线穿过人形高度的 55%（参考截图）\n    lineLen: 220,             // 直线长度（CSS px）\n    lineLenMin: 160,\n    lineLenMax: 260,\n    sideGap: 10,              // 人形边缘 → 直线端点\n    bandH: 54\n  };\n\n  /* =========================================================================\n   * 二、工具\n   * ========================================================================= */\n  var clamp01 = function (v) { return v < 0 ? 0 : v > 1 ? 1 : v; };\n  var clamp = function (v, a, b) { return v < a ? a : v > b ? b : v; };\n  var ss = function (a, b, v) {\n    var x = clamp01((v - a) / (b - a));\n    return x * x * (3 - 2 * x);\n  };\n\n  // 颜色归一化探针：随便给一个 CSS 颜色，浏览器把它解析成 #rrggbb / rgba()。\n  // 解析失败时 fillStyle 保持上一次的值，我们用哨兵判断。\n  var probe = document.createElement('canvas').getContext('2d');\n  function normalizeColor(value) {\n    if (!value) return '';\n    try {\n      probe.fillStyle = '#010203';\n      probe.fillStyle = String(value).trim();\n      var out = probe.fillStyle;\n      return out === '#010203' ? '' : out;\n    } catch (e) {\n      return '';\n    }\n  }\n\n  function alphaColor(cssColor, alpha) {\n    var c = normalizeColor(cssColor);\n    var m;\n    if (!c) return '';\n    if (c.charAt(0) === '#') {\n      var hex = c.slice(1);\n      if (hex.length === 3) hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];\n      if (hex.length === 6 || hex.length === 8) {\n        var r = parseInt(hex.slice(0, 2), 16);\n        var g = parseInt(hex.slice(2, 4), 16);\n        var b = parseInt(hex.slice(4, 6), 16);\n        return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';\n      }\n    }\n    m = /^rgba?\\(\\s*([\\d.]+)[,\\s]+([\\d.]+)[,\\s]+([\\d.]+)/i.exec(c);\n    if (m) return 'rgba(' + m[1] + ',' + m[2] + ',' + m[3] + ',' + alpha + ')';\n    return '';\n  }\n\n  function lut(L, u) {\n    if (u <= L[0][0]) return L[0][1];\n    for (var i = 1; i < L.length; i++) {\n      if (u <= L[i][0]) {\n        var t = (u - L[i - 1][0]) / (L[i][0] - L[i - 1][0]);\n        var s = 0.5 - 0.5 * Math.cos(Math.PI * t);\n        return L[i - 1][1] + (L[i][1] - L[i - 1][1]) * s;\n      }\n    }\n    return L[L.length - 1][1];\n  }\n\n  function rr(c, x, y, w, h, r) {\n    r = Math.max(0, Math.min(r, w / 2, h / 2));\n    c.beginPath();\n    c.moveTo(x + r, y);\n    c.arcTo(x + w, y, x + w, y + h, r);\n    c.arcTo(x + w, y + h, x, y + h, r);\n    c.arcTo(x, y + h, x, y, r);\n    c.arcTo(x, y, x + w, y, r);\n    c.closePath();\n  }\n\n  /* =========================================================================\n   * 三、布局 / 几何\n   * ========================================================================= */\n\n  function figRects(hollow) {\n    var dy = FIG.headDy[hollow ? 'L' : 'R'];\n    var out = [];\n    var i, r;\n    for (i = 0; i < FIG.rects.length; i++) {\n      r = FIG.rects[i];\n      out.push(i === 0 ? [r[0], r[1] + dy, r[2], r[3]] : r);\n    }\n    var lh = FIG.legBottom - FIG.legY;\n    for (i = 0; i < FIG.legs.length; i++) {\n      out.push([FIG.legs[i][0], FIG.legY, FIG.legs[i][1], lh]);\n    }\n    return out;\n  }\n\n  function computeLayout(w, h) {\n    var sv = h / DEFAULT_HEIGHT;                 // 垂直缩放（默认高度时=1）\n    var figH = (w < STRIP.figHSmallBelow ? STRIP.figHMin : STRIP.figH) * sv;\n    var figW = figH * (FIG.W / FIG.H);\n    var bandTop = STRIP.bandTop * sv;\n\n    // 居中的“人形—短线—人形”装置。线长固定，不随条带宽度拉长；窗口太窄\n    // 时把人形往里收，最后才让线段略微缩短。\n    var lineLen = clamp(STRIP.lineLen * sv, STRIP.lineLenMin, STRIP.lineLenMax);\n    var maxHalf = Math.max(24, w / 2 - figW - 16 - STRIP.sideGap * sv);\n    var half = Math.min(lineLen / 2, maxHalf);\n    var x0 = w / 2 - half;\n    var x1 = w / 2 + half;\n    var gap = STRIP.sideGap * sv;\n    var centerL = x0 - gap - figW / 2;\n    var centerR = x1 + gap + figW / 2;\n    var span = x1 - x0;\n    var cy = bandTop + figH * STRIP.figBeamY;\n    var lineW = clamp(figH * BEAM.widthRatio, BEAM.widthMin, BEAM.widthMax);\n\n    var textTop = bandTop + figH + TEXT.gap * sv;\n    var lineH = TEXT.lineHeight * sv;\n    var lineY = [textTop + lineH / 2, textTop + lineH * 1.5, textTop + lineH * 2.5];\n\n    var rMax = clamp(figH * PKT.rMaxRatio, PKT.rMin, PKT.rMaxLimit);\n    return {\n      w: w,\n      h: h,\n      sv: sv,\n      bandTop: bandTop,\n      figH: figH,\n      figW: figW,\n      figTop: bandTop,\n      figBottom: bandTop + figH,\n      centerL: centerL,\n      centerR: centerR,\n      lineW: lineW,\n      beam: {\n        x0: x0,\n        x1: x1,\n        cx: w / 2,\n        cy: cy,\n        sag: 0,                    // 2026-11-05：直线（原弧线取消）\n        halfH: lineW / 2,\n        cap: Math.min(BEAM.capRadius, lineW / 2)\n      },\n      pkt: {\n        x0: x0 + span * PKT.insetRatio,\n        x1: x1 - span * PKT.insetRatio,\n        r0: rMax * PKT.r0OfMax,\n        rMax: rMax\n      },\n      text: {\n        cx: w / 2,\n        lineY: lineY,\n        lineH: lineH,\n        titleSize: TEXT.titleSize * sv,\n        lineSize: TEXT.lineSize * sv,\n        maxW: w - TEXT.padX * 2\n      }\n    };\n  }\n\n  function beamYAt(L, x) {\n    return L.beam.cy + L.beam.sag;\n  }\n\n  /* =========================================================================\n   * 四、绘制：传送线 / 人形 / 光点\n   * ========================================================================= */\n\n  // 一条标准直线：矩形截面 + 两端 1.5px 圆角（不再是两端渐细的尖头）。\n  function drawBeam(c, L, color, alpha) {\n    var b = L.beam;\n    var x = b.x0;\n    var y = b.cy - b.halfH;\n    var w = b.x1 - b.x0;\n    var h = b.halfH * 2;\n    var r = Math.max(0, Math.min(b.cap == null ? 1.5 : b.cap, w / 2, h / 2));\n    if (w <= 0) return;\n    c.save();\n    c.globalAlpha = alpha == null ? 1 : alpha;\n    c.fillStyle = color;\n    c.beginPath();\n    c.moveTo(x + r, y);\n    c.lineTo(x + w - r, y);\n    c.quadraticCurveTo(x + w, y, x + w, y + r);\n    c.lineTo(x + w, y + h - r);\n    c.quadraticCurveTo(x + w, y + h, x + w - r, y + h);\n    c.lineTo(x + r, y + h);\n    c.quadraticCurveTo(x, y + h, x, y + h - r);\n    c.lineTo(x, y + r);\n    c.quadraticCurveTo(x, y, x + r, y);\n    c.closePath();\n    c.fill();\n    c.restore();\n  }\n\n  /* 人形离屏精灵：空心用“填充并集 → destination-out 内缩区”，和源文件一致。\n   * 这样相邻块（臂底 / 躯干底 / 腿顶）的边会自然并成同一条线，不会出现\n   * 一条条独立描边叠在一起的脏边。每个尺寸 / DPR / 颜色只重建一次。 */\n  function buildFigureSprite(figH, dpr, color, hollow) {\n    var scale = figH / FIG.H;\n    var pad = FIG.pad;\n    var wCss = Math.ceil((FIG.W + pad * 2) * scale);\n    var hCss = Math.ceil((FIG.H + pad * 2) * scale);\n    var cv = document.createElement('canvas');\n    cv.width = Math.max(1, Math.round(wCss * dpr));\n    cv.height = Math.max(1, Math.round(hCss * dpr));\n    var c = cv.getContext('2d');\n    var unit = scale * dpr;\n    c.setTransform(unit, 0, 0, unit, pad * scale * dpr, pad * scale * dpr);\n\n    var rects = figRects(hollow);\n    var i, r;\n    c.fillStyle = color;\n    for (i = 0; i < rects.length; i++) {\n      r = rects[i];\n      rr(c, r[0], r[1], r[2], r[3], FIG.rad);\n      c.fill();\n    }\n    if (hollow) {\n      c.globalCompositeOperation = 'destination-out';\n      for (i = 0; i < rects.length; i++) {\n        r = rects[i];\n        var ins = FIG.inset;\n        rr(c, r[0] + ins, r[1] + ins, r[2] - ins * 2, r[3] - ins * 2,\n          Math.max(FIG.rad - ins, 1));\n        c.fill();\n      }\n      c.globalCompositeOperation = 'source-over';\n    }\n    return { canvas: cv, wCss: wCss, hCss: hCss, scale: scale, pad: pad };\n  }\n\n  function drawFigure(c, sprite, cx, top, figH) {\n    var scale = figH / FIG.H;\n    var x = cx - (FIG.W / 2 + sprite.pad) * scale;\n    var y = top - sprite.pad * scale;\n    c.drawImage(sprite.canvas, x, y, sprite.wCss, sprite.hCss);\n  }\n\n  function drawPacket(c, L, u, color, fixedMax) {\n    var p = lut(PKT.ease, clamp01(u));\n    var x = L.pkt.x0 + (L.pkt.x1 - L.pkt.x0) * p;\n    var y = beamYAt(L, x);\n    var b = Math.sin(Math.PI * clamp01(p));\n    var r = fixedMax ? L.pkt.rMax : L.pkt.r0 + (L.pkt.rMax - L.pkt.r0) * b;\n    var a = fixedMax ? 1 : ss(0, 0.03, u) * (1 - ss(0.97, 1, u));\n\n    c.save();\n    c.translate(x, y);\n    c.scale(1, 0.95);                 // 源文件同样是轻微压扁的圆\n    c.globalAlpha = a;\n    c.fillStyle = color;\n    c.beginPath();\n    c.arc(0, 0, r, 0, Math.PI * 2);\n    c.fill();\n    c.restore();\n  }\n\n  /* =========================================================================\n   * 五、绘制：两种模式的视觉带\n   * ========================================================================= */\n\n  // mode='run'：完整复刻源动画的视觉带\n  function drawRunBand(c, L, t, colors, reduced) {\n    drawBeam(c, L, colors.ink, 1);\n\n    drawFigure(c, L.sprites.L, L.centerL, L.figTop, L.figH);\n    drawFigure(c, L.sprites.R, L.centerR, L.figTop, L.figH);\n\n    if (reduced) {\n      // 静止帧：一个光点定格在传送线中点（p=0.5 时 x 基本就是线段中点）\n      drawPacket(c, L, 0.5, colors.ink, true);\n      return;\n    }\n    var tt = t % PKT.loop;\n    for (var i = 0; i < PKT.emit.length; i++) {\n      var age = (tt - PKT.emit[i] + PKT.loop) % PKT.loop;\n      if (age <= PKT.travel) drawPacket(c, L, age / PKT.travel, colors.ink, false);\n    }\n  }\n\n  /* =========================================================================\n   * 六、绘制：三行文字\n   * ========================================================================= */\n\n  function ellipsize(ctx, text, maxW) {\n    if (ctx.measureText(text).width <= maxW) return text;\n    var chars = Array.from(text);\n    while (chars.length > 1) {\n      chars.pop();\n      var trial = chars.join('') + '…';\n      if (ctx.measureText(trial).width <= maxW) return trial;\n    }\n    return '…';\n  }\n\n  function fitLine(ctx, text, weight, size, maxW) {\n    var s = size;\n    text = text == null ? '' : String(text);\n    ctx.font = weight + ' ' + s + 'px ' + FONT_STACK;\n    while (s > size * 0.8 && ctx.measureText(text).width > maxW) {\n      s -= 0.5;\n      ctx.font = weight + ' ' + s + 'px ' + FONT_STACK;\n    }\n    if (ctx.measureText(text).width > maxW) {\n      text = ellipsize(ctx, text, maxW);\n      ctx.font = weight + ' ' + s + 'px ' + FONT_STACK;\n    }\n    return { text: text, font: weight + ' ' + s + 'px ' + FONT_STACK, width: ctx.measureText(text).width };\n  }\n\n  function buildMetrics(ctx, L, state) {\n    var title = fitLine(ctx, state.title, TEXT.titleWeight, L.text.titleSize, L.text.maxW);\n    var meta = fitLine(ctx, state.meta, TEXT.lineWeight, L.text.lineSize, L.text.maxW);\n    var action = fitLine(ctx, state.action, TEXT.lineWeight, L.text.lineSize, L.text.maxW);\n\n    return {\n      title: title,\n      meta: meta,\n      action: action,\n      startX: L.text.cx - title.width / 2\n    };\n  }\n\n  function drawText(c, L, M, t, colors, reduced) {\n    if (!M) return;\n    c.textAlign = 'left';\n    c.textBaseline = 'middle';\n    // 三条文字同色（固定墨色，不跟主题色）、同字重、无标题点动画。\n    c.fillStyle = colors.ink;\n    c.globalAlpha = 1;\n\n    c.font = M.title.font;\n    c.fillText(M.title.text, M.startX, L.text.lineY[0]);\n\n    c.font = M.meta.font;\n    c.fillText(M.meta.text, L.text.cx - M.meta.width / 2, L.text.lineY[1]);\n\n    c.font = M.action.font;\n    c.fillText(M.action.text, L.text.cx - M.action.width / 2, L.text.lineY[2]);\n\n    c.globalAlpha = 1;\n  }\n\n  /* =========================================================================\n   * 七、引擎实例\n   * ========================================================================= */\n\n  function create(host, opts) {\n    if (!host || !host.appendChild) throw new Error('[marRunEngine] host is required');\n    opts = opts || {};\n\n    var height = clamp(parseInt(opts.height, 10) || DEFAULT_HEIGHT, 96, 240);\n    var explicitReduced = opts.reduced != null;\n    var reducedMq = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;\n\n    var state = {\n      mode: opts.mode === 'think' ? 'think' : 'run',\n      title: opts.title != null ? String(opts.title) : '深度求索中',\n      meta: opts.meta != null ? String(opts.meta) : '用时 0 秒',\n      action: opts.action != null ? String(opts.action) : '调用工具 · read',\n      ink: opts.ink != null ? opts.ink : null,\n      dim: opts.dim != null ? opts.dim : null,\n      reduced: explicitReduced ? !!opts.reduced : !!(reducedMq && reducedMq.matches)\n    };\n\n    var cv = document.createElement('canvas');\n    cv.className = 'mar-run-canvas';\n    cv.setAttribute('aria-hidden', 'true');\n    cv.style.display = 'block';\n    cv.style.width = '100%';\n    cv.style.height = height + 'px';\n    cv.style.pointerEvents = 'none';\n    host.appendChild(cv);\n\n    var ctx = cv.getContext('2d');\n    var W = 0, dpr = 1, L = null, M = null;\n    var colors = { ink: '#C0FE04', dim: 'rgba(192,254,4,0.72)', dimAlpha: 1 };\n    var sprites = { key: '', L: null, R: null };\n    var raf = 0;\n    var destroyed = false;\n    var t0 = (window.performance && performance.now ? performance.now() : Date.now());\n    var hiddenAt = 0;\n    var observer = null;\n\n    function nowMs() {\n      return (window.performance && performance.now) ? performance.now() : Date.now();\n    }\n\n    function readInk() {\n      // 2026-11-05 用户：两个动画都**不跟主题色**走，固定用我们设定的颜色。\n      var ink = state.ink || '#C0FE04';\n      ink = normalizeColor(ink) || '#C0FE04';\n      colors.ink = ink;\n      colors.dim = alphaColor(ink, 0.72) || ink;\n      colors.dimAlpha = 1;\n    }\n\n    function ensureSprites() {\n      var key = dpr + '|' + L.figH + '|' + colors.ink;\n      if (sprites.key === key) return;\n      sprites.key = key;\n      sprites.L = buildFigureSprite(L.figH, dpr, colors.ink, true);\n      sprites.R = buildFigureSprite(L.figH, dpr, colors.ink, false);\n    }\n\n    function rebuild() {\n      if (!L) return;\n      L.sprites = sprites;\n      ensureSprites();\n      M = buildMetrics(ctx, L, state);\n    }\n\n    function layout() {\n      var w = Math.round(host.clientWidth || 0);\n      if (w < 1) w = opts.fallbackWidth ? Math.round(opts.fallbackWidth) : 0;\n      if (w < 1) return false;\n      var d = Math.min(window.devicePixelRatio || 1, 3);\n      if (w === W && d === dpr && L) return false;\n\n      W = w;\n      dpr = d;\n      cv.width = Math.max(1, Math.round(W * dpr));\n      cv.height = Math.max(1, Math.round(H() * dpr));\n      cv.style.width = '100%';\n      cv.style.height = height + 'px';\n      L = computeLayout(W, height);\n      sprites.key = '';\n      readInk();\n      rebuild();\n      return true;\n    }\n\n    function H() { return height; }\n\n    function render(t) {\n      if (!L) return;\n      ctx.setTransform(1, 0, 0, 1, 0, 0);\n      ctx.clearRect(0, 0, cv.width, cv.height);\n      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);\n\n      drawRunBand(ctx, L, t, colors, state.reduced);\n      drawText(ctx, L, M, t, colors, state.reduced);\n    }\n\n    function tick(now) {\n      raf = 0;\n      if (destroyed || state.reduced || document.hidden) return;\n      var t = ((now == null ? nowMs() : now) - t0) / 1000;\n      render(t);\n      raf = requestAnimationFrame(tick);\n    }\n\n    function start() {\n      if (destroyed || raf) return;\n      if (state.reduced || document.hidden) {\n        render(state.reduced ? 0.35 : (nowMs() - t0) / 1000);\n        return;\n      }\n      raf = requestAnimationFrame(tick);\n    }\n\n    function stop() {\n      if (raf) {\n        cancelAnimationFrame(raf);\n        raf = 0;\n      }\n    }\n\n    function onResize() {\n      if (destroyed) return;\n      if (layout()) {\n        if (state.reduced) render(0.35); else start();\n      }\n    }\n\n    function onVisibility() {\n      if (destroyed) return;\n      if (document.hidden) {\n        hiddenAt = nowMs();\n        stop();\n      } else {\n        if (hiddenAt) {\n          t0 += nowMs() - hiddenAt;\n          hiddenAt = 0;\n        }\n        start();\n      }\n    }\n\n    function onMotionPreference() {\n      if (explicitReduced || destroyed) return;\n      state.reduced = !!(reducedMq && reducedMq.matches);\n      if (state.reduced) { stop(); render(0.35); } else start();\n    }\n\n    function set(patch) {\n      if (destroyed || !patch) return api;\n      if (patch.mode != null) state.mode = patch.mode === 'think' ? 'think' : 'run';\n      if (patch.title != null) state.title = String(patch.title);\n      if (patch.meta != null) state.meta = String(patch.meta);\n      if (patch.action != null) state.action = String(patch.action);\n      if (patch.ink !== undefined) state.ink = patch.ink == null ? null : patch.ink;\n      if (patch.dim !== undefined) state.dim = patch.dim == null ? null : patch.dim;\n      if (patch.reduced != null) {\n        state.reduced = !!patch.reduced;\n        explicitReduced = true;\n      }\n      readInk();\n      rebuild();\n      if (state.reduced) {\n        stop();\n        render(0.35);\n      } else {\n        start();\n      }\n      return api;\n    }\n\n    function destroy() {\n      if (destroyed) return;\n      destroyed = true;\n      stop();\n      if (observer) {\n        try { observer.disconnect(); } catch (e) { /* noop */ }\n        observer = null;\n      }\n      window.removeEventListener('resize', onResize);\n      document.removeEventListener('visibilitychange', onVisibility);\n      if (reducedMq && reducedMq.removeEventListener) {\n        reducedMq.removeEventListener('change', onMotionPreference);\n      }\n      if (cv.parentNode) cv.parentNode.removeChild(cv);\n    }\n\n    // ---- 首次布局 + 监听 ---------------------------------------------------\n    layout();\n    if (L) {\n      start();\n    } else {\n      // host 还没有尺寸（例如刚插入 DOM）：等一帧再量。\n      requestAnimationFrame(function () { onResize(); });\n    }\n\n    if (window.ResizeObserver) {\n      observer = new ResizeObserver(onResize);\n      try { observer.observe(host); } catch (e) { observer = null; }\n    }\n    window.addEventListener('resize', onResize);\n    document.addEventListener('visibilitychange', onVisibility);\n    if (reducedMq && reducedMq.addEventListener) {\n      reducedMq.addEventListener('change', onMotionPreference);\n    }\n\n    var api = {\n      set: set,\n      destroy: destroy,\n      canvas: cv,\n      resize: onResize,\n      // 验收用：当前布局（居中人形 + 直线；sag 必须为 0）。\n      metrics: function () {\n        if (!L) return null;\n        return {\n          width: W,\n          height: height,\n          beamX0: L.beam.x0,\n          beamX1: L.beam.x1,\n          beamCy: L.beam.cy,\n          beamSpan: L.beam.x1 - L.beam.x0,\n          sag: L.beam.sag,\n          beamHalfH: L.beam.halfH,\n          beamCap: L.beam.cap == null ? 0 : L.beam.cap,\n          figH: L.figH,\n          textLineY: L.text.lineY.slice(),\n          ink: colors.ink,\n          titleWeight: TEXT.titleWeight,\n          lineWeight: TEXT.lineWeight,\n          titleDots: 0\n        };\n      },\n      // 验收/截图辅助：暂停 RAF 并把画面定格在指定时间（秒）。\n      renderAt: function (seconds) {\n        var v = parseFloat(seconds);\n        if (destroyed || !isFinite(v)) return api;\n        stop();\n        render(v);\n        return api;\n      },\n      pause: function () { stop(); return api; },\n      resume: function () { start(); return api; }\n    };\n    return api;\n  }\n\n  window.__marRunEngine = {\n    create: create,\n    version: '0.1.0'\n  };\n})();\n"};
 
     // Right-side dot animation (动画1) payload. Separate from RUN_PAYLOAD on
     // purpose: 2026-11-05 the user asked for the two animations to be two
@@ -80,7 +80,29 @@ window.__ModuleLoader__.load({
       var body = doc.body;
       if (!body) return;
 
-      var theme = ctx && typeof ctx.get === 'function' ? ctx.get('theme') : null;
+      //   NEVER capture the theme service at apply time.
+      //   DSH's client services are registered by their own plugins and the
+      //   activation order is NOT guaranteed. Measured on the Desktop
+      //   2026-11-05 (`mar.debug.v1` → `themeService:false`): at apply time
+      //   `ctx.get('theme')` was still null, and because this line used to cache
+      //   it, every service-backed path was dead for the whole session —
+      //   `overrideTokens` never ran, and the appearance preference could not be
+      //   read at all. That is exactly the reported bug: 通用设置 → 深色 changed
+      //   DSH's own palette while the theme's plate stayed light, with no pour.
+      //   It is the same "only fetched once" trap the sessions service had (see
+      //   the 会话面 note further down). Read it live; cache only a real answer.
+      var theme = null;
+      var themeSvcCalls = 0, themeSvcAt = 0;   // diagnostics only (mar.debug.v1)
+
+      function themeSvc() {
+        if (theme) return theme;
+        themeSvcCalls++;
+        try {
+          theme = (ctx && typeof ctx.get === 'function') ? ctx.get('theme') : null;
+        } catch (e) { theme = null; }
+        if (theme) themeSvcAt = Date.now();
+        return theme;
+      }
 
       // ---- CSS injection (idempotent) -------------------------------------
       function insertCss(css) {
@@ -279,10 +301,21 @@ window.__ModuleLoader__.load({
           '--dsw-alias-bg-mask-drop':                 both('var(--mar-scrim)')
       };
 
-      //   Path 1 — the theme service, when it answers at apply time.
-      if (theme && typeof theme.overrideTokens === 'function') {
-        try { theme.overrideTokens(PLUGIN_ID, MAR_TOKEN_MAP); } catch (e) {}
+      //   Path 1 — the theme service. Retried until it answers: at apply time it
+      //   is usually not registered yet (see themeSvc), so a single attempt here
+      //   would silently lose the layer for the whole session. `themeAdopt` calls
+      //   this again on each sweep until it sticks.
+      var themeTokensDone = false;
+      function themeOverrideTokens() {
+        if (themeTokensDone) return;
+        var svc = themeSvc();
+        if (!svc || typeof svc.overrideTokens !== 'function') return;
+        try {
+          svc.overrideTokens(PLUGIN_ID, MAR_TOKEN_MAP);
+          themeTokensDone = true;
+        } catch (e) {}
       }
+      themeOverrideTokens();
 
       //   Path 2 — the same map, written straight onto <body> as inline custom
       //   properties. Every DSH surface inherits from <body>, so this lands even
@@ -311,7 +344,17 @@ window.__ModuleLoader__.load({
             ? window.getComputedStyle(body) : null;
           window.localStorage.setItem('mar.debug.v1', JSON.stringify({
             at: Date.now(),
-            themeService: !!(theme && typeof theme.overrideTokens === 'function'),
+            themeService: !!(function () {
+              var svc = themeSvc();
+              return svc && typeof svc.getTheme === 'function';
+            })(),
+            themeServiceCalls: themeSvcCalls,
+            themeServiceAt: themeSvcAt,
+            domThemeSource: (function () {
+              try { return doc.documentElement.getAttribute('data-ds-theme-source') || ''; } catch (e) { return ''; }
+            })(),
+            preference: BG_STATE.pref,
+            colorScheme: BG_STATE.scheme,
             accent: ACCENT_STATE.color,
             bodyBg: cs ? cs.backgroundColor : '',
             aliasBgBase: cs ? cs.getPropertyValue('--dsw-alias-bg-base').trim() : '',
@@ -1455,6 +1498,13 @@ window.__ModuleLoader__.load({
         return accentRgb(ACCENT_STATE.color).join(',');
       }
       var BG_STATE = bgLoad();
+      //   `pref` is the DSH appearance preference (light | dark | system) — the
+      //   same value 通用设置 edits. `scheme` is only ever the RESOLVED pair
+      //   (light | dark) used to paint; a system preference lands here as
+      //   whatever the OS currently says. bgLoad keeps a copy purely so a host
+      //   without the theme service still has something to paint; wherever the
+      //   service exists it is read back on mount and wins (see themeAdopt).
+      var SYSTEM_MQ = null;
 
       var bgCanvas = null, bgCtx = null, bgMounted = false;
       var bgRaf = 0, bgElapsed = 0, bgLastMs = 0, bgDrawMs = 0, bgResizeTimer = null;
@@ -1475,7 +1525,7 @@ window.__ModuleLoader__.load({
       //           用户 2026-10-19："再给背景动画添加一个透明度，用于调节可见范围"。
       //           它乘在每条字形的 alpha 上，所以 0 就是"看不见"、1 是原样。
       function bgLoad() {
-        var out = { anim: false, scheme: 'dark', cell: 16, speed: 0.55, alpha: 1 };
+        var out = { anim: false, scheme: 'dark', pref: 'dark', cell: 16, speed: 0.55, alpha: 1 };
         var raw = null;
         try { raw = (typeof window !== 'undefined' && window.localStorage) ? window.localStorage.getItem(BG_STORE_KEY) : null; } catch (e) { raw = null; }
         if (!raw) return out;
@@ -1492,6 +1542,11 @@ window.__ModuleLoader__.load({
         else if (s.mode === 'off') out.anim = false;
         if (typeof s.anim === 'boolean') out.anim = s.anim;   // v3 wins over a migrated mode
         if (pair) out.scheme = pair;
+        //  v4 (2026-11-05): the preference joined the store. A store written
+        //  before it has no `pref`; the pair it was carrying IS the preference
+        //  it represented (an explicit light/dark), so it migrates losslessly.
+        if (s.pref === 'light' || s.pref === 'dark' || s.pref === 'system') out.pref = s.pref;
+        else out.pref = out.scheme;
         if (typeof s.cell === 'number') out.cell = bgNum(Math.round(s.cell), 8, 48);
         if (typeof s.speed === 'number') out.speed = bgNum(s.speed, 0, 1.5);
         //  Store written before 2026-10-19 has no alpha → full strength (1), which
@@ -1980,57 +2035,188 @@ var bgCleared = [];
 bgObserver.observe(host, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
       }
 
-      //   DSH'S OWN LIGHT/DARK SWITCH MUST AGREE WITH OURS.
-      //   The token overrides above are mode-independent — both slots resolve to
-      //   the same --mar-* property — so the theme's own surfaces ignore DSH's
-      //   preference. Everything keyed on `body[data-ds-dark-theme]` and on
-      //   `html { color-scheme }` does NOT: native form controls, the engine's
-      //   own scrollbar/selection colours and DSH's dark-scoped rules still
-      //   follow it. Left alone, 主白 + 绿 with 通用设置 on 深色 leaves all of that
-      //   on the dark side, which is the "颜色的切换也不完整" report. The user's own
-      //   workaround was to set 通用设置 to 跟随系统 by hand. The theme is the only
-      //   thing that knows which pair is active, so it drives the preference
-      //   instead of waiting for the user to pick a compatible one.
-      //   Guarded twice: only called when the pair is applied, and it only writes
-      //   when the RESOLVED scheme disagrees — `preference` may be `system`, and
-      //   `active.colorScheme` is always resolved. setTheme emits theme/change,
-      //   and the next call then agrees, so this settles in one write and cannot
-      //   oscillate.
-      var lastRequestedScheme = null;
+      //   DSH'S APPEARANCE PREFERENCE IS THE SINGLE SOURCE OF TRUTH.
+      //   通用设置 → 外观 has three cells (浅色 / 深色 / 跟随系统), and the
+      //   主题设置 「外观·配色」 row is a MIRROR of the same value, not a second
+      //   switch. The theme service owns the durable `preference` (host
+      //   user-settings): `system` is resolved through `prefers-color-scheme`,
+      //   `active.colorScheme` is always the resolved light/dark, and the service
+      //   re-emits `theme/change` when the OS flips while the preference is
+      //   `system`.
+      //   This plugin therefore only READS it and repaints its own plate. It used
+      //   to write an explicit light/dark back on mount and every 1.2s, which is
+      //   exactly what made 跟随系统 impossible: the theme overwrote the
+      //   preference the user had just picked in 通用设置.
+      var THEME_PREF_IDS = { light: true, dark: true, system: true };
+      var SYSTEM_MQ_HANDLER = null;
 
-      function syncThemePreference(wantLight) {
-        //   FIRST drive DSH's own DOM signal, THEN ask the service to agree.
-        //   ui-layout's presenter is what publishes the resolved scheme as
-        //   `html { color-scheme }` + `body[data-ds-dark-theme]`, and everything
-        //   DSH paints that this theme does NOT override keys off exactly those two:
-        //   the settings dialog, the 新对话 button, the composer card, the rail's
-        //   ink and the footer gradient. Asking the service alone was not enough —
-        //   measured on the Desktop with the pair on 主黑 + 绿, `dsDark` was still
-        //   false, and the result was a WHITE settings pane, black rail labels on a
-        //   black rail ("什么都看不见"), a white 新对话/composer, and a white bar
-        //   above the avatar where the light scheme expects a shadow.
-        //   Writing the two signals here is synchronous and immediate, which is what
-        //   a colour-pair switch needs; the service write below keeps the durable
-        //   preference in step so nothing re-flips it afterwards.
-        var rootEl = doc.documentElement;
-        if (rootEl && rootEl.style) rootEl.style.colorScheme = wantLight ? 'light' : 'dark';
+      function themeSnapshot() {
+        var svc = themeSvc();
+        if (svc && typeof svc.getTheme === 'function') {
+          try {
+            var snap = svc.getTheme();
+            if (snap && snap.active) {
+              var scheme = snap.active.colorScheme === 'light' ? 'light' : 'dark';
+              var pref = THEME_PREF_IDS[snap.preference] ? snap.preference : scheme;
+              return { pref: pref, scheme: scheme };
+            }
+          } catch (e) {}
+        }
+        //   FALLBACK — the presenter's own projection. ui-layout publishes the
+        //   preference as `html[data-ds-theme-source]` ('system' only when the
+        //   preference is system, else the resolved scheme) and the resolved
+        //   palette as `body[data-ds-dark-theme]`. Those two attributes are the
+        //   same ones the shell preload reads, and they land within the same
+        //   frame as a 通用设置 click — so even when the service still isn't
+        //   reachable from this plugin's ctx, the row can follow DSH and repaint.
+        //   Guarded on the source attribute existing: before the presenter's
+        //   first projection both attributes are absent and "absent dark" must
+        //   not be read as "the user picked light".
         try {
-          if (wantLight) body.removeAttribute('data-ds-dark-theme');
-          else body.setAttribute('data-ds-dark-theme', '');
+          var src = doc.documentElement.getAttribute('data-ds-theme-source');
+          if (src === 'light' || src === 'dark' || src === 'system') {
+            return {
+              pref: src,
+              scheme: body.hasAttribute('data-ds-dark-theme') ? 'dark' : 'light'
+            };
+          }
         } catch (e) {}
+        return null;
+      }
 
-        if (!theme || typeof theme.getTheme !== 'function' || typeof theme.setTheme !== 'function') return;
-        //   Ask the service ONCE per scheme per page, not "when it disagrees".
-        //   Guarding on getTheme().active.colorScheme was wrong: measured on the
-        //   Desktop it reported dark while DSH's DOM was still light, so the guard
-        //   concluded "already correct" and setTheme was never called — `dsDark`
-        //   stayed false and the whole light-palette bug survived the fix. The
-        //   service is authoritative for DURABLE state and ui-layout re-asserts the
-        //   DOM from it, so the write has to actually happen; this variable bounds
-        //   it to one write per scheme per page instead.
-        if (lastRequestedScheme === (wantLight ? 'light' : 'dark')) return;
-        lastRequestedScheme = wantLight ? 'light' : 'dark';
-        try { theme.setTheme(lastRequestedScheme); } catch (e) {}
+      // The OS answer, for a host without the theme service (the web build and
+      // old hosts). It is the same query the theme service itself uses.
+      function systemScheme() {
+        try {
+          if (typeof window !== 'undefined' && window.matchMedia &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
+        } catch (e) {}
+        return 'light';
+      }
+
+      // Repaint the plate. `animate` is the 0.341s mosaic pour — the SAME
+      // reveal the 配色 buttons have always used, so a switch made from
+      // 通用设置 or by the OS reads exactly like one made in this pane.
+      function themeAdoptScheme(scheme, animate) {
+        var next = scheme === 'light' ? 'light' : 'dark';
+        if (next === BG_STATE.scheme) return false;
+        BG_STATE.scheme = next;
+        bgSave();
+        if (animate) vtPour(bgApplyMode);
+        else bgApplyMode();
+        syncPanes();
+        // The Windows caption is measured from the document palette; its own
+        // observer fires on body class/style, which bgApplyMode just moved —
+        // poke it anyway so a system flip that changed nothing else still
+        // re-measures (same self-heal path as the parked-caption fix).
+        try { captionPokeHead(); } catch (e) {}
+        return true;
+      }
+
+      // Adopt whatever DSH currently says. Preference and resolved scheme are
+      // adopted independently: light→system can keep the same plate but must
+      // move the selected cell, and an OS flip moves the plate while the
+      // preference stays `system`.
+      function themeAdopt(animate) {
+        //   The service may have registered after apply() — retry the token layer
+        //   here until it sticks (cheap no-op once done).
+        themeOverrideTokens();
+        var snap = themeSnapshot();
+        if (!snap) return false;
+        var moved = false;
+        if (snap.pref !== BG_STATE.pref) {
+          BG_STATE.pref = snap.pref;
+          bgSave();
+          syncPanes();
+          moved = true;
+        }
+        return themeAdoptScheme(snap.scheme, animate) || moved;
+      }
+
+      // The ONE write path of this row: the service persists it (which is the
+      // 通用设置 cell moving too) and emits theme/change. The service resolves
+      // synchronously, so read the plate straight back before that event lands —
+      // the click has to feel immediate.
+      function themeSetPreference(next) {
+        if (!THEME_PREF_IDS[next]) return false;
+        if (next !== BG_STATE.pref) {
+          BG_STATE.pref = next;
+          bgSave();
+        }
+        var svc = themeSvc();
+        var wrote = false;
+        if (svc && typeof svc.setTheme === 'function') {
+          try { svc.setTheme(next); wrote = true; } catch (e) {}
+        }
+        var scheme;
+        if (wrote) {
+          // Trust the service's resolution, but only when it actually accepted
+          // the write: a host whose setTheme is async would otherwise leave the
+          // click with no repaint at all.
+          var snap = themeSnapshot();
+          scheme = (snap && snap.pref === next) ? snap.scheme
+            : (next === 'system' ? systemScheme() : next);
+        } else {
+          // No service handle (yet): drive the SAME two signals the presenter
+          // writes, so the cell still works. Narrow fallback — the service path
+          // is preferred, and DSH's own projection wins again the moment it
+          // lands. `data-ds-theme-source` is also what the shell preload feeds
+          // to nativeTheme, so the caption follows even in this mode.
+          scheme = next === 'system' ? systemScheme() : next;
+          try {
+            doc.documentElement.style.colorScheme = scheme;
+            doc.documentElement.setAttribute('data-ds-theme-source', next);
+            if (scheme === 'dark') body.setAttribute('data-ds-dark-theme', '');
+            else body.removeAttribute('data-ds-dark-theme');
+          } catch (e) {}
+        }
+        themeAdoptScheme(scheme, true);
+        syncPanes();
+        return true;
+      }
+
+      //   The presenter's projection is also the fastest notification we can get
+      //   without the service: 通用设置 writes `html[data-ds-theme-source]` and
+      //   `body[data-ds-dark-theme]` in the same apply, so this observer turns a
+      //   click anywhere in DSH into the same pour this pane plays — no service
+      //   handle, no 1.2s wait. Our own changes go through the service and land
+      //   here too, where themeAdopt simply no-ops.
+      var themeDomObs = null;
+      function themeDomWatch() {
+        if (themeDomObs || typeof MutationObserver === 'undefined') return;
+        themeDomObs = new MutationObserver(function () {
+          // No pour while the cold-start overlay owns the screen: a presenter
+          // projection that lands during the reveal must snap, not animate.
+          var booting = false;
+          try {
+            booting = typeof captionBootRunning === 'function' && captionBootRunning();
+          } catch (e) {}
+          if (themeAdopt(!booting)) marThemeReport();
+        });
+        try {
+          themeDomObs.observe(doc.documentElement, { attributes: true, attributeFilter: ['data-ds-theme-source'] });
+          themeDomObs.observe(body, { attributes: true, attributeFilter: ['data-ds-dark-theme'] });
+        } catch (e) {
+          themeDomObs = null;
+        }
+      }
+
+      // Fallback for a host without the theme service: follow the OS directly.
+      function systemWatch() {
+        if (SYSTEM_MQ || typeof window === 'undefined' || !window.matchMedia) return;
+        try { SYSTEM_MQ = window.matchMedia('(prefers-color-scheme: dark)'); } catch (e) { SYSTEM_MQ = null; }
+        if (!SYSTEM_MQ) return;
+        SYSTEM_MQ_HANDLER = function () {
+          // With the service present it emits theme/change itself — let that
+          // path own the switch so the two never race.
+          if (themeSnapshot()) return;
+          if (BG_STATE.pref !== 'system') return;
+          themeAdoptScheme(systemScheme(), true);
+        };
+        try {
+          if (SYSTEM_MQ.addEventListener) SYSTEM_MQ.addEventListener('change', SYSTEM_MQ_HANDLER);
+          else if (SYSTEM_MQ.addListener) SYSTEM_MQ.addListener(SYSTEM_MQ_HANDLER);
+        } catch (e) {}
       }
 
       function bgApplyMode() {
@@ -2047,7 +2233,6 @@ bgObserver.observe(host, { childList: true, subtree: true, attributes: true, att
         // no veil any more (see BG_MODES): the field runs through the chrome
         body.classList.remove('mar-bg-veil');
         if (ui.light) body.classList.add('mar-bg-light'); else body.classList.remove('mar-bg-light');
-        syncThemePreference(ui.light);
         body.style.setProperty('--mar-bg-field', ui.field);
         //  The accent is re-applied here, AFTER the light class moved: which
         //  variable carries the accent as TEXT depends on the plate, and this is
@@ -2355,7 +2540,21 @@ bgObserver.observe(host, { childList: true, subtree: true, attributes: true, att
           window.addEventListener('resize', bgOnResize, { passive: true });
           doc.addEventListener('visibilitychange', bgOnVisibility);
         }
+        // DSH 是唯一数据源：先把当前的偏好 / 解析后的浅深接过来，再画第一帧。
+        themeAdopt(false);
         bgApplyMode();
+        // 服务与 presenter 可能比插件晚落地（桌面端冷启动实测过），补几次
+        // "只读对齐" —— themeAdopt 只在偏好或解析结果真的变了时才动。
+        systemWatch();
+        // presenter 的两次投影（html 的 theme-source / body 的 dark 属性）就是
+        // 现成的通知通道：通用设置一改，这里立刻跟着换底盘并播动画，不依赖
+        // theme 服务是否已经在 ctx 上可见。
+        themeDomWatch();
+        if (typeof setTimeout === 'function') {
+          setTimeout(function () { themeAdopt(false); }, 0);
+          setTimeout(function () { themeAdopt(false); }, 400);
+          setTimeout(function () { themeAdopt(false); }, 1500);
+        }
         bgWatch();
       }
 
@@ -3447,7 +3646,7 @@ try {
       // 只画 21×21 有机体——不碰 `[data-chat-running]` 的任何子节点，也不加
       // `mar-run-on`，原生提示该怎么显示还怎么显示。
       var DOT_STORE_KEY = 'mar.dot.v1';
-      var DOT_MIN = 64, DOT_MAX = 120, DOT_PAD = 28;
+      var DOT_MIN = 64, DOT_MAX = 120, DOT_PAD = 28, DOT_BOTTOM_PAD = 8;
       function dotLoad() {
         try {
           var raw = (typeof window !== 'undefined' && window.localStorage)
@@ -3468,6 +3667,7 @@ try {
       function dotEnabled() { return DOT_STATE.on !== false; }
 
       var dotHost = null, dotEngine = null, dotScriptEl = null, dotBroken = false;
+      var dotObserver = null;
 
       function dotEngineApi() {
         var api = (typeof window !== 'undefined') ? window.__marDotEngine : null;
@@ -3490,6 +3690,7 @@ try {
         return !!dotEngineApi();
       }
       function dotUnmount() {
+        if (dotObserver) { try { dotObserver.disconnect(); } catch (e) {} dotObserver = null; }
         if (dotEngine) {
           try { if (typeof dotEngine.destroy === 'function') dotEngine.destroy(); } catch (e) {}
           dotEngine = null;
@@ -3506,6 +3707,43 @@ try {
           dotEngine.set({ fresh: runInk(), reduced: runReduced() });
         } catch (e) {}
       }
+      // 右侧空白：输入卡外沿到 composer seat 边缘的一半（左右对称）。
+      // 2026-11-05 bug 修复：输入框高度/宽度变化后（textarea 变高、窗口缩放）
+      // 必须**重新量**，否则绝对定位的宿主会停在旧坐标上“乱跑”。现在每次
+      // 400ms 轮询 + ResizeObserver 都会调用 dotPlace() 重算 top/right/size。
+      function dotGeom(seat, card) {
+        var sr = null, cr = null;
+        try {
+          sr = seat.getBoundingClientRect();
+          cr = card.getBoundingClientRect();
+        } catch (e) { return null; }
+        if (!sr || !cr) return null;
+        var margin = (sr.width - cr.width) / 2;
+        if (margin < DOT_MIN + DOT_PAD * 2) return null;
+        var size = Math.max(DOT_MIN, Math.min(DOT_MAX, Math.round(margin - DOT_PAD * 2)));
+        // 固定在输入卡的**右下角**：右边居中于右侧空白，底边距卡片底
+        // DOT_BOTTOM_PAD（卡片长高时它跟着底边走，不会往上漂）。
+        var top = Math.round((cr.bottom - sr.top) - size - DOT_BOTTOM_PAD);
+        if (top < 0) top = 0;
+        return {
+          size: size,
+          top: top,
+          right: Math.round(margin / 2 - size / 2)
+        };
+      }
+      function dotPlace(seat, card) {
+        if (!dotHost) return false;
+        var g = dotGeom(seat, card);
+        if (!g) return false;
+        var px = g.size + 'px';
+        if (dotHost.style.width !== px) {
+          dotHost.style.width = px;
+          dotHost.style.height = px;
+        }
+        dotHost.style.right = g.right + 'px';
+        dotHost.style.top = g.top + 'px';
+        return true;
+      }
       function dotSyncDom() {
         if (!dotEnabled()) { if (dotHost) dotUnmount(); return; }
         if (!DOT_PAYLOAD && !dotEngineApi()) return;
@@ -3519,20 +3757,20 @@ try {
           if (dotHost) dotUnmount();
           return;
         }
-        if (dotHost && dotHost.parentNode === seat) { dotPush(); return; }
-        var sr = null, cr = null;
-        try {
-          sr = seat.getBoundingClientRect();
-          cr = card.getBoundingClientRect();
-        } catch (e) { sr = null; }
-        if (!sr || !cr) return;
-        var margin = (sr.width - cr.width) / 2;
-        if (margin < DOT_MIN + DOT_PAD * 2) {
-          // 右侧空白不够（窄窗口 / 宽卡片）：不硬塞，直接不显示。
+        if (dotHost && dotHost.parentNode === seat) {
+          if (!dotPlace(seat, card)) {
+            // 右侧空白被压到放不下 64px：收起，等空间回来再挂。
+            dotUnmount();
+            return;
+          }
+          dotPush();
+          return;
+        }
+        var g = dotGeom(seat, card);
+        if (!g) {
           if (dotHost) dotUnmount();
           return;
         }
-        var size = Math.max(DOT_MIN, Math.min(DOT_MAX, Math.round(margin - DOT_PAD * 2)));
         dotUnmount();
         if (!dotEnsureEngine()) { dotBroken = true; syncDotState(); return; }
         var api = dotEngineApi();
@@ -3541,12 +3779,8 @@ try {
         host.id = 'dshMarDotHost';
         host.className = 'mar-dot-host';
         host.setAttribute('aria-hidden', 'true');
-        // 垂直对齐输入卡（不是整个 seat）：seat 里还有上面那条 132px 运行动画
-        // 条带时，seat 的中心并不等于卡片的中心。
-        var top = Math.round((cr.top - sr.top) + cr.height / 2 - size / 2);
-        if (top < 0) top = 0;
-        host.style.cssText = 'width:' + size + 'px;height:' + size + 'px;' +
-          'right:' + Math.round(margin / 2 - size / 2) + 'px;top:' + top + 'px;';
+        host.style.cssText = 'width:' + g.size + 'px;height:' + g.size + 'px;' +
+          'right:' + g.right + 'px;top:' + g.top + 'px;';
         try { seat.appendChild(host); } catch (e) { return; }
         dotHost = host;
         try { dotEngine = api.create(host, { reduced: runReduced() }); } catch (e) { dotEngine = null; }
@@ -3557,6 +3791,17 @@ try {
           return;
         }
         dotBroken = false;
+        // 输入框尺寸变化（textarea 长高、卡片换宽、seat 因条带出现而变高）时
+        // 立刻重新贴合右下角，不用等下一次 400ms 轮询。
+        try {
+          if (typeof ResizeObserver === 'function') {
+            dotObserver = new ResizeObserver(function () {
+              if (dotHost) { dotPlace(seat, card); dotPush(); }
+            });
+            dotObserver.observe(seat);
+            dotObserver.observe(card);
+          }
+        } catch (e) { dotObserver = null; }
         dotPush();
         syncDotState();
       }
@@ -3574,8 +3819,8 @@ try {
         } catch (e) {}
       }
       function dotOnResize() {
-        // 卡片宽度 / 窗口宽度变了：摘掉重挂，让右侧空白重新量一次。
-        if (dotHost) { dotUnmount(); dotSyncDom(); }
+        // 窗口缩放：重新量一次右下角。宿主已存在时 dotSyncDom 会走 dotPlace。
+        if (dotHost) dotSyncDom();
       }
 
       function runApply() {
@@ -3886,11 +4131,19 @@ try {
             // 只有两个词，没有预览图案 —— 用户 2026-10-17："只需要显示浅色和深色即可，
             // 目前两个按钮前方还有图案"。mar-set-appearance 让它不被"关闭背景动画就
             // 变暗"那条规则连坐（那一层 45% 的暗正是"像有一层灰黑色蒙住了"）。
+            // 2026-11-05（用户）：外观改成和「通用设置 → 外观」同构的三格，
+            // 并接成双向——点这里等于改通用设置，改通用设置/系统切黑白这里
+            // 也跟着变。选中态跟 preference，不跟解析后的浅/深（见 syncPane）。
             '<div class="mar-set-row mar-set-appearance"><label>配色</label>' +
             '<div class="mar-seg" role="radiogroup" aria-label="外观配色">' +
             '<button type="button" role="radio" data-pair="light" aria-checked="false">浅色</button>' +
             '<button type="button" role="radio" data-pair="dark" aria-checked="false">深色</button>' +
+            '<button type="button" role="radio" data-pair="system" aria-checked="false">跟随系统</button>' +
             '</div></div>' +
+            // 一句说明，既是给用户的交代，也是"两边同一件事"的明示。它同样带
+            // mar-set-appearance，所以不会被"关闭背景动画就调暗"那条规则连坐。
+            '<div class="mar-set-row mar-set-note mar-set-appearance">' +
+            '<span>跟随系统：随 Windows 的深浅色自动切换，与「通用设置 → 外观」同步</span></div>' +
           '</div>' +
           '<div class="mar-set-group">' +
             '<div class="mar-set-head">主题色</div>' +
@@ -4101,8 +4354,11 @@ var head =
           syncPane(pane);
         });
 
-        // The pair is a radio group: exactly one of the two is always chosen,
-        // and it changes the palette whether or not the field is drawn.
+        // The preference is a radio group: exactly one of 浅色 / 深色 / 跟随系统
+        // is always chosen. A click writes the SAME preference 通用设置 edits
+        // (the service persists it and resolves `system`), so the two rows can
+        // never disagree. The pour is played by the write path, and only when
+        // the resolved plate actually moves.
         seg.addEventListener('click', function (ev) {
           var b = ev.target;
           while (b && b !== seg) {
@@ -4111,16 +4367,9 @@ var head =
           }
           if (!b || b === seg) return;
           var next = b.getAttribute('data-pair');
-          if (next !== 'light' && next !== 'dark') return;
-          var prevPair = BG_STATE.scheme;
-          if (next === prevPair) { syncPane(pane); return; }
-          BG_STATE.scheme = next;
-          bgSave();
-          // The pour belongs to the colour PAIR, not to the field switch: the
-          // animation switch repaints nothing, so there is nothing to pour and
-          // it stays instant.
-          vtPour(bgApplyMode);
-          syncPane(pane);
+          if (!THEME_PREF_IDS[next]) return;
+          if (next === BG_STATE.pref) { syncPane(pane); return; }
+          if (!themeSetPreference(next)) syncPane(pane);
         });
 
         // 配色：又一个 radio group —— 七个色块里永远有一个是选中的。它只换
@@ -4180,9 +4429,12 @@ var head =
         if (!pane) return;
         var animIn = pane.querySelector('#mar-bg-anim');
         if (animIn) animIn.checked = !!BG_STATE.anim;
+        //   选中态跟的是 PREFERENCE（light | dark | system），不是解析后的
+        //   scheme：跟随系统时唯一选中的永远是「跟随系统」，哪怕它此刻解析成
+        //   深色 —— 与通用设置那三格显示的规则完全一致。
         var btns = pane.querySelectorAll('.mar-seg button');
         for (var i = 0; i < btns.length; i++) {
-          var on = btns[i].getAttribute('data-pair') === BG_STATE.scheme;
+          var on = btns[i].getAttribute('data-pair') === BG_STATE.pref;
           btns[i].setAttribute('aria-checked', on ? 'true' : 'false');
         }
         // 配色：同样一个永远唯一的选中项；顺便把色值写回 --sw，这样填充不
@@ -4243,6 +4495,14 @@ var head =
           var key = outs[k].getAttribute('data-val');
           outs[k].textContent = vals[key] || '';
         }
+      }
+
+      //   一次改动可能来自通用设置 / 系统（不是这个 pane 的点击），所以把
+      //   DOM 里所有已建好的 pane 都同步一遍——parked 的那个也要，否则第一次
+      //   点回「主题设置」会先看到旧选中态。pane 数量最多一个，成本可忽略。
+      function syncPanes() {
+        var panes = doc.querySelectorAll('[data-mar-pane]');
+        for (var i = 0; i < panes.length; i++) syncPane(panes[i]);
       }
 
       // ---- boot overlay ----------------------------------------------------
@@ -5092,16 +5352,11 @@ var head =
         sweepBoardIntro();
         // 轮次尾巴是新渲染出来— — 每次巡扫都补一次结算纸条（拿不到数据时— no-op
 billingTick();
-        //   Re-assert the scheme every tick. The write at apply() time is provably
-        //   correct and provably sticks when it runs (measured: setting
-        //   body[data-ds-dark-theme] turned the rail ink near-white within 1.5s and
-        //   nothing removed it) — but at plugin-load the Desktop is still booting and
-        //   DSH's own presenter lands its resolved (light) snapshot afterwards,
-        //   undoing it. setTheme() was not enough on its own: it was called and the
-        //   resolved scheme still did not change. Re-asserting on the tick the theme
-        //   already runs guarantees the UI ends up matching the pair, and both writes
-        //   are idempotent (setTheme is bounded by lastRequestedScheme).
-        syncThemePreference((BG_MODES[BG_STATE.scheme] || BG_MODES.dark).light);
+        //   Cheap safety net, not a write: if a theme/change was missed (or the
+        //   service landed after this plugin at boot), adopt the preference and
+        //   the resolved scheme now. It no-ops unless one of the two moved, so
+        //   it can never fight 通用设置 and can never oscillate.
+        themeAdopt(false);
         //   Same reason, same tick: DSH's theme presenter projects the resolved
         //   snapshot onto <body> as inline custom properties and REMOVES the ones
         //   it wrote last time — which are these same names. Re-asserting here is
@@ -5452,11 +5707,19 @@ attachDone();
       try {
         if (ctx && typeof ctx.on === 'function') {
           ctx.on('connection/reset', function () { pokeDone(15); });
-          //  The presenter re-projects on every theme change and removes the names
-          //  it wrote last time — the same names. Defer past the other listeners
-          //  (ours may run first) and put the palette back.
+          //  Two things happen on every theme change: the presenter re-projects
+          //  (and removes the token names it wrote last time — the same names we
+          //  write), and the preference / resolved scheme may have moved (a
+          //  通用设置 click, or the OS flipping while on 跟随系统). Defer past the
+          //  other listeners so the presenter has landed, then adopt — which
+          //  plays the same pour a click in this pane plays — and re-assert the
+          //  alias map. No write goes back to setTheme, so this cannot loop.
           ctx.on('theme/change', function () {
-            setTimeout(function () { themeAliasApply(); marThemeReport(); }, 0);
+            setTimeout(function () {
+              themeAdopt(true);
+              themeAliasApply();
+              marThemeReport();
+            }, 0);
           });
         }
       } catch (e) {}
@@ -5558,6 +5821,19 @@ attachDone();
           },
           // background layer: loop, canvas, listeners, clear-marks, body classes
           function () { bgTeardown(); },
+          function () { if (themeDomObs) { try { themeDomObs.disconnect(); } catch (e) {} themeDomObs = null; } },
+          // OS-scheme fallback listener (only installed on hosts without the
+          // theme service): never leave it behind pointing at a dead state.
+          function () {
+            if (SYSTEM_MQ && SYSTEM_MQ_HANDLER) {
+              try {
+                if (SYSTEM_MQ.removeEventListener) SYSTEM_MQ.removeEventListener('change', SYSTEM_MQ_HANDLER);
+                else if (SYSTEM_MQ.removeListener) SYSTEM_MQ.removeListener(SYSTEM_MQ_HANDLER);
+              } catch (e) {}
+            }
+            SYSTEM_MQ = null;
+            SYSTEM_MQ_HANDLER = null;
+          },
           function () {
             var panes = doc.querySelectorAll('[data-mar-pane]');
             for (var q = 0; q < panes.length; q++) {

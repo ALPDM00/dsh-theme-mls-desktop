@@ -93,7 +93,7 @@ inline 写在 `<body>` 上恰好也**正是 DSH 自己的做法**：`dsh-client-
 
 ⚠️ **presenter 每次投影前会先删掉它上次写的那批名字**（与我们的完全同名），所以必须重写：
 挂载时 / `bgApplyMode()`（换底盘）/ `ctx.on('theme/change')`（滞后一个 tick，落在其它监听器
-之后）/ 每 1.2s 的巡扫（与 `syncThemePreference` 同一个位置、同一个理由）。
+之后）/ 每 1.2s 的巡扫（与 `themeAdopt` 同一个位置、同一个理由）。
 自检键 `mar.debug.v1` 记录「主题服务是否可用 / 强调色 / body 计算背景 / `--dsw-alias-bg-base`
 的计算值」——判断"落没落"用它，别看颜色。
 

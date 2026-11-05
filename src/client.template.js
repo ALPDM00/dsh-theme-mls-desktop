@@ -80,7 +80,29 @@ window.__ModuleLoader__.load({
       var body = doc.body;
       if (!body) return;
 
-      var theme = ctx && typeof ctx.get === 'function' ? ctx.get('theme') : null;
+      //   NEVER capture the theme service at apply time.
+      //   DSH's client services are registered by their own plugins and the
+      //   activation order is NOT guaranteed. Measured on the Desktop
+      //   2026-11-05 (`mar.debug.v1` → `themeService:false`): at apply time
+      //   `ctx.get('theme')` was still null, and because this line used to cache
+      //   it, every service-backed path was dead for the whole session —
+      //   `overrideTokens` never ran, and the appearance preference could not be
+      //   read at all. That is exactly the reported bug: 通用设置 → 深色 changed
+      //   DSH's own palette while the theme's plate stayed light, with no pour.
+      //   It is the same "only fetched once" trap the sessions service had (see
+      //   the 会话面 note further down). Read it live; cache only a real answer.
+      var theme = null;
+      var themeSvcCalls = 0, themeSvcAt = 0;   // diagnostics only (mar.debug.v1)
+
+      function themeSvc() {
+        if (theme) return theme;
+        themeSvcCalls++;
+        try {
+          theme = (ctx && typeof ctx.get === 'function') ? ctx.get('theme') : null;
+        } catch (e) { theme = null; }
+        if (theme) themeSvcAt = Date.now();
+        return theme;
+      }
 
       // ---- CSS injection (idempotent) -------------------------------------
       function insertCss(css) {
@@ -279,10 +301,21 @@ window.__ModuleLoader__.load({
           '--dsw-alias-bg-mask-drop':                 both('var(--mar-scrim)')
       };
 
-      //   Path 1 — the theme service, when it answers at apply time.
-      if (theme && typeof theme.overrideTokens === 'function') {
-        try { theme.overrideTokens(PLUGIN_ID, MAR_TOKEN_MAP); } catch (e) {}
+      //   Path 1 — the theme service. Retried until it answers: at apply time it
+      //   is usually not registered yet (see themeSvc), so a single attempt here
+      //   would silently lose the layer for the whole session. `themeAdopt` calls
+      //   this again on each sweep until it sticks.
+      var themeTokensDone = false;
+      function themeOverrideTokens() {
+        if (themeTokensDone) return;
+        var svc = themeSvc();
+        if (!svc || typeof svc.overrideTokens !== 'function') return;
+        try {
+          svc.overrideTokens(PLUGIN_ID, MAR_TOKEN_MAP);
+          themeTokensDone = true;
+        } catch (e) {}
       }
+      themeOverrideTokens();
 
       //   Path 2 — the same map, written straight onto <body> as inline custom
       //   properties. Every DSH surface inherits from <body>, so this lands even
@@ -311,7 +344,17 @@ window.__ModuleLoader__.load({
             ? window.getComputedStyle(body) : null;
           window.localStorage.setItem('mar.debug.v1', JSON.stringify({
             at: Date.now(),
-            themeService: !!(theme && typeof theme.overrideTokens === 'function'),
+            themeService: !!(function () {
+              var svc = themeSvc();
+              return svc && typeof svc.getTheme === 'function';
+            })(),
+            themeServiceCalls: themeSvcCalls,
+            themeServiceAt: themeSvcAt,
+            domThemeSource: (function () {
+              try { return doc.documentElement.getAttribute('data-ds-theme-source') || ''; } catch (e) { return ''; }
+            })(),
+            preference: BG_STATE.pref,
+            colorScheme: BG_STATE.scheme,
             accent: ACCENT_STATE.color,
             bodyBg: cs ? cs.backgroundColor : '',
             aliasBgBase: cs ? cs.getPropertyValue('--dsw-alias-bg-base').trim() : '',
@@ -1455,6 +1498,13 @@ window.__ModuleLoader__.load({
         return accentRgb(ACCENT_STATE.color).join(',');
       }
       var BG_STATE = bgLoad();
+      //   `pref` is the DSH appearance preference (light | dark | system) — the
+      //   same value 通用设置 edits. `scheme` is only ever the RESOLVED pair
+      //   (light | dark) used to paint; a system preference lands here as
+      //   whatever the OS currently says. bgLoad keeps a copy purely so a host
+      //   without the theme service still has something to paint; wherever the
+      //   service exists it is read back on mount and wins (see themeAdopt).
+      var SYSTEM_MQ = null;
 
       var bgCanvas = null, bgCtx = null, bgMounted = false;
       var bgRaf = 0, bgElapsed = 0, bgLastMs = 0, bgDrawMs = 0, bgResizeTimer = null;
@@ -1475,7 +1525,7 @@ window.__ModuleLoader__.load({
       //           用户 2026-10-19："再给背景动画添加一个透明度，用于调节可见范围"。
       //           它乘在每条字形的 alpha 上，所以 0 就是"看不见"、1 是原样。
       function bgLoad() {
-        var out = { anim: false, scheme: 'dark', cell: 16, speed: 0.55, alpha: 1 };
+        var out = { anim: false, scheme: 'dark', pref: 'dark', cell: 16, speed: 0.55, alpha: 1 };
         var raw = null;
         try { raw = (typeof window !== 'undefined' && window.localStorage) ? window.localStorage.getItem(BG_STORE_KEY) : null; } catch (e) { raw = null; }
         if (!raw) return out;
@@ -1492,6 +1542,11 @@ window.__ModuleLoader__.load({
         else if (s.mode === 'off') out.anim = false;
         if (typeof s.anim === 'boolean') out.anim = s.anim;   // v3 wins over a migrated mode
         if (pair) out.scheme = pair;
+        //  v4 (2026-11-05): the preference joined the store. A store written
+        //  before it has no `pref`; the pair it was carrying IS the preference
+        //  it represented (an explicit light/dark), so it migrates losslessly.
+        if (s.pref === 'light' || s.pref === 'dark' || s.pref === 'system') out.pref = s.pref;
+        else out.pref = out.scheme;
         if (typeof s.cell === 'number') out.cell = bgNum(Math.round(s.cell), 8, 48);
         if (typeof s.speed === 'number') out.speed = bgNum(s.speed, 0, 1.5);
         //  Store written before 2026-10-19 has no alpha → full strength (1), which
@@ -1980,57 +2035,188 @@ var bgCleared = [];
 bgObserver.observe(host, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
       }
 
-      //   DSH'S OWN LIGHT/DARK SWITCH MUST AGREE WITH OURS.
-      //   The token overrides above are mode-independent — both slots resolve to
-      //   the same --mar-* property — so the theme's own surfaces ignore DSH's
-      //   preference. Everything keyed on `body[data-ds-dark-theme]` and on
-      //   `html { color-scheme }` does NOT: native form controls, the engine's
-      //   own scrollbar/selection colours and DSH's dark-scoped rules still
-      //   follow it. Left alone, 主白 + 绿 with 通用设置 on 深色 leaves all of that
-      //   on the dark side, which is the "颜色的切换也不完整" report. The user's own
-      //   workaround was to set 通用设置 to 跟随系统 by hand. The theme is the only
-      //   thing that knows which pair is active, so it drives the preference
-      //   instead of waiting for the user to pick a compatible one.
-      //   Guarded twice: only called when the pair is applied, and it only writes
-      //   when the RESOLVED scheme disagrees — `preference` may be `system`, and
-      //   `active.colorScheme` is always resolved. setTheme emits theme/change,
-      //   and the next call then agrees, so this settles in one write and cannot
-      //   oscillate.
-      var lastRequestedScheme = null;
+      //   DSH'S APPEARANCE PREFERENCE IS THE SINGLE SOURCE OF TRUTH.
+      //   通用设置 → 外观 has three cells (浅色 / 深色 / 跟随系统), and the
+      //   主题设置 「外观·配色」 row is a MIRROR of the same value, not a second
+      //   switch. The theme service owns the durable `preference` (host
+      //   user-settings): `system` is resolved through `prefers-color-scheme`,
+      //   `active.colorScheme` is always the resolved light/dark, and the service
+      //   re-emits `theme/change` when the OS flips while the preference is
+      //   `system`.
+      //   This plugin therefore only READS it and repaints its own plate. It used
+      //   to write an explicit light/dark back on mount and every 1.2s, which is
+      //   exactly what made 跟随系统 impossible: the theme overwrote the
+      //   preference the user had just picked in 通用设置.
+      var THEME_PREF_IDS = { light: true, dark: true, system: true };
+      var SYSTEM_MQ_HANDLER = null;
 
-      function syncThemePreference(wantLight) {
-        //   FIRST drive DSH's own DOM signal, THEN ask the service to agree.
-        //   ui-layout's presenter is what publishes the resolved scheme as
-        //   `html { color-scheme }` + `body[data-ds-dark-theme]`, and everything
-        //   DSH paints that this theme does NOT override keys off exactly those two:
-        //   the settings dialog, the 新对话 button, the composer card, the rail's
-        //   ink and the footer gradient. Asking the service alone was not enough —
-        //   measured on the Desktop with the pair on 主黑 + 绿, `dsDark` was still
-        //   false, and the result was a WHITE settings pane, black rail labels on a
-        //   black rail ("什么都看不见"), a white 新对话/composer, and a white bar
-        //   above the avatar where the light scheme expects a shadow.
-        //   Writing the two signals here is synchronous and immediate, which is what
-        //   a colour-pair switch needs; the service write below keeps the durable
-        //   preference in step so nothing re-flips it afterwards.
-        var rootEl = doc.documentElement;
-        if (rootEl && rootEl.style) rootEl.style.colorScheme = wantLight ? 'light' : 'dark';
+      function themeSnapshot() {
+        var svc = themeSvc();
+        if (svc && typeof svc.getTheme === 'function') {
+          try {
+            var snap = svc.getTheme();
+            if (snap && snap.active) {
+              var scheme = snap.active.colorScheme === 'light' ? 'light' : 'dark';
+              var pref = THEME_PREF_IDS[snap.preference] ? snap.preference : scheme;
+              return { pref: pref, scheme: scheme };
+            }
+          } catch (e) {}
+        }
+        //   FALLBACK — the presenter's own projection. ui-layout publishes the
+        //   preference as `html[data-ds-theme-source]` ('system' only when the
+        //   preference is system, else the resolved scheme) and the resolved
+        //   palette as `body[data-ds-dark-theme]`. Those two attributes are the
+        //   same ones the shell preload reads, and they land within the same
+        //   frame as a 通用设置 click — so even when the service still isn't
+        //   reachable from this plugin's ctx, the row can follow DSH and repaint.
+        //   Guarded on the source attribute existing: before the presenter's
+        //   first projection both attributes are absent and "absent dark" must
+        //   not be read as "the user picked light".
         try {
-          if (wantLight) body.removeAttribute('data-ds-dark-theme');
-          else body.setAttribute('data-ds-dark-theme', '');
+          var src = doc.documentElement.getAttribute('data-ds-theme-source');
+          if (src === 'light' || src === 'dark' || src === 'system') {
+            return {
+              pref: src,
+              scheme: body.hasAttribute('data-ds-dark-theme') ? 'dark' : 'light'
+            };
+          }
         } catch (e) {}
+        return null;
+      }
 
-        if (!theme || typeof theme.getTheme !== 'function' || typeof theme.setTheme !== 'function') return;
-        //   Ask the service ONCE per scheme per page, not "when it disagrees".
-        //   Guarding on getTheme().active.colorScheme was wrong: measured on the
-        //   Desktop it reported dark while DSH's DOM was still light, so the guard
-        //   concluded "already correct" and setTheme was never called — `dsDark`
-        //   stayed false and the whole light-palette bug survived the fix. The
-        //   service is authoritative for DURABLE state and ui-layout re-asserts the
-        //   DOM from it, so the write has to actually happen; this variable bounds
-        //   it to one write per scheme per page instead.
-        if (lastRequestedScheme === (wantLight ? 'light' : 'dark')) return;
-        lastRequestedScheme = wantLight ? 'light' : 'dark';
-        try { theme.setTheme(lastRequestedScheme); } catch (e) {}
+      // The OS answer, for a host without the theme service (the web build and
+      // old hosts). It is the same query the theme service itself uses.
+      function systemScheme() {
+        try {
+          if (typeof window !== 'undefined' && window.matchMedia &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
+        } catch (e) {}
+        return 'light';
+      }
+
+      // Repaint the plate. `animate` is the 0.341s mosaic pour — the SAME
+      // reveal the 配色 buttons have always used, so a switch made from
+      // 通用设置 or by the OS reads exactly like one made in this pane.
+      function themeAdoptScheme(scheme, animate) {
+        var next = scheme === 'light' ? 'light' : 'dark';
+        if (next === BG_STATE.scheme) return false;
+        BG_STATE.scheme = next;
+        bgSave();
+        if (animate) vtPour(bgApplyMode);
+        else bgApplyMode();
+        syncPanes();
+        // The Windows caption is measured from the document palette; its own
+        // observer fires on body class/style, which bgApplyMode just moved —
+        // poke it anyway so a system flip that changed nothing else still
+        // re-measures (same self-heal path as the parked-caption fix).
+        try { captionPokeHead(); } catch (e) {}
+        return true;
+      }
+
+      // Adopt whatever DSH currently says. Preference and resolved scheme are
+      // adopted independently: light→system can keep the same plate but must
+      // move the selected cell, and an OS flip moves the plate while the
+      // preference stays `system`.
+      function themeAdopt(animate) {
+        //   The service may have registered after apply() — retry the token layer
+        //   here until it sticks (cheap no-op once done).
+        themeOverrideTokens();
+        var snap = themeSnapshot();
+        if (!snap) return false;
+        var moved = false;
+        if (snap.pref !== BG_STATE.pref) {
+          BG_STATE.pref = snap.pref;
+          bgSave();
+          syncPanes();
+          moved = true;
+        }
+        return themeAdoptScheme(snap.scheme, animate) || moved;
+      }
+
+      // The ONE write path of this row: the service persists it (which is the
+      // 通用设置 cell moving too) and emits theme/change. The service resolves
+      // synchronously, so read the plate straight back before that event lands —
+      // the click has to feel immediate.
+      function themeSetPreference(next) {
+        if (!THEME_PREF_IDS[next]) return false;
+        if (next !== BG_STATE.pref) {
+          BG_STATE.pref = next;
+          bgSave();
+        }
+        var svc = themeSvc();
+        var wrote = false;
+        if (svc && typeof svc.setTheme === 'function') {
+          try { svc.setTheme(next); wrote = true; } catch (e) {}
+        }
+        var scheme;
+        if (wrote) {
+          // Trust the service's resolution, but only when it actually accepted
+          // the write: a host whose setTheme is async would otherwise leave the
+          // click with no repaint at all.
+          var snap = themeSnapshot();
+          scheme = (snap && snap.pref === next) ? snap.scheme
+            : (next === 'system' ? systemScheme() : next);
+        } else {
+          // No service handle (yet): drive the SAME two signals the presenter
+          // writes, so the cell still works. Narrow fallback — the service path
+          // is preferred, and DSH's own projection wins again the moment it
+          // lands. `data-ds-theme-source` is also what the shell preload feeds
+          // to nativeTheme, so the caption follows even in this mode.
+          scheme = next === 'system' ? systemScheme() : next;
+          try {
+            doc.documentElement.style.colorScheme = scheme;
+            doc.documentElement.setAttribute('data-ds-theme-source', next);
+            if (scheme === 'dark') body.setAttribute('data-ds-dark-theme', '');
+            else body.removeAttribute('data-ds-dark-theme');
+          } catch (e) {}
+        }
+        themeAdoptScheme(scheme, true);
+        syncPanes();
+        return true;
+      }
+
+      //   The presenter's projection is also the fastest notification we can get
+      //   without the service: 通用设置 writes `html[data-ds-theme-source]` and
+      //   `body[data-ds-dark-theme]` in the same apply, so this observer turns a
+      //   click anywhere in DSH into the same pour this pane plays — no service
+      //   handle, no 1.2s wait. Our own changes go through the service and land
+      //   here too, where themeAdopt simply no-ops.
+      var themeDomObs = null;
+      function themeDomWatch() {
+        if (themeDomObs || typeof MutationObserver === 'undefined') return;
+        themeDomObs = new MutationObserver(function () {
+          // No pour while the cold-start overlay owns the screen: a presenter
+          // projection that lands during the reveal must snap, not animate.
+          var booting = false;
+          try {
+            booting = typeof captionBootRunning === 'function' && captionBootRunning();
+          } catch (e) {}
+          if (themeAdopt(!booting)) marThemeReport();
+        });
+        try {
+          themeDomObs.observe(doc.documentElement, { attributes: true, attributeFilter: ['data-ds-theme-source'] });
+          themeDomObs.observe(body, { attributes: true, attributeFilter: ['data-ds-dark-theme'] });
+        } catch (e) {
+          themeDomObs = null;
+        }
+      }
+
+      // Fallback for a host without the theme service: follow the OS directly.
+      function systemWatch() {
+        if (SYSTEM_MQ || typeof window === 'undefined' || !window.matchMedia) return;
+        try { SYSTEM_MQ = window.matchMedia('(prefers-color-scheme: dark)'); } catch (e) { SYSTEM_MQ = null; }
+        if (!SYSTEM_MQ) return;
+        SYSTEM_MQ_HANDLER = function () {
+          // With the service present it emits theme/change itself — let that
+          // path own the switch so the two never race.
+          if (themeSnapshot()) return;
+          if (BG_STATE.pref !== 'system') return;
+          themeAdoptScheme(systemScheme(), true);
+        };
+        try {
+          if (SYSTEM_MQ.addEventListener) SYSTEM_MQ.addEventListener('change', SYSTEM_MQ_HANDLER);
+          else if (SYSTEM_MQ.addListener) SYSTEM_MQ.addListener(SYSTEM_MQ_HANDLER);
+        } catch (e) {}
       }
 
       function bgApplyMode() {
@@ -2047,7 +2233,6 @@ bgObserver.observe(host, { childList: true, subtree: true, attributes: true, att
         // no veil any more (see BG_MODES): the field runs through the chrome
         body.classList.remove('mar-bg-veil');
         if (ui.light) body.classList.add('mar-bg-light'); else body.classList.remove('mar-bg-light');
-        syncThemePreference(ui.light);
         body.style.setProperty('--mar-bg-field', ui.field);
         //  The accent is re-applied here, AFTER the light class moved: which
         //  variable carries the accent as TEXT depends on the plate, and this is
@@ -2355,7 +2540,21 @@ bgObserver.observe(host, { childList: true, subtree: true, attributes: true, att
           window.addEventListener('resize', bgOnResize, { passive: true });
           doc.addEventListener('visibilitychange', bgOnVisibility);
         }
+        // DSH 是唯一数据源：先把当前的偏好 / 解析后的浅深接过来，再画第一帧。
+        themeAdopt(false);
         bgApplyMode();
+        // 服务与 presenter 可能比插件晚落地（桌面端冷启动实测过），补几次
+        // "只读对齐" —— themeAdopt 只在偏好或解析结果真的变了时才动。
+        systemWatch();
+        // presenter 的两次投影（html 的 theme-source / body 的 dark 属性）就是
+        // 现成的通知通道：通用设置一改，这里立刻跟着换底盘并播动画，不依赖
+        // theme 服务是否已经在 ctx 上可见。
+        themeDomWatch();
+        if (typeof setTimeout === 'function') {
+          setTimeout(function () { themeAdopt(false); }, 0);
+          setTimeout(function () { themeAdopt(false); }, 400);
+          setTimeout(function () { themeAdopt(false); }, 1500);
+        }
         bgWatch();
       }
 
@@ -3447,7 +3646,7 @@ try {
       // 只画 21×21 有机体——不碰 `[data-chat-running]` 的任何子节点，也不加
       // `mar-run-on`，原生提示该怎么显示还怎么显示。
       var DOT_STORE_KEY = 'mar.dot.v1';
-      var DOT_MIN = 64, DOT_MAX = 120, DOT_PAD = 28;
+      var DOT_MIN = 64, DOT_MAX = 120, DOT_PAD = 28, DOT_BOTTOM_PAD = 8;
       function dotLoad() {
         try {
           var raw = (typeof window !== 'undefined' && window.localStorage)
@@ -3468,6 +3667,7 @@ try {
       function dotEnabled() { return DOT_STATE.on !== false; }
 
       var dotHost = null, dotEngine = null, dotScriptEl = null, dotBroken = false;
+      var dotObserver = null;
 
       function dotEngineApi() {
         var api = (typeof window !== 'undefined') ? window.__marDotEngine : null;
@@ -3490,6 +3690,7 @@ try {
         return !!dotEngineApi();
       }
       function dotUnmount() {
+        if (dotObserver) { try { dotObserver.disconnect(); } catch (e) {} dotObserver = null; }
         if (dotEngine) {
           try { if (typeof dotEngine.destroy === 'function') dotEngine.destroy(); } catch (e) {}
           dotEngine = null;
@@ -3506,6 +3707,43 @@ try {
           dotEngine.set({ fresh: runInk(), reduced: runReduced() });
         } catch (e) {}
       }
+      // 右侧空白：输入卡外沿到 composer seat 边缘的一半（左右对称）。
+      // 2026-11-05 bug 修复：输入框高度/宽度变化后（textarea 变高、窗口缩放）
+      // 必须**重新量**，否则绝对定位的宿主会停在旧坐标上“乱跑”。现在每次
+      // 400ms 轮询 + ResizeObserver 都会调用 dotPlace() 重算 top/right/size。
+      function dotGeom(seat, card) {
+        var sr = null, cr = null;
+        try {
+          sr = seat.getBoundingClientRect();
+          cr = card.getBoundingClientRect();
+        } catch (e) { return null; }
+        if (!sr || !cr) return null;
+        var margin = (sr.width - cr.width) / 2;
+        if (margin < DOT_MIN + DOT_PAD * 2) return null;
+        var size = Math.max(DOT_MIN, Math.min(DOT_MAX, Math.round(margin - DOT_PAD * 2)));
+        // 固定在输入卡的**右下角**：右边居中于右侧空白，底边距卡片底
+        // DOT_BOTTOM_PAD（卡片长高时它跟着底边走，不会往上漂）。
+        var top = Math.round((cr.bottom - sr.top) - size - DOT_BOTTOM_PAD);
+        if (top < 0) top = 0;
+        return {
+          size: size,
+          top: top,
+          right: Math.round(margin / 2 - size / 2)
+        };
+      }
+      function dotPlace(seat, card) {
+        if (!dotHost) return false;
+        var g = dotGeom(seat, card);
+        if (!g) return false;
+        var px = g.size + 'px';
+        if (dotHost.style.width !== px) {
+          dotHost.style.width = px;
+          dotHost.style.height = px;
+        }
+        dotHost.style.right = g.right + 'px';
+        dotHost.style.top = g.top + 'px';
+        return true;
+      }
       function dotSyncDom() {
         if (!dotEnabled()) { if (dotHost) dotUnmount(); return; }
         if (!DOT_PAYLOAD && !dotEngineApi()) return;
@@ -3519,20 +3757,20 @@ try {
           if (dotHost) dotUnmount();
           return;
         }
-        if (dotHost && dotHost.parentNode === seat) { dotPush(); return; }
-        var sr = null, cr = null;
-        try {
-          sr = seat.getBoundingClientRect();
-          cr = card.getBoundingClientRect();
-        } catch (e) { sr = null; }
-        if (!sr || !cr) return;
-        var margin = (sr.width - cr.width) / 2;
-        if (margin < DOT_MIN + DOT_PAD * 2) {
-          // 右侧空白不够（窄窗口 / 宽卡片）：不硬塞，直接不显示。
+        if (dotHost && dotHost.parentNode === seat) {
+          if (!dotPlace(seat, card)) {
+            // 右侧空白被压到放不下 64px：收起，等空间回来再挂。
+            dotUnmount();
+            return;
+          }
+          dotPush();
+          return;
+        }
+        var g = dotGeom(seat, card);
+        if (!g) {
           if (dotHost) dotUnmount();
           return;
         }
-        var size = Math.max(DOT_MIN, Math.min(DOT_MAX, Math.round(margin - DOT_PAD * 2)));
         dotUnmount();
         if (!dotEnsureEngine()) { dotBroken = true; syncDotState(); return; }
         var api = dotEngineApi();
@@ -3541,12 +3779,8 @@ try {
         host.id = 'dshMarDotHost';
         host.className = 'mar-dot-host';
         host.setAttribute('aria-hidden', 'true');
-        // 垂直对齐输入卡（不是整个 seat）：seat 里还有上面那条 132px 运行动画
-        // 条带时，seat 的中心并不等于卡片的中心。
-        var top = Math.round((cr.top - sr.top) + cr.height / 2 - size / 2);
-        if (top < 0) top = 0;
-        host.style.cssText = 'width:' + size + 'px;height:' + size + 'px;' +
-          'right:' + Math.round(margin / 2 - size / 2) + 'px;top:' + top + 'px;';
+        host.style.cssText = 'width:' + g.size + 'px;height:' + g.size + 'px;' +
+          'right:' + g.right + 'px;top:' + g.top + 'px;';
         try { seat.appendChild(host); } catch (e) { return; }
         dotHost = host;
         try { dotEngine = api.create(host, { reduced: runReduced() }); } catch (e) { dotEngine = null; }
@@ -3557,6 +3791,17 @@ try {
           return;
         }
         dotBroken = false;
+        // 输入框尺寸变化（textarea 长高、卡片换宽、seat 因条带出现而变高）时
+        // 立刻重新贴合右下角，不用等下一次 400ms 轮询。
+        try {
+          if (typeof ResizeObserver === 'function') {
+            dotObserver = new ResizeObserver(function () {
+              if (dotHost) { dotPlace(seat, card); dotPush(); }
+            });
+            dotObserver.observe(seat);
+            dotObserver.observe(card);
+          }
+        } catch (e) { dotObserver = null; }
         dotPush();
         syncDotState();
       }
@@ -3574,8 +3819,8 @@ try {
         } catch (e) {}
       }
       function dotOnResize() {
-        // 卡片宽度 / 窗口宽度变了：摘掉重挂，让右侧空白重新量一次。
-        if (dotHost) { dotUnmount(); dotSyncDom(); }
+        // 窗口缩放：重新量一次右下角。宿主已存在时 dotSyncDom 会走 dotPlace。
+        if (dotHost) dotSyncDom();
       }
 
       function runApply() {
@@ -3886,11 +4131,19 @@ try {
             // 只有两个词，没有预览图案 —— 用户 2026-10-17："只需要显示浅色和深色即可，
             // 目前两个按钮前方还有图案"。mar-set-appearance 让它不被"关闭背景动画就
             // 变暗"那条规则连坐（那一层 45% 的暗正是"像有一层灰黑色蒙住了"）。
+            // 2026-11-05（用户）：外观改成和「通用设置 → 外观」同构的三格，
+            // 并接成双向——点这里等于改通用设置，改通用设置/系统切黑白这里
+            // 也跟着变。选中态跟 preference，不跟解析后的浅/深（见 syncPane）。
             '<div class="mar-set-row mar-set-appearance"><label>配色</label>' +
             '<div class="mar-seg" role="radiogroup" aria-label="外观配色">' +
             '<button type="button" role="radio" data-pair="light" aria-checked="false">浅色</button>' +
             '<button type="button" role="radio" data-pair="dark" aria-checked="false">深色</button>' +
+            '<button type="button" role="radio" data-pair="system" aria-checked="false">跟随系统</button>' +
             '</div></div>' +
+            // 一句说明，既是给用户的交代，也是"两边同一件事"的明示。它同样带
+            // mar-set-appearance，所以不会被"关闭背景动画就调暗"那条规则连坐。
+            '<div class="mar-set-row mar-set-note mar-set-appearance">' +
+            '<span>跟随系统：随 Windows 的深浅色自动切换，与「通用设置 → 外观」同步</span></div>' +
           '</div>' +
           '<div class="mar-set-group">' +
             '<div class="mar-set-head">主题色</div>' +
@@ -4101,8 +4354,11 @@ var head =
           syncPane(pane);
         });
 
-        // The pair is a radio group: exactly one of the two is always chosen,
-        // and it changes the palette whether or not the field is drawn.
+        // The preference is a radio group: exactly one of 浅色 / 深色 / 跟随系统
+        // is always chosen. A click writes the SAME preference 通用设置 edits
+        // (the service persists it and resolves `system`), so the two rows can
+        // never disagree. The pour is played by the write path, and only when
+        // the resolved plate actually moves.
         seg.addEventListener('click', function (ev) {
           var b = ev.target;
           while (b && b !== seg) {
@@ -4111,16 +4367,9 @@ var head =
           }
           if (!b || b === seg) return;
           var next = b.getAttribute('data-pair');
-          if (next !== 'light' && next !== 'dark') return;
-          var prevPair = BG_STATE.scheme;
-          if (next === prevPair) { syncPane(pane); return; }
-          BG_STATE.scheme = next;
-          bgSave();
-          // The pour belongs to the colour PAIR, not to the field switch: the
-          // animation switch repaints nothing, so there is nothing to pour and
-          // it stays instant.
-          vtPour(bgApplyMode);
-          syncPane(pane);
+          if (!THEME_PREF_IDS[next]) return;
+          if (next === BG_STATE.pref) { syncPane(pane); return; }
+          if (!themeSetPreference(next)) syncPane(pane);
         });
 
         // 配色：又一个 radio group —— 七个色块里永远有一个是选中的。它只换
@@ -4180,9 +4429,12 @@ var head =
         if (!pane) return;
         var animIn = pane.querySelector('#mar-bg-anim');
         if (animIn) animIn.checked = !!BG_STATE.anim;
+        //   选中态跟的是 PREFERENCE（light | dark | system），不是解析后的
+        //   scheme：跟随系统时唯一选中的永远是「跟随系统」，哪怕它此刻解析成
+        //   深色 —— 与通用设置那三格显示的规则完全一致。
         var btns = pane.querySelectorAll('.mar-seg button');
         for (var i = 0; i < btns.length; i++) {
-          var on = btns[i].getAttribute('data-pair') === BG_STATE.scheme;
+          var on = btns[i].getAttribute('data-pair') === BG_STATE.pref;
           btns[i].setAttribute('aria-checked', on ? 'true' : 'false');
         }
         // 配色：同样一个永远唯一的选中项；顺便把色值写回 --sw，这样填充不
@@ -4243,6 +4495,14 @@ var head =
           var key = outs[k].getAttribute('data-val');
           outs[k].textContent = vals[key] || '';
         }
+      }
+
+      //   一次改动可能来自通用设置 / 系统（不是这个 pane 的点击），所以把
+      //   DOM 里所有已建好的 pane 都同步一遍——parked 的那个也要，否则第一次
+      //   点回「主题设置」会先看到旧选中态。pane 数量最多一个，成本可忽略。
+      function syncPanes() {
+        var panes = doc.querySelectorAll('[data-mar-pane]');
+        for (var i = 0; i < panes.length; i++) syncPane(panes[i]);
       }
 
       // ---- boot overlay ----------------------------------------------------
@@ -5092,16 +5352,11 @@ var head =
         sweepBoardIntro();
         // 轮次尾巴是新渲染出来— — 每次巡扫都补一次结算纸条（拿不到数据时— no-op
 billingTick();
-        //   Re-assert the scheme every tick. The write at apply() time is provably
-        //   correct and provably sticks when it runs (measured: setting
-        //   body[data-ds-dark-theme] turned the rail ink near-white within 1.5s and
-        //   nothing removed it) — but at plugin-load the Desktop is still booting and
-        //   DSH's own presenter lands its resolved (light) snapshot afterwards,
-        //   undoing it. setTheme() was not enough on its own: it was called and the
-        //   resolved scheme still did not change. Re-asserting on the tick the theme
-        //   already runs guarantees the UI ends up matching the pair, and both writes
-        //   are idempotent (setTheme is bounded by lastRequestedScheme).
-        syncThemePreference((BG_MODES[BG_STATE.scheme] || BG_MODES.dark).light);
+        //   Cheap safety net, not a write: if a theme/change was missed (or the
+        //   service landed after this plugin at boot), adopt the preference and
+        //   the resolved scheme now. It no-ops unless one of the two moved, so
+        //   it can never fight 通用设置 and can never oscillate.
+        themeAdopt(false);
         //   Same reason, same tick: DSH's theme presenter projects the resolved
         //   snapshot onto <body> as inline custom properties and REMOVES the ones
         //   it wrote last time — which are these same names. Re-asserting here is
@@ -5452,11 +5707,19 @@ attachDone();
       try {
         if (ctx && typeof ctx.on === 'function') {
           ctx.on('connection/reset', function () { pokeDone(15); });
-          //  The presenter re-projects on every theme change and removes the names
-          //  it wrote last time — the same names. Defer past the other listeners
-          //  (ours may run first) and put the palette back.
+          //  Two things happen on every theme change: the presenter re-projects
+          //  (and removes the token names it wrote last time — the same names we
+          //  write), and the preference / resolved scheme may have moved (a
+          //  通用设置 click, or the OS flipping while on 跟随系统). Defer past the
+          //  other listeners so the presenter has landed, then adopt — which
+          //  plays the same pour a click in this pane plays — and re-assert the
+          //  alias map. No write goes back to setTheme, so this cannot loop.
           ctx.on('theme/change', function () {
-            setTimeout(function () { themeAliasApply(); marThemeReport(); }, 0);
+            setTimeout(function () {
+              themeAdopt(true);
+              themeAliasApply();
+              marThemeReport();
+            }, 0);
           });
         }
       } catch (e) {}
@@ -5558,6 +5821,19 @@ attachDone();
           },
           // background layer: loop, canvas, listeners, clear-marks, body classes
           function () { bgTeardown(); },
+          function () { if (themeDomObs) { try { themeDomObs.disconnect(); } catch (e) {} themeDomObs = null; } },
+          // OS-scheme fallback listener (only installed on hosts without the
+          // theme service): never leave it behind pointing at a dead state.
+          function () {
+            if (SYSTEM_MQ && SYSTEM_MQ_HANDLER) {
+              try {
+                if (SYSTEM_MQ.removeEventListener) SYSTEM_MQ.removeEventListener('change', SYSTEM_MQ_HANDLER);
+                else if (SYSTEM_MQ.removeListener) SYSTEM_MQ.removeListener(SYSTEM_MQ_HANDLER);
+              } catch (e) {}
+            }
+            SYSTEM_MQ = null;
+            SYSTEM_MQ_HANDLER = null;
+          },
           function () {
             var panes = doc.querySelectorAll('[data-mar-pane]');
             for (var q = 0; q < panes.length; q++) {
