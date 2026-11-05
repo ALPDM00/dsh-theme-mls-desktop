@@ -133,6 +133,8 @@ const fontB64 = fs.readFileSync(fontPath).toString('base64');
 // ---- 2) boot payload sources ----------------------------------------------
 const tplPath = path.join(root, 'src', 'client.template.js');
 const tpl = read('src/client.template.js');
+// The client half compares this against the latest package.json on GitHub main.
+const pluginVersion = JSON.parse(read('package.json')).version;
 
 const bootCss     = read('src/boot/boot.css');
 let bootHtml      = read('src/boot/boot.html');
@@ -226,6 +228,11 @@ if (tpl.indexOf(runMarker) === -1) {
   console.error('[build] marker "' + runMarker + '" not found in template — running-strip payload would be dropped');
   process.exit(1);
 }
+const versionMarker = '__MAR_PLUGIN_VERSION__';
+if (tpl.indexOf(versionMarker) === -1) {
+  console.error('[build] marker "' + versionMarker + '" not found in template — update check version would be dropped');
+  process.exit(1);
+}
 const dotMarker = '/*__DOT_PAYLOAD__*/ null';
 if (tpl.indexOf(dotMarker) === -1) {
   console.error('[build] marker "' + dotMarker + '" not found in template — dot-animation payload would be dropped');
@@ -242,6 +249,7 @@ if (tpl.indexOf(factionMarker) === -1) {
   process.exit(1);
 }
 let out = tpl.split('__MARATYPE_BASE64__').join(fontB64);
+out = out.split(versionMarker).join(pluginVersion);
 out = out.split(marker).join(payloadJson);
 out = out.split(doneMarker).join(doneJson);
 out = out.split(runMarker).join(runJson);
@@ -256,8 +264,9 @@ if (out.indexOf('__MARATYPE_BASE64__') !== -1) {
 // payload (its alphabet includes the underscore), so match the placeholder shape.
 if (out.indexOf('/*__BOOT_PAYLOAD__*/') !== -1 || out.indexOf('/*__DONE_PAYLOAD__*/') !== -1 ||
     out.indexOf('/*__RUN_PAYLOAD__*/') !== -1 || out.indexOf('/*__DOT_PAYLOAD__*/') !== -1 ||
+    out.indexOf(versionMarker) !== -1 ||
     out.indexOf(factionMarker) !== -1 || /__IMG_[A-Z_]+__/.test(out)) {
-  console.error('[build] boot/done/run/dot/faction placeholder or image token still present after replace');
+  console.error('[build] boot/done/run/dot/version/faction placeholder or image token still present after replace');
   process.exit(1);
 }
 if (out.indexOf('dshMarBootHost') === -1 || out.indexOf('#mb-canvas') === -1) {

@@ -5,6 +5,28 @@
 次版本号 = 向后兼容的新功能；
 修订号 = 向后兼容的 bug 修复。
 
+## [0.6.3] - 2026-11-05
+
+**新增轻量「更新提示」（只提示、不自动安装）。已安装用户不会从 DSH 得到更新通知
+（本包不在 npm registry，插件管理器的更新检查只认 registry 来源），所以改由插件自己
+读 GitHub `main` 的 `package.json`：发现版本比本地新时，在「主题设置」nav 格右上角
+点一个**跟主题色**的小圆点；进入主题设置后在面板最上方显示
+「可更新 / 检查更新 / 不再提示」横幅。**
+
+### 新增
+
+- **客户端更新检查**：`src/client.template.js` 的 `updateCheck()` 依次尝试
+  `raw.githubusercontent.com` 与 `gh-proxy.com`，8 秒超时；结果缓存 6 小时
+  （`mar.update.v1`），页面加载时静默检查，失败不打扰。
+- **版本比较**：构建时把 `package.json` 的版本注入 `PLUGIN_VERSION`；用本地
+  `x.y.z` 与远端 `package.json.version` 做 semver 比较（预发布视为低于正式版）。
+- **nav 小圆点**：`[data-mar-nav].mar-has-update::after`，6px 圆形，
+  `background: var(--mar-accent)`，外圈用 `--mar-bg-void` 保证在深/浅底盘都看得见。
+- **面板顶部横幅**：`#mar-update-bar`，含 `可更新` 标签、`vX（当前 vY）` 文案、
+  `检查更新`（手动重查，显示“正在检查 / 已是最新 / 检查失败”）、`不再提示`
+  （记住 `skipVersion`；之后出现更新的版本仍会再提示）。
+- **只提示不安装**：没有任何下载/替换逻辑；用户仍需按 README 手动覆盖安装包并重启。
+
 ## [0.6.2] - 2026-11-05
 
 **修“只推送、不改功能，界面却闪成任务完成动画”的问题。根因不是 git，而是推送前

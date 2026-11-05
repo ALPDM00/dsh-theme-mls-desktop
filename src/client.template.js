@@ -26,6 +26,9 @@ window.__ModuleLoader__.load({
     Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });
 
     var PLUGIN_ID = 'dsh-theme-mls-desktop';
+    // 本地版本号（构建时由 scripts/build.cjs 从 package.json 注入）。更新检查把它
+    // 与 GitHub main 分支的 package.json 版本比较；见 updateCheck()。
+    var PLUGIN_VERSION = '__MAR_PLUGIN_VERSION__';
 
     // Boot payload (namespaced CSS + DOM + marathon engine + intro engine, plus
     // base64-embedded PNGs) is injected here at build time by scripts/build.cjs —
@@ -1002,6 +1005,31 @@ window.__ModuleLoader__.load({
         '.mar-tab-on .mar-set-close{display:inline-flex;}',
         '.mar-set-close:hover{color:var(--mar-ink-primary);border-color:var(--mar-line-strong);}',
         '.mar-set-close:focus-visible{outline:1px solid var(--mar-accent);outline-offset:2px;}',
+        '/* ---- 更新提示（2026-11-05）：主题设置 nav 上的小圆点 + 面板顶部横幅 ----',
+        '   小点颜色跟主题色（--mar-accent）。横幅只在“发现新版本”时出现；',
+        '   「检查更新」手动重查、「不再提示」记住这个版本并在有更新版本前不再打扰。 */',
+        '[data-mar-nav]{position:relative;}',
+        '[data-mar-nav].mar-has-update::after{content:"";position:absolute;top:9px;right:10px;',
+        '  width:6px;height:6px;border-radius:50%;background:var(--mar-accent);',
+        '  box-shadow:0 0 0 2px var(--mar-bg-void);}',
+        // 主题的“所有元素/伪元素一律直角”总规则带 !important，会把这个点压成方块；
+        // 这里用更高特异性把它抢回圆形。选中状态（整格是主题色面）时圆点改用
+        // accent-ink 才看得见 —— 仍然是主题色系，不是写死的颜色。
+        'body.theme-marathon [data-mar-nav].mar-has-update::after{border-radius:50%!important;}',
+        '[data-mar-nav].mar-nav-on.mar-has-update::after{background:var(--mar-accent-ink);',
+        '  box-shadow:0 0 0 2px var(--mar-accent);}',
+        '.mar-update{display:flex;align-items:center;gap:10px;flex-wrap:wrap;',
+        '  margin:0 0 20px;padding:9px 12px;border:1px solid var(--mar-line-strong);',
+        '  background:var(--mar-bg-panel);}',
+        '.mar-update[hidden]{display:none;}',
+        '.mar-update-tag{flex:0 0 auto;padding:2px 6px;font-size:11px;font-weight:700;',
+        '  background:var(--mar-accent);color:var(--mar-accent-ink);}',
+        '.mar-update-text{flex:1;min-width:120px;font-size:12px;opacity:.8;}',
+        '.mar-update-actions{display:flex;gap:8px;}',
+        '.mar-update button{font:inherit;font-size:11px;padding:3px 8px;cursor:pointer;',
+        '  color:var(--mar-ink-primary);background:transparent;border:1px solid var(--mar-line-strong);}',
+        '.mar-update button:hover{border-color:var(--mar-ink-primary);}',
+        '.mar-update button:focus-visible{outline:1px solid var(--mar-accent);outline-offset:2px;}',
         '.mar-set-pane h4{margin:0 0 4px;font-size:17px;font-weight:700;letter-spacing:.04em;}',
         '.mar-set-pane .mar-set-sub{margin:0 0 24px;font-size:11px;opacity:.55;}',
         '.mar-set-group{margin:0 0 24px;}',
@@ -3892,6 +3920,180 @@ try {
         '<rect x="1.6" y="1.6" width="12.8" height="12.8" stroke="currentColor" stroke-width="1.2"/>' +
         '<path d="M8 4.4v7.2M4.4 8h7.2" stroke="currentColor" stroke-width="1.2"/></svg>';
 
+      // ---- update check（2026-11-05，用户选项 2：轻量提示，不自动安装）------
+      // 已安装用户不会从 DSH 得到更新提示（本包不在 npm registry，`updateRefusal`
+      // 只认 registry 来源）。这里由客户端轻量地读 GitHub main 的 package.json，
+      // 版本比本地新时：
+      //   · 在「主题设置」nav 格右上角点一个**跟主题色**的小圆点；
+      //   · 在主题设置面板最上方显示「可更新 / 检查更新 / 不再提示」横幅。
+      // 只做提示，不下载、不自动安装；「不再提示」记住跳过的版本，出现更新的
+      // 版本时还会再提示。网络/代理失败时静默，用户点「检查更新」才显示失败原因。
+      var UPDATE_STORE_KEY = 'mar.update.v1';
+      var UPDATE_TTL = 6 * 60 * 60 * 1000;
+      var UPDATE_URLS = [
+        'https://raw.githubusercontent.com/ALPDM00/dsh-theme-mls-desktop/main/package.json',
+        'https://gh-proxy.com/https://raw.githubusercontent.com/ALPDM00/dsh-theme-mls-desktop/main/package.json'
+      ];
+      function updateParseVersion(value) {
+        var m = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/.exec(String(value || '').trim());
+        if (!m) return null;
+        return { n: [+m[1], +m[2], +m[3]], pre: m[4] || '' };
+      }
+      function updateVersionGt(a, b) {
+        var A = updateParseVersion(a), B = updateParseVersion(b);
+        if (!A || !B) return false;
+        for (var i = 0; i < 3; i++) if (A.n[i] !== B.n[i]) return A.n[i] > B.n[i];
+        if (A.pre === B.pre) return false;
+        if (A.pre && !B.pre) return false;   // 预发布 < 正式版
+        if (!A.pre && B.pre) return true;
+        return A.pre > B.pre;
+      }
+      function updateLoad() {
+        var empty = { latest: null, checkedAt: 0, skipVersion: null, status: 'idle', error: null };
+        try {
+          var raw = (typeof window !== 'undefined' && window.localStorage)
+            ? window.localStorage.getItem(UPDATE_STORE_KEY) : null;
+          if (!raw) return empty;
+          var p = JSON.parse(raw);
+          return {
+            latest: (p && typeof p.latest === 'string') ? p.latest : null,
+            checkedAt: (p && typeof p.checkedAt === 'number') ? p.checkedAt : 0,
+            skipVersion: (p && typeof p.skipVersion === 'string') ? p.skipVersion : null,
+            status: 'idle',
+            error: null
+          };
+        } catch (e) { return empty; }
+      }
+      function updateSave() {
+        try {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            window.localStorage.setItem(UPDATE_STORE_KEY, JSON.stringify({
+              latest: UPDATE_STATE.latest,
+              checkedAt: UPDATE_STATE.checkedAt,
+              skipVersion: UPDATE_STATE.skipVersion
+            }));
+          }
+        } catch (e) {}
+      }
+      var UPDATE_STATE = updateLoad();
+      var updateFetching = false;
+      var updateShowStatus = false;
+      function updateAvailable() {
+        return !!UPDATE_STATE.latest &&
+          updateVersionGt(UPDATE_STATE.latest, PLUGIN_VERSION) &&
+          UPDATE_STATE.skipVersion !== UPDATE_STATE.latest;
+      }
+      function updateBannerMode() {
+        if (updateAvailable()) return 'available';
+        if (!updateShowStatus) return 'hidden';
+        if (updateFetching || UPDATE_STATE.status === 'checking') return 'checking';
+        if (UPDATE_STATE.status === 'error') return 'error';
+        if (UPDATE_STATE.status === 'ok') return 'latest';
+        return 'hidden';
+      }
+      function updateRender() {
+        try {
+          var nav = doc.querySelector('[data-mar-nav]');
+          if (nav) {
+            if (updateAvailable()) nav.classList.add('mar-has-update');
+            else nav.classList.remove('mar-has-update');
+          }
+        } catch (e) {}
+        var bar = null;
+        try { bar = doc.getElementById('mar-update-bar'); } catch (e) { bar = null; }
+        if (!bar) return;
+        var mode = updateBannerMode();
+        if (mode === 'hidden') { bar.hidden = true; return; }
+        bar.hidden = false;
+        bar.setAttribute('data-mode', mode);
+        var tag = doc.getElementById('mar-update-tag');
+        var text = doc.getElementById('mar-update-text');
+        var mute = doc.getElementById('mar-update-mute');
+        var check = doc.getElementById('mar-update-check');
+        if (mode === 'available') {
+          if (tag) tag.textContent = '可更新';
+          if (text) text.textContent = 'v' + UPDATE_STATE.latest + '（当前 v' + PLUGIN_VERSION + '）';
+          if (mute) mute.hidden = false;
+        } else if (mode === 'checking') {
+          if (tag) tag.textContent = '检查更新';
+          if (text) text.textContent = '正在检查更新…';
+          if (mute) mute.hidden = true;
+        } else if (mode === 'latest') {
+          if (tag) tag.textContent = '已是最新';
+          if (text) text.textContent = '当前 v' + PLUGIN_VERSION;
+          if (mute) mute.hidden = true;
+        } else {
+          if (tag) tag.textContent = '检查失败';
+          if (text) text.textContent = UPDATE_STATE.error || '无法连接更新源';
+          if (mute) mute.hidden = true;
+        }
+        if (check) check.disabled = (mode === 'checking');
+      }
+      function updateCheck(force, manual) {
+        if (updateFetching) return;
+        if (manual) updateShowStatus = true;
+        if (!force && UPDATE_STATE.checkedAt && Date.now() - UPDATE_STATE.checkedAt < UPDATE_TTL) {
+          updateRender();
+          return;
+        }
+        updateFetching = true;
+        UPDATE_STATE.status = 'checking';
+        UPDATE_STATE.error = null;
+        updateRender();
+        var idx = 0;
+        function finish(version, error) {
+          updateFetching = false;
+          UPDATE_STATE.checkedAt = Date.now();
+          if (version) {
+            UPDATE_STATE.latest = version;
+            UPDATE_STATE.status = 'ok';
+            UPDATE_STATE.error = null;
+          } else {
+            UPDATE_STATE.status = 'error';
+            UPDATE_STATE.error = error || '无法连接更新源';
+          }
+          updateSave();
+          updateRender();
+        }
+        function attempt() {
+          if (idx >= UPDATE_URLS.length) { finish(null); return; }
+          var url = UPDATE_URLS[idx++];
+          var ctrl = null;
+          try { if (typeof AbortController === 'function') ctrl = new AbortController(); } catch (e) { ctrl = null; }
+          var timer = setTimeout(function () { try { if (ctrl) ctrl.abort(); } catch (e) {} }, 8000);
+          var req = null;
+          try { req = fetch(url, { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined }); }
+          catch (e) { clearTimeout(timer); attempt(); return; }
+          req.then(function (res) {
+            if (!res || !res.ok) throw new Error('HTTP');
+            return res.json();
+          }).then(function (json) {
+            clearTimeout(timer);
+            if (!json || json.name !== 'dsh-theme-mls-desktop' || typeof json.version !== 'string') {
+              throw new Error('unexpected payload');
+            }
+            finish(json.version.trim(), null);
+          }).catch(function () {
+            clearTimeout(timer);
+            attempt();
+          });
+        }
+        attempt();
+      }
+      function updateBindPane(pane) {
+        if (!pane || pane.__marUpdateBound) return;
+        pane.__marUpdateBound = true;
+        var check = pane.querySelector('#mar-update-check');
+        var mute = pane.querySelector('#mar-update-mute');
+        if (check) check.addEventListener('click', function () { updateCheck(true, true); });
+        if (mute) mute.addEventListener('click', function () {
+          UPDATE_STATE.skipVersion = UPDATE_STATE.latest;
+          updateShowStatus = false;
+          updateSave();
+          updateRender();
+        });
+      }
+
       //  The seven swatches. No visible text — the colour/artwork IS the label; the
       //  hex only survives as an aria-label so the group is still usable from a
       //  keyboard/screen reader. The flat colour is a custom property (--sw) that
@@ -3928,6 +4130,7 @@ try {
         btn.className = baseCls;
         btn.innerHTML = MAR_TAB_ICON + '<span>主题设置</span>';
         list.appendChild(btn);
+        updateRender();   // 若检查结果早已回来，给 nav 格补上小圆点
 
         var pane = null;
         // The HOST's cells only. This used to be a bare `[class*="_navCell"]`
@@ -3946,6 +4149,8 @@ try {
         pane.style.visibility = 'hidden';
         pane.style.pointerEvents = 'none';
         panel.appendChild(pane);
+        updateBindPane(pane);
+        updateRender();   // 横幅只在有新版本时显示
 
         // ---- close button (#1, 2026-11-04) ----------------------------------
         // WHY there is no close button today: the host's own one lives in the
@@ -4093,9 +4298,13 @@ try {
           markHostContent(false);
         }
         function showPane() {
-          if (!pane) pane = buildPane(panel, hidePane);   // never null in practice
+          if (!pane) {
+            pane = buildPane(panel, hidePane);   // never null in practice
+            updateBindPane(pane);
+          }
           if (pane.parentNode !== panel) panel.appendChild(pane);
           syncPane(pane);
+          updateRender();
           pane.style.visibility = 'visible';
           pane.style.pointerEvents = 'auto';
           panel.classList.add('mar-tab-on');
@@ -4126,6 +4335,16 @@ try {
         pane.innerHTML =
           '<h4>主题设置</h4>' +
           '<p class="mar-set-sub">Marathon FUI · 主题色与各项动画开关</p>' +
+          // 更新横幅：只在发现新版本时显示（面板最上方）。「检查更新」手动重查，
+          // 「不再提示」记住当前版本；nav 上的小点由 updateRender() 同步。
+          '<div class="mar-update" id="mar-update-bar" hidden data-mode="available">' +
+            '<span class="mar-update-tag" id="mar-update-tag">可更新</span>' +
+            '<span class="mar-update-text" id="mar-update-text"></span>' +
+            '<span class="mar-update-actions">' +
+              '<button type="button" id="mar-update-check">检查更新</button>' +
+              '<button type="button" id="mar-update-mute">不再提示</button>' +
+            '</span>' +
+          '</div>' +
           '<div class="mar-set-group">' +
             '<div class="mar-set-head">外观</div>' +
             // 只有两个词，没有预览图案 —— 用户 2026-10-17："只需要显示浅色和深色即可，
@@ -5703,6 +5922,8 @@ attachDone();
       // 摘掉 → 条带跟着没）。它不依赖 done 的开关：会话面订阅由 attachDone
       // 统一装好，这里只读快照。
       runApply();
+      // 轻量更新检查：缓存 6 小时内不重复请求；失败静默（用户手动点「检查更新」才报错）。
+      try { updateCheck(false); } catch (e) {}
       // 重连会重放列表基线，重新确认一次订阅还活着（服务实例被换掉时重挂）
       try {
         if (ctx && typeof ctx.on === 'function') {
