@@ -28,7 +28,7 @@ window.__ModuleLoader__.load({
     var PLUGIN_ID = 'dsh-theme-mls-desktop';
     // 本地版本号（构建时由 scripts/build.cjs 从 package.json 注入）。更新检查把它
     // 与 GitHub main 分支的 package.json 版本比较；见 updateCheck()。
-    var PLUGIN_VERSION = '0.6.12';
+    var PLUGIN_VERSION = '0.6.13';
 
     // Boot payload (namespaced CSS + DOM + marathon engine + intro engine, plus
     // base64-embedded PNGs) is injected here at build time by scripts/build.cjs —
@@ -3691,6 +3691,9 @@ try {
         runUnwatch();
         runUnmount();
         dotUnmount();
+        // 计费轮询也一起退场（2026-11-10）：旧实例的 2s 轮询会拿自己空的展开表
+        // 把用户点开的结算纸条关掉，和新实例来回拉锯 —— 见 billingRetire()。
+        if (typeof billingRetire === 'function') billingRetire();
       }
       function runStateText() {
         if (!runEnabled()) return '已关闭';
@@ -4058,7 +4061,7 @@ try {
         '<path d="M8 4.4v7.2M4.4 8h7.2" stroke="currentColor" stroke-width="1.2"/></svg>';
 
       // ---- update check（2026-11-05；2026-11-06 起 npm registry 优先）------
-      // 0.6.11 起本包发布在 npm registry：从 registry 安装的用户，DSH 插件管理器
+      // 首个 npm 发布版本是 0.6.13：从 registry 安装的用户，DSH 插件管理器
       // 自己就会列出新版本并一键更新（它只对 registry 来源的包做 listVersions /
       // updateBundle，见 @deepseek-ai/dsh-plugin-manager）。客户端这份检查是给
       // 「GitHub tarball / 手工拷贝」用户的兜底：先问 npm registry 的 /latest
@@ -5858,12 +5861,34 @@ function billingLoad() {
 
       /** 开关变化后的即时生效：关 → 摘掉并停止轮询；开 → 立刻拉一次。 */
       function billingApply() {
+        if (staleInstance()) { billingRetire(); return; }
         if (!billingEnabled()) {
           billingState = null;
           billingDetachAll();
           return;
         }
         billingFetch();
+      }
+
+      /**
+       * 旧实例退场：停掉自己的轮询、丢掉自己的快照与展开表，**不动 DOM**。
+       *
+       * 为什么要有这一个（2026-11-10 用户报「每轮 TOKEN 结算自己打开关闭」）：
+       * DSH 的 client HMR（dsh-client-modules `replace()`）会重跑 apply()，但上一次
+       * 的 dispose 不一定跑到（v0.6.11 已在点阵/条带上踩过同一个坑：旧实例的定时器
+       * 还活着，在新实例的 DOM 上继续写）。旧实例手里那份 `billingOpen` 是**它自己**
+       * 的表：用户点开的纸条记在新实例的表里，旧实例每次 tick 都拿空表把
+       * `mlsb-open` 删掉，新实例下一次 tick 又加回来 —— 于是那张纸条每秒「关→开」
+       * 一次，看起来就是「自己打开关闭、反复重复」。没点过的纸条两边都是收起态，
+       * 所以只有点过的那张会出现（用户 2026-11-10："只要用户点击过，就会出现"）。
+       *
+       * 退场刻意不摘纸条：纸条现在归新实例（见 billingTick 里的实例令牌），
+       * 旧实例去摘只会把新实例刚修好的界面再拆一次。
+       */
+      function billingRetire() {
+        if (billingTimer) { clearInterval(billingTimer); billingTimer = null; }
+        billingState = null;
+        billingOpen = {};
       }
 
       function mlsbEl(tag, cls, text) {
@@ -5914,6 +5939,10 @@ var crossLeft = mlsbEl('span', 'mlsb-cross mlsb-left', '+');
         head.appendChild(crossLeft);
         head.appendChild(title);
         head.appendChild(crossRight);
+        // 这张纸条是哪个实例建的：click 监听写的是**那个实例**的 billingOpen，
+        // 所以换实例（HMR）后必须重建，否则新实例每次 tick 都会按自己空表把它关回
+        // 收起态（见 billingRetire 的注释）。
+        root.setAttribute('data-mlsb-instance', String(INSTANCE_TOKEN));
         var body = mlsbEl('div', 'mlsb-turn-body');
         // `grid-template-rows:0fr → 1fr`（内层再包一层 min-height:0/overflow:hidden）：
         // 它才是被压成 0 高度的那个；行本身留在里面，展开时高度平滑长出来
@@ -5992,6 +6021,8 @@ var bodyInner = mlsbEl('div', 'mlsb-turn-body-inner');
       }
 
       function billingTick() {
+        // HMR 之前的旧实例：先退场，别再往新实例的纸条上写（见 billingRetire）
+        if (staleInstance()) { billingRetire(); return; }
         // 开关关— — 摘干净并退出（巡扫— 1.2s 调一次，这里必须最先判断）
         if (!billingEnabled()) {
           if (doc.querySelector('[data-mlsb-turn]')) billingDetachAll();
@@ -6022,6 +6053,13 @@ var displayed = billingDisplayedSessionId();
           var host = doc.querySelector('[data-turn-tail="' + turn.turn + '"]');
           if (!host) continue;
           var block = host.querySelector(':scope > [data-mlsb-turn="' + turn.turn + '"]');
+          // 上一实例（HMR 前）建的纸条：它的 click 监听写的是旧实例的 billingOpen。
+          // 留着它的话，用户点开 → 新实例下一次 tick 按自己的空表关回去 → 「自己打开关闭」。
+          // 按实例令牌认领/重建，保证纸条的展开状态和点击都归**当前实例**。
+          if (block && block.getAttribute('data-mlsb-instance') !== String(INSTANCE_TOKEN)) {
+            if (block.parentNode) block.parentNode.removeChild(block);
+            block = null;
+          }
           if (!block) {
             block = buildTurnBlock(turn);
             billingAttach(host, block);
@@ -6032,6 +6070,8 @@ var displayed = billingDisplayedSessionId();
 
       function billingFetch() {
         if (typeof fetch !== 'function') return;
+        // 旧实例的自愈轮询：退场，别再打宿主接口（否则两个实例各 2s 一次）
+        if (staleInstance()) { billingRetire(); return; }
         if (!billingEnabled()) return;      // 开关关掉就不打扰宿
 // 页面在后台时不轮询：桌面端最小化时省电，也不产生无意义请
 if (doc.hidden) return;

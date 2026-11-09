@@ -73,6 +73,27 @@
 只有在 `turn/end` 到过（`closed`）之后才贴：任务没结束就没有「本轮用时」可言。
 没有用量的空轮次（被拒绝、空输入）不长纸条。
 
+### HMR 之后不许"两个实例拉锯"（2026-11-10，v0.6.13）
+
+DSH 的 client HMR 会重跑 `apply()`，而上一次的 dispose 不保证跑到（见
+[`docs/COMPATIBILITY.md`](COMPATIBILITY.md) 的 client HMR 一节）。旧实例的 2s 轮询如果还活着，
+它会拿**自己那份** `billingOpen` 表去写纸条：用户点开的纸条记在新实例的表里，于是旧实例把
+`mlsb-open` 删掉、新实例下一 tick 再加回来 —— 那张纸条每秒「关→开」一次（用户报的
+"每轮 TOKEN 结算自己打开关闭、反复重复"，且只有点过的那张会现）。
+
+现在三道闸：
+
+| 闸 | 位置 | 作用 |
+| --- | --- | --- |
+| 入口自检 | `billingTick` / `billingFetch` / `billingApply` 的第一行 | `staleInstance()` 为真 → `billingRetire()`：停掉自己的定时器、丢掉快照与展开表，**不碰 DOM** |
+| 统一退场 | `retireStale()`（点阵/条带那条已有路径） | 一并退掉计费轮询，退场延迟 400ms（原来要等下一次 2s 轮询） |
+| 实例令牌 | 纸条上的 `data-mlsb-instance` | `billingTick()` 认领到上一实例建的纸条就重建：click 监听、展开状态、DOM 都归当前实例 |
+
+旧实例**不能**被新代码救回来（它跑的是旧代码），所以升级后要重载一次窗口；重载后就只剩一个实例。
+真机回归口径：修前 mtime-only 触发一次 HMR，`/dsh-mls-billing/state` 从 5 次/10s 变成
+10 次/10s（两个 2s 轮询）；修后同样步骤仍是 5 次/10s，点开的纸条 10s 内不动。
+
+
 ### 三个数字的来路
 
 | 显示 | 来源 |

@@ -25,7 +25,7 @@ DSH 的插件管理器（`@deepseek-ai/dsh-plugin-manager`）对**从 registry �
 
 本包的现状（`package.json` 里已配好）：
 
-- 包名：`dsh-theme-mls-desktop`（**未加 scope**，registry 上 0.6.11 发布时查过 404，可用）；
+- 包名：`dsh-theme-mls-desktop`（**未加 scope**，首发（0.6.13）前查过 404，可用）；
 - `publishConfig.registry = https://registry.npmjs.org/`、`access = public`；
 - `prepublishOnly`：发布前自动跑 `node scripts/build.cjs`，保证 `client.js` 与 `src/` 同步；
 - `files` 是白名单（约 1.1 MB 解压 / 410 KB tarball，40 来个文件），
@@ -74,11 +74,16 @@ npm.cmd view dsh-theme-mls-desktop version       # 应等于 package.json 的版
 npm.cmd view dsh-theme-mls-desktop dist-tags     # latest 指向刚发的版本
 ```
 
-> 版本号一旦发布就不能复用。`0.6.10` 已存在于 git 历史但没上 npm，
-> 所以首次 npm 发布用 **0.6.11**（带 npm 发布配置与 npm 优先的更新检查）。
+> 版本号一旦发布就不能复用。`0.6.10` / `0.6.11` 只存在于 git 历史、**都没上过 npm**
+> （registry 上至今 404），所以**首个 npm 发布版本是 `0.6.13`**（带 npm 发布配置与
+> npm 优先的更新检查）。
+>
+> 本包**不往回改已经写出去的版本号**：0.6.5–0.6.10 是同一功能的六轮迭代（CHANGELOG 里已合并
+> 成一条记录），但版本号一旦被 tarball 安装的用户看到，往下改会让他们的「可更新」永远不出现。
 
-发完把这次的改动提交、打 `v0.6.11` tag 并推送（CI 发现该版本已在 registry 上会跳过发布，
-不会红）。
+发完再提交这次的改动并推送 `main`。**这两个主题仓库不打 git tag**（历史里一个都没有），
+`main` 就是唯一的分支事实；第五节那套 tag → Actions 自动发布是可选的，要用得先配好
+`NPM_TOKEN` Secret，否则就走这里的手动 `npm.cmd publish`。
 
 ---
 
@@ -101,19 +106,16 @@ node check.cjs                                  # 静态校验
 node .generated/check-doc-links.cjs             # README/docs 相对链接
 node .generated/verify-run.cjs                  # 浏览器回归（需要本机 Chrome/Edge）
 
-# ④ 提交 + 打 tag
+# ④ 提交（本仓库不打 tag：要让 Actions 发才加 git tag + --follow-tags，见第五节）
 git add -A
-git commit -m "v0.6.12: <一句话>"
-git tag v0.6.12
+git commit -m "v0.6.13: <一句话>"
 
-# ⑤ 发布 —— 二选一：
-#    a) 手动发（首次、或想盯着输出）：
+# ⑤ 发布：
 npm.cmd publish
-#    b) 或者只推 tag，让 GitHub Actions 发（见第五节）：
-git push origin main --follow-tags
+#    （想让它自动发，才需要打 tag 并推：git tag v0.6.13 && git push origin main --follow-tags）
 
-# ⑥ 推送仓库与 tag（用 ⑤a 手动发过的话，再推 tag；CI 发现版本已在 registry 会跳过）
-git push origin main --follow-tags
+# ⑥ 推送 main（本仓库的分支事实就是 main）
+git push origin main
 ```
 
 发完做一次**干净环境冒烟**（不要用 `link:` 的开发目录）：
@@ -127,10 +129,10 @@ npm.cmd pack dsh-theme-mls-desktop@latest
 ### 预发布 / 回滚
 
 - 预发布：`npm.cmd publish --tag beta`（`beta` 不会顶掉 `latest`，用户要显式装 `@beta`）。
-- 发现坏版本：`npm.cmd deprecate dsh-theme-mls-desktop@0.6.12 "原因"`（推荐），
+- 发现坏版本：`npm.cmd deprecate dsh-theme-mls-desktop@0.6.13 "原因"`（推荐），
   再发一个修好的 patch。`npm unpublish` 只有发布后 72 小时内、且没人依赖时才可用，
   不要把它当回滚手段。
-- 撤销 latest 指向：`npm.cmd dist-tag add dsh-theme-mls-desktop@0.6.11 latest`。
+- 撤销 latest 指向：`npm.cmd dist-tag add dsh-theme-mls-desktop@0.6.13 latest`。
 
 ---
 
@@ -143,8 +145,12 @@ npm.cmd pack dsh-theme-mls-desktop@latest
    Permissions 选 `Read and write`、只勾这个包；**Bypass 2FA 选开启**（CI 没人输 OTP）。
 2. 打开 GitHub 仓库 → Settings → Secrets and variables → Actions → New repository secret，
    名字填 `NPM_TOKEN`，值粘贴 token。
-3. 之后发版只要 `git push origin v0.6.12`，工作流会在 Ubuntu 上 checkout、build、发布
-   （tag 与 `package.json` 版本不一致会直接失败；该版本已在 registry 上则跳过发布）。
+3. 之后发版只要打并推送 tag（`git tag v0.6.13 && git push origin v0.6.13`），工作流会在
+   Ubuntu 上 checkout、build、发布（tag 与 `package.json` 版本不一致会直接失败；
+   该版本已在 registry 上则跳过发布）。
+
+> ⚠️ 本仓库目前**没有打过任何 tag**，也没配 `NPM_TOKEN`，所以这套自动发布还没启用；
+> 首个 0.6.13 走的是第三节的手动 `npm.cmd publish`。要不要启用这条链路由你决定。
 
 > token 只放 GitHub Secret，别写进仓库；泄露了就立刻在 npm 上 revoke。
 > 包目前是 unscoped：任何人都能创建 `@scope/dsh-theme-mls-desktop` 这种**同名但不同 scope**

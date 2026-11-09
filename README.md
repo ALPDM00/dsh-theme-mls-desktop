@@ -65,9 +65,10 @@
 > 报错本身不提任何替代路径 ——
 > 完整对照表与逐项排错见 [docs/INSTALL.md](docs/INSTALL.md)。
 
-### 从 npm 安装（0.6.11 起，推荐：装一次，以后一键更新）
+### 从 npm 安装（0.6.13 起，推荐：装一次，以后一键更新）
 
-本包已发布为 npm 包 **`dsh-theme-mls-desktop`**（`npm view dsh-theme-mls-desktop version`）。
+首次 npm 发布版本是 **0.6.13**（`npm view dsh-theme-mls-desktop version`；registry 上还没有的
+时候这条会 404，此时请走下面的手工安装）。
 用 DSH 自带的插件管理器安装，是唯一「装一次、之后一键更新」的路：
 
 1. 设置 › **插件**（插件管理器）→ 安装 → 输入包名 `dsh-theme-mls-desktop`。
@@ -92,11 +93,11 @@ desktop profile 启动时只认两件事：**在 `node_modules` 里能解析到�
 以及 **`dsh.profile.bundles` 里有它的包名**。达成这两件事就有主题。
 
 ```bash
-# ① 取包 —— 首选 npm registry（0.6.11 起）
+# ① 取包 —— 首选 npm registry（0.6.13 起）
 #    npm 的 tarball 由 registry 直接给，字节稳定，不会像镜像那样反复重打包、
 #    导致 pnpm 的完整性校验来回失败：
 npm pack dsh-theme-mls-desktop@latest
-#    → dsh-theme-mls-desktop-0.6.11.tgz；解出来按 ② 拷进 node_modules 即可
+#    → dsh-theme-mls-desktop-0.6.13.tgz；解出来按 ② 拷进 node_modules 即可
 #    （也可以 npm install --prefix <临时目录> dsh-theme-mls-desktop，再把
 #     node_modules/dsh-theme-mls-desktop 整个拷过去。）
 

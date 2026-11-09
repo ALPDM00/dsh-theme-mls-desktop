@@ -112,6 +112,14 @@ running / holding 共用同一个 key `"running"` —— 是 props 更新不是 
 `window.__marThemeRunToken` 让旧实例的 400ms 定时器自行退场，并在挂载前按 id 清掉
 上一个实例留下的 `#dshMarRunHost` / `#dshMarDotHost`。
 
+**计费轮询也吃这套实例令牌（v0.6.13）**：旧实例的 2s `/dsh-mls-billing/state` 轮询如果
+还活着，会拿**它自己**那份 `billingOpen` 表去写纸条 —— 用户点开的纸条记在新实例的表里，
+于是 `mlsb-open` 被旧实例删掉、新实例下一 tick 再加回来（「每轮 TOKEN 结算自己打开关闭」）。
+现在 `billingTick` / `billingFetch` / `billingApply` 入口先 `staleInstance()` 自检，
+旧实例 `billingRetire()` 停表丢状态且**不碰 DOM**；纸条带 `data-mlsb-instance`，令牌不符
+就由当前实例重建（点开状态与 click 监听都归当前实例）。旧实例跑的是旧代码，救不回来 ——
+升级后需重载一次窗口。详见 [docs/BILLING.md](BILLING.md) 的「HMR 之后不许两个实例拉锯」。
+
 ## 已知限制
 
 - **按组件的选择器**（`[class*="sidebar"]`、`[class*="message"]` 等）是尽力而为、

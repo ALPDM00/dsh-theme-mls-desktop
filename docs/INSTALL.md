@@ -9,8 +9,8 @@
 
 越来越多的人是**把仓库链接丢给自己的 AI，让它装**。下面这张表是 2026-10-11 在
 「从 GitHub 取包 + 手工拷」这条路上的实测：五道墙，其中两道是结构性的。
-**0.6.11 起本包发布到了 npm registry**（见第一节）：让插件管理器按包名安装即可，
-第 ①、⑤ 道墙不再存在；下表留着给「只能从 GitHub 取包」的情况排错。
+**首个 npm 发布版本是 0.6.13**（见第一节）：发布之后让插件管理器按包名安装即可，
+第 ①、⑤ 道墙不再存在；发布之前（registry 上 404）或只能从 GitHub 取包时，下表用来排错。
 
 | # | 关卡 | 实测结果 | 属于谁 |
 | --- | --- | --- | --- |
@@ -29,7 +29,7 @@
 关键对比：**git 的 schannel 建不起 TLS，但 node 自己的网络栈是好的。**
 
 ```bash
-# node 能连通 registry（0.6.11 起对本包返回 200 = 已发布；404 = 没发布 / 网络不通）
+# node 能连通 registry（0.6.13 起对本包返回 200 = 已发布；404 = 还没发布 / 网络不通）
 node -e "fetch('https://registry.npmjs.org/dsh-theme-mls-desktop').then(r=>console.log(r.status))"
 
 # 所以直接抓 GitHub 的 tar.gz（走镜像绕开 github.com 直连）：
@@ -78,7 +78,7 @@ dsh: pnpm printed nothing for 600000ms and was terminated
 
 ---
 
-## 一、npm registry 安装（0.6.11 起，推荐）
+## 一、npm registry 安装（0.6.13 起，推荐）
 
 本包已发布到 npm：包名 **`dsh-theme-mls-desktop`**。先确认 registry 上有它：
 
@@ -110,8 +110,8 @@ npm view dsh-theme-mls-desktop version
 npm 的 tarball 字节稳定，比 GitHub 镜像可靠（镜像重打包会让 pnpm 的完整性校验来回失败）：
 
 ```bash
-npm.cmd pack dsh-theme-mls-desktop@latest   # → dsh-theme-mls-desktop-0.6.11.tgz
-tar -xzf dsh-theme-mls-desktop-0.6.11.tgz
+npm.cmd pack dsh-theme-mls-desktop@latest   # → dsh-theme-mls-desktop-0.6.13.tgz
+tar -xzf dsh-theme-mls-desktop-0.6.13.tgz
 # 把解出来的 package/ 内容拷进
 #   <DSH_HOME>/profiles/desktop/node_modules/dsh-theme-mls-desktop
 # 再按第五节手工补 bundles
