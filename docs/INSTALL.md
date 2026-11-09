@@ -342,6 +342,18 @@ node node_modules/dsh-theme-mls-desktop/shell-patch/auto.cjs --check --app "<桌
   （先从 pristine 备份还原再打，会连带丢掉对 `app.asar` 的其它手改，确认没有手改再跑），
   然后重启桌面端。这一条**故意不自动**：见上面"旧修订不猜"。
 
+**页面看起来坏了（空白 / 把自己的 JS 当正文渲染）时**，先跑只读体检，别急着回退：
+
+```bash
+node node_modules/dsh-theme-mls-desktop/shell-patch/doctor.cjs --app "<桌面端安装目录>"
+node node_modules/dsh-theme-mls-desktop/shell-patch/doctor.cjs --json --out doctor.json   # 贴进 issue 用
+```
+
+它不写任何文件，逐个报告三个目标文件的大小 / SHA-256 / 修订 / 文档结构，跟 pristine `.bak`
+的第一处差异字节（带上下文），以及归档里 `index.html` 的字节数 —— 桌面的产品页只会比它
+多 72 B；如果你在 `/` 抓到的文档远大于这个数，多出来的部分是 Host 在服务时拼进去的插件
+注入行，不在 `app.asar` 里（那种情况请把 `doctor --json` 的输出和插件清单一并贴到 issue）。
+
 ---
 
 ## 七、装完能拿到什么

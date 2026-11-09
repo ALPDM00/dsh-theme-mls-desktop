@@ -161,7 +161,13 @@ npm.cmd pack dsh-theme-mls-desktop@latest
 - [ ] `CHANGELOG.md` 写了这一版的原因与验证结论
 - [ ] `npm.cmd run build` 后 `client.js` 有预期变化（或明确「无变化」）
 - [ ] `node check.cjs`、`check-doc-links.cjs`、`verify-run.cjs` 全绿
-- [ ] `npm.cmd publish --dry-run` 的文件清单不含本机状态（`.target.json` / `*.log` / 测试文件）
+- [ ] 壳补丁动过就再跑一遍（这两条在干净安装上做，或先 `--app` 指向一个复制出来的安装目录）：
+      `node shell-patch/tests.cjs`（0.6.12 起 20 项）、`node shell-patch/doctor.cjs`
+      （读当前安装：`state`、三个文件的修订、文档结构、与 `.bak` 的差异字节）
+- [ ] `npm.cmd publish --dry-run` 的文件清单不含本机状态（`.target.json` / `*.log` / 测试文件），
+      也不含 `docs/ISSUE_REPLIES-*.md`（议题回复草稿，由 `files` 里的
+      `!docs/ISSUE_REPLIES-*.md` 排除），且包含 `shell-patch/doctor.cjs`
+      （`files` 白名单里的 `shell-patch/{…,doctor,…}.cjs`）
 - [ ] `README.md` / `docs/` 里关于版本、安装、更新路径的表述与实际一致
 - [ ] 资产政策：`assets/fonts/Maratype.otf` 是使用者提供的字体，
       **公开分发到 npm 之前**请按 [ASSET_POLICY.md](ASSET_POLICY.md) §3 三选一
@@ -181,7 +187,7 @@ npm.cmd pack dsh-theme-mls-desktop@latest
 | `E404 Not Found`（发布时） | `publishConfig.registry` 与登录的 registry 不一致；用 `npm.cmd config get registry` 对齐 |
 | 安装时报 `ERR_PNPM_IGNORED_BUILDS` | pnpm 拦了 `postinstall`（壳补丁那一步）。主题照常工作，加载钩子会兜底；想装完即生效就在插件管理器里批准构建，或在 profile 的 `pnpm-workspace.yaml` 里放行 |
 | 用户装了却「看不到更新」 | 该用户是 `link:` / tarball / 手工拷装法 → 没有 registry 来源，插件管理器不列更新；让他按 [INSTALL.md](INSTALL.md) 第一节用包名重装 |
-| `.npmignore` 里的排除规则没生效 | 有 `files` 白名单时 npm 不看 `.npmignore`；排除项要写进 `files` 的模式里（本包 `shell-patch/{apply,auto,inspect,patches,revert,target}.cjs` 就是这么写的） |
+| `.npmignore` 里的排除规则没生效 | 有 `files` 白名单时 npm 不看 `.npmignore`；排除项要写进 `files` 的模式里（本包 `shell-patch/{apply,auto,doctor,inspect,patches,revert,target}.cjs` 就是这么写的） |
 | 发布后 registry 上还是旧版 | npm 有分钟级缓存；`npm view ... version` 确认，别连续重复 publish |
 
 ---

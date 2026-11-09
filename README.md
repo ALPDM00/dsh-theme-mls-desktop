@@ -141,6 +141,7 @@ node -e "
 
 ```bash
 npm run patch:check     # 只报告当前状态，不改任何东西
+npm run patch:doctor    # 只读体检：三个文件 + 文档结构 + 与 pristine 备份的差异
 npm run patch:revert    # 用 pristine 备份还原 app.asar
 ```
 

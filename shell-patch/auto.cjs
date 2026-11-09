@@ -367,9 +367,19 @@ function main(argv = process.argv.slice(2), env = process.env) {
     }
 
     if (result.action === 'repair') {
-      const reverted = muted(() => require('./revert.cjs').main(['--app', found.app]));
+      let reverted = EXIT_FAILED;
+      try {
+        reverted = muted(() => require('./revert.cjs').main(['--app', found.app]));
+      } catch (error) {
+        const reason = error && error.message ? String(error.message) : String(error);
+        appendLog(`FAILED ${found.app} (revert before repair): ${reason.replace(/\s+/gu, ' ').trim()}`);
+        report.summary(`[auto] revert failed: ${reason.split('\n')[0]}`);
+        result.exit = EXIT_FAILED;
+        return finish();
+      }
       if (reverted !== EXIT_OK) {
         report.summary('[auto] revert failed; the installation was not touched.');
+        appendLog(`FAILED ${found.app} (revert returned ${reverted}); nothing was changed`);
         result.exit = EXIT_FAILED;
         return finish();
       }
@@ -379,9 +389,25 @@ function main(argv = process.argv.slice(2), env = process.env) {
 
     result.action = result.action === 'repair+apply' ? result.action : 'apply';
     report.detail('[auto] patching…  (app.asar is rewritten; the backup is kept)');
-    const code = muted(() =>
-      require('./apply.cjs').main(['--app', found.app, ...(options.backup ? [] : ['--no-backup'])])
-    );
+    // The apply step is allowed to throw -- a changed anchor, a failed read-back,
+    // a short write. Without this catch the exception leaves `main()` before the
+    // `appendLog` below is reachable, and the runtime hook (spawned with
+    // `stdio: 'ignore'`) then leaves *no trace at all* of why nothing happened.
+    // It did exactly that for a whole Desktop upgrade; issue #6 is the same gap
+    // seen from the outside.
+    let code;
+    try {
+      code = muted(() =>
+        require('./apply.cjs').main(['--app', found.app, ...(options.backup ? [] : ['--no-backup'])])
+      );
+    } catch (error) {
+      const reason = error && error.message ? String(error.message) : String(error);
+      result.reason = reason;
+      result.exit = EXIT_FAILED;
+      report.summary(`[auto] patch failed: ${reason.split('\n')[0]}`);
+      appendLog(`FAILED ${found.app} (state ${probe.state}, via ${found.how}): ${reason.replace(/\s+/gu, ' ').trim()}`);
+      return finish();
+    }
     applied = code === EXIT_OK;
     result.exit = applied ? EXIT_OK : EXIT_FAILED;
     if (applied) {

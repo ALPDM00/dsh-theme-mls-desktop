@@ -162,6 +162,7 @@ shell build changed`），不会留一个半应用的壳。
 node shell-patch/auto.cjs --check                              # 只报告状态，不动任何文件
 node shell-patch/auto.cjs                                      # 需要就打（自动备份）
 node shell-patch/auto.cjs --repair                             # 旧修订：先还原再打
+node shell-patch/doctor.cjs                                    # 只读体检：状态 / 结构 / 与备份的差异
 npm run patch:revert                                           # 从备份还原
 ```
 
@@ -177,6 +178,43 @@ node shell-patch/revert.cjs                                    # 从备份还原
 `apply.cjs --check` 会把整包解到临时目录再逐条判定（准确但慢）；`auto.cjs` 的状态
 读的是 `target.cjs` 里的 `probeShell()` —— 它靠 asar 头部里的偏移**直接把那三个文件
 读出来**，不解包、不重打包，几毫秒。所以它能被放在每次插件加载时问一次。
+
+### 写完之后怎么自证：两次回读 + 文档结构校验
+
+`apply.cjs` 里有两次回读，缺一不可：
+
+1. **提交前**：暂存 asar 重新打开，把每个条目逐字节跟"打好补丁的目录树"比一遍
+   （**双向**：归档里缺文件、目录里多文件都算失败），然后把三个目标文件按归档头部
+   读回来，断言各自的 `patch-revision` 摘要、每个条目的 `already` 片段都在；
+2. **提交后**：真正落在安装目录里的 `app.asar` 再读一遍。这一步专治"提交"本身：
+   Windows 上桌面端开着时会锁住 `app.asar`，`rename` 被拒就退化成**原地重写**，
+   那条路不经 rename、也不由上面那一层覆盖。回读失败会自动从 `.bak` 还原并非 0 退出。
+
+`index.html` 额外做**结构校验**（`apply.cjs` 的 `documentProblems()`）：`<head>` /
+`<body>` / `</html>` 在、`<script>`↔`</script>` 与 `<style>`↔`</style>` 数量相等、
+没有 `U+FFFD` / NUL、首帧脚本仍在 `<head>` 里。`node --check` 只认 JavaScript，
+"一个 `<script>` 开标签被吃掉、浏览器把后面的 JS 当正文渲染"这种损坏只能靠这一层
+（issue #6 报告的形态）。
+
+出了事用只读体检命令，它**不写任何文件**：
+
+```bash
+node shell-patch/doctor.cjs                 # 或 npm run patch:doctor
+node shell-patch/doctor.cjs --json          # 机器可读，适合贴进 issue
+node shell-patch/doctor.cjs --json --out doctor.json   # 由 fs 写 UTF-8（PowerShell 的 > 是 UTF-16）
+node shell-patch/doctor.cjs --app <安装目录>
+```
+
+报告内容：找到的安装与 `.bak`、三个文件的字节数 / SHA-256 / 修订状态 / 结构问题、
+跟 pristine `.bak` 的**第一处差异字节**（带两侧上下文），以及归档里 `index.html` 的
+字节数 —— 用来回答"我抓到的页面为什么有 50 KB"：比它多出来的部分是 Host 在服务时拼
+进去的插件注入行（`dsh-host-webserver` 的 `renderIndexInjections()`），并不在这个归档里。
+返回码 0 = 没发现损坏（stock 也算没损坏，只是没打补丁），1 = 有问题。
+
+`auto.cjs` 失败时会把**原因**写进 `shell-patch/auto-apply.log`
+（`FAILED <目录> (state …, via …): <原因>`）。这条之前只在 apply 正常返回却没成功时才写，
+锚点变化这种直接抛异常的情况一个字都不会留 —— 由插件加载触发的 hook 用的是
+`stdio: 'ignore'`，所以那种失败在外部是完全静默的。
 
 ### 安装目录是怎么找到的（`target.cjs`）
 

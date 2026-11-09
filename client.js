@@ -28,7 +28,7 @@ window.__ModuleLoader__.load({
     var PLUGIN_ID = 'dsh-theme-mls-desktop';
     // 本地版本号（构建时由 scripts/build.cjs 从 package.json 注入）。更新检查把它
     // 与 GitHub main 分支的 package.json 版本比较；见 updateCheck()。
-    var PLUGIN_VERSION = '0.6.11';
+    var PLUGIN_VERSION = '0.6.12';
 
     // Boot payload (namespaced CSS + DOM + marathon engine + intro engine, plus
     // base64-embedded PNGs) is injected here at build time by scripts/build.cjs —

@@ -77,11 +77,129 @@ function hash(file) {
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 }
 
-/** Compare every entry of an archive against a directory tree. */
+/** Tag pairs that must stay balanced in a served HTML document. */
+const DOCUMENT_PAIRS = [
+  ['<script', '</script>'],
+  ['<style', '</style>'],
+];
+
+/**
+ * Structural checks for one patched file, beyond "the bytes round-tripped".
+ *
+ * The round-trip check in {@link archiveMatchesDirectory} answers "is the
+ * archive exactly the tree this run built". It cannot answer "is that tree a
+ * document Chromium can render": `node --check` is JavaScript-only, so a
+ * fragment that lands inside a tag, or a splice that eats a `<script` opener,
+ * passes byte-for-byte comparison while the page renders its own JavaScript as
+ * body text (issue #6). These are the cheap invariants that would have caught
+ * that shape of damage:
+ *
+ *   - the document still has its head, body and closing html tag,
+ *   - every `<script>`/`<style>` has a matching close tag (a lost opener is
+ *     exactly "the next identifier shows up as page text"),
+ *   - the file is clean UTF-8 with no NUL and no replacement characters,
+ *   - the first-frame script is inside `<head>`, where the patch puts it: a
+ *     script that drifted past `</head>` would run after the boot plate instead
+ *     of before it, i.e. the patch would silently stop doing its job.
+ *
+ * Only documents are checked; the JavaScript targets are covered by
+ * `node --check` in `main()`.
+ * @param {string} file - archive-relative path the patch targets
+ * @param {string} text - the file's decoded contents
+ * @returns {string[]} problems; empty means the document is structurally sane
+ */
+function documentProblems(file, text) {
+  if (!/\.html?$/iu.test(file)) return [];
+  if (text === '') return ['the document is empty'];
+  const problems = [];
+  if (text.includes('\uFFFD')) problems.push('the document contains U+FFFD (UTF-8 decode damage)');
+  if (text.includes('\u0000')) problems.push('the document contains a NUL byte');
+  for (const tag of ['<head', '</head>', '<body', '</body>', '</html>']) {
+    if (text.indexOf(tag) === -1) problems.push(`the document is missing "${tag}>"`);
+  }
+  for (const [open, close] of DOCUMENT_PAIRS) {
+    const opens = countOccurrences(text, open);
+    const closes = countOccurrences(text, close);
+    if (opens !== closes) problems.push(`unbalanced tags: "${open}" x${opens} vs "${close}" x${closes}`);
+  }
+  const headStart = text.indexOf('<head');
+  const headEnd = text.indexOf('</head>', headStart === -1 ? 0 : headStart);
+  if (headStart !== -1 && headEnd !== -1 && text.indexOf('<script') !== -1 && text.indexOf('<script') > headEnd) {
+    problems.push('the document has no <script> inside its <head>');
+  }
+  return problems;
+}
+
+/**
+ * Read the patched files back out of an archive and assert they are the
+ * revision this patch set writes.
+ *
+ * This is the "write, then read back through the reader the runtime uses" gate
+ * issue #6 asks for. It runs twice: on the staged archive before anything is
+ * committed, and on the installed archive after the commit, because the commit
+ * has two paths (rename, and an in-place rewrite for a locked file) and only the
+ * read-back covers both.
+ * @param {string} archive - archive to read
+ * @returns {string[]} problems; empty means every target file is current
+ */
+function verifyTargets(archive) {
+  const problems = [];
+  for (const file of TARGET_FILES) {
+    let text = null;
+    try {
+      text = target.readEntry(archive, file);
+    } catch (error) {
+      problems.push(`${file}: unreadable (${error.message})`);
+      continue;
+    }
+    if (text === null) {
+      problems.push(`${file}: not present in the archive`);
+      continue;
+    }
+    const state = revisionState(file, text);
+    if (state !== 'current') problems.push(`${file}: revision is ${state}, wanted ${revisionComment(file)}`);
+    for (const patch of PATCHES) {
+      if (patch.file !== file) continue;
+      if (!text.includes(patch.already)) problems.push(`${file}: "${patch.name}" is missing its fragment`);
+    }
+    for (const problem of documentProblems(file, text)) problems.push(`${file}: ${problem}`);
+  }
+  return problems;
+}
+
+/** Every regular file below `directory`, as `/`-separated relative paths. */
+function diskFiles(directory) {
+  const found = new Set();
+  const stack = [['', directory]];
+  while (stack.length > 0) {
+    const [relative, absolute] = stack.pop();
+    for (const entry of fs.readdirSync(absolute, { withFileTypes: true })) {
+      const rel = relative === '' ? entry.name : `${relative}/${entry.name}`;
+      const full = path.join(absolute, entry.name);
+      if (entry.isDirectory()) stack.push([rel, full]);
+      else if (entry.isFile()) found.add(rel.replace(/\\/gu, '/'));
+    }
+  }
+  return found;
+}
+
+/**
+ * Compare every entry of an archive against a directory tree.
+ *
+ * The comparison is deliberately two-way. Archive -> disk catches a payload
+ * written at the wrong offset (the archive's own header is what addresses it).
+ * Disk -> archive catches the opposite defect: a file the packer dropped, which
+ * the one-way form cannot see because it only ever visits entries the header
+ * already lists -- the check silently shrinks with the damage.
+ * @param {string} archive
+ * @param {string} directory
+ * @returns {{checked: number, problems: string[]}}
+ */
 function archiveMatchesDirectory(archive, directory) {
   const { header, contentOffset } = asar.readHeader(archive);
   const fd = fs.openSync(archive, 'r');
   const problems = [];
+  const inArchive = new Set();
   let checked = 0;
   try {
     const walk = (node, relative) => {
@@ -89,6 +207,7 @@ function archiveMatchesDirectory(archive, directory) {
         const rel = relative === '' ? name : `${relative}/${name}`;
         if (entry.files !== undefined) { walk(entry, rel); continue; }
         if (entry.link !== undefined) continue;
+        inArchive.add(rel);
         const onDisk = path.join(directory, ...rel.split('/'));
         let disk;
         try { disk = fs.readFileSync(onDisk); } catch { problems.push(`missing ${rel}`); continue; }
@@ -110,6 +229,10 @@ function archiveMatchesDirectory(archive, directory) {
     walk(header, '');
   } finally {
     fs.closeSync(fd);
+  }
+  // Disk -> archive: anything the packer dropped would otherwise be invisible.
+  for (const rel of diskFiles(directory)) {
+    if (!inArchive.has(rel)) problems.push(`not in the archive: ${rel}`);
   }
   return { checked, problems };
 }
@@ -171,7 +294,11 @@ function applyPatch(text, patch) {
   if (hits !== 1) {
     throw new Error(`anchor for "${patch.name}" occurs ${hits} times in ${patch.file} (expected exactly 1) — the shell build changed`);
   }
-  const patched = body.replace(anchor, replacement);
+  // A *function* replacement, so `$&`, `$'`, `` $` ``, `$$` and `$1` in the
+  // fragment are written literally. With a string replacement they are pattern
+  // syntax: a payload that happens to contain one would silently write a
+  // different block while still passing the `already` test below.
+  const patched = body.replace(anchor, () => replacement);
   if (!patched.includes(patch.already)) {
     throw new Error(`"${patch.name}" did not introduce its marker — refusing to continue`);
   }
@@ -372,6 +499,19 @@ function main(argv = process.argv.slice(2)) {
       throw new Error('staged archive failed verification; the installation was NOT touched');
     }
     console.log(`[apply] verified   ${check.checked} entries round-trip byte-for-byte (incl. ${names})`);
+
+    // ---- read the patched files back out of the staged archive ------------
+    // The round-trip above proves "archive == tree this run built". This one
+    // proves "the three files, as read through the archive's own header, are the
+    // revision we meant to write and (for the document) structurally renderable".
+    // It runs before the commit so a bad payload can never reach the install.
+    const stagedProblems = verifyTargets(stagingArchive);
+    if (stagedProblems.length > 0) {
+      console.error('[apply] the staged archive does not carry an intact patch:');
+      for (const problem of stagedProblems) console.error('  -', problem);
+      throw new Error('staged archive failed the read-back check; the installation was NOT touched');
+    }
+    console.log(`[apply] content    ${names} read back and structurally checked`);
     // Sanity: the patched sources still parse as JavaScript. `node --check`
     // understands both the shell's ESM main (Node >= 22 detects module syntax
     // from the `import` statements) and its CommonJS preload.
@@ -416,6 +556,27 @@ function main(argv = process.argv.slice(2)) {
       fs.writeFileSync(archive, bytes);
       console.log(`[apply] committed  app.asar rewritten in place (${(bytes.length / 1048576).toFixed(1)} MiB)`);
     }
+    // ---- post-commit read-back --------------------------------------------
+    // Everything above validated the *staging* file. The commit has two paths --
+    // rename, and an in-place rewrite when a running shell holds the archive --
+    // and the second one writes to the live file with no rename semantics, so
+    // the only honest proof is to re-open the installed archive and read the
+    // three targets back out of it. If that fails, put the pristine archive back
+    // rather than leave a half-written one in place.
+    const committedProblems = verifyTargets(archive);
+    if (committedProblems.length > 0) {
+      console.error('[apply] the installed archive failed its post-commit read-back:');
+      for (const problem of committedProblems) console.error('  -', problem);
+      const backup = `${archive}.dsh-theme-marathon.bak`;
+      if (fs.existsSync(backup)) {
+        fs.copyFileSync(backup, archive);
+        console.error(`[apply] rolled back — ${archive} restored from ${backup}`);
+      } else {
+        console.error('[apply] no backup to roll back to (--no-backup); restore the archive yourself');
+      }
+      throw new Error('post-commit read-back failed');
+    }
+    console.log('[apply] re-read    3 files verified in the installed archive');
     console.log('[apply] DONE — restart DeepSeek Harness to pick the patch up');
     return 0;
   } finally {
@@ -433,10 +594,11 @@ function main(argv = process.argv.slice(2)) {
   }
 }
 
-// Exported so the patch-set test can exercise the stale rule without an archive;
-// the CLI body stays behind the `require.main` guard so requiring this file does
-// not touch an installation.
-module.exports = { classifyPatch, applyPatch };
+// Exported so the patch-set test can exercise the stale rule, the document
+// checks and the two-way round-trip without a real installation; the CLI body
+// stays behind the `require.main` guard so requiring this file does not touch
+// one.
+module.exports = { classifyPatch, applyPatch, documentProblems, verifyTargets, archiveMatchesDirectory, diskFiles };
 module.exports.main = main;
 
 if (require.main === module) {

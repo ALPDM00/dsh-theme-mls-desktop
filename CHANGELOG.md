@@ -5,6 +5,43 @@
 次版本号 = 向后兼容的新功能；
 修订号 = 向后兼容的 bug 修复。
 
+## [0.6.12] - 2026-11-10
+
+**壳补丁"写坏了却报成功"的防线（议题 #6 的加固部分）。本版不改视觉、不改壳补丁 payload
+（`patch-revision` 不变），装好后重启桌面端即可，不需要 `--repair`。**
+
+### 新增
+
+- `shell-patch/doctor.cjs`（`npm run patch:doctor`）：**只读**体检。报告找到的安装与
+  `.bak`、三个目标文件的字节数 / SHA-256 / 修订状态 / 文档结构问题、与 pristine `.bak`
+  的第一处差异字节（带两侧上下文），以及归档里 `index.html` 的字节数。`--json` 供机器读；
+  返回码 0 = 未发现损坏（stock 也算），1 = 有问题。
+
+### 修复 / 加固
+
+- `apply.cjs`：**提交后回读** —— 安装目录里的 `app.asar` 再按归档头部把三个文件读一遍，
+  校验修订摘要与每个片段；失败自动从 `.bak` 还原并以非 0 退出。这一步覆盖 Windows 上
+  rename 被拒后走"原地重写"的路径（那条路不经 rename，只有回读能保证）。
+- `apply.cjs`：`index.html` 增加**文档结构校验**（`documentProblems()`）——`<head>` /
+  `<body>` / `</html>` 在场、`<script>`↔`</script>` 与 `<style>`↔`</style>` 数量相等、
+  无 `U+FFFD` / NUL、首帧脚本仍在 `<head>`。提交前读回暂存归档时同样执行，坏文档不会落地。
+- `apply.cjs`：`archiveMatchesDirectory()` 改为**双向**比对 —— 打包器丢条目以前查不出来
+  （单向遍历只会少检查几个），现在报 `not in the archive: <路径>`。
+- `apply.cjs`：补丁文本替换改用**函数式 replacer**，`$&` / `$'` / `` $` `` / `$$` / `$1`
+  不再被当成替换模式（当前 9 条 payload 不含这些序列，属预防性修复）。
+- `lib/asar.cjs`：`writeSync` 改为**循环写满**（`writeAll()`）。短写会让后面所有 payload
+  整体错位、且在写入时静默 —— 现在直接失败。
+- `auto.cjs`：`apply` / `revert` 抛出的异常被捕获，**原因写进 `auto-apply.log`**
+  （`FAILED <目录> (state …, via …): <原因>`）并打印一行摘要。此前这条日志只在 apply
+  正常返回却没成功时才有，锚点变化这类直接抛异常的情况完全静默（hook 用 `stdio: 'ignore'`）。
+- 测试：`shell-patch/tests.cjs` 10 → 20 项（文档结构、`$` 模式、双向比对、条目 census、
+  差异定位）。
+- 文档：`docs/SHELL-PATCH.md` 新增"两次回读 + 文档结构校验 + doctor"一节。
+
+### 未包含
+
+- issue #7（npm 上仍 404）不在本次范围内：需要先完成 registry 的首次发布。
+
 ## [0.6.11] - 2026-11-06
 
 **发布准备：本版起发布到 npm registry，更新检查改读 npm；发布后从 registry 安装的用户

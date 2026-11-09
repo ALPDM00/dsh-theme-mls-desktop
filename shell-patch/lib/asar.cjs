@@ -50,6 +50,31 @@ function align4(value) {
 }
 
 /**
+ * Write a whole buffer, retrying short writes.
+ *
+ * `fs.writeSync` is not guaranteed to consume the whole buffer: it returns the
+ * byte count it actually wrote and a regular file can still come back short
+ * (signals, quota, a filter driver). A single unchecked call would leave a hole
+ * and shift every payload after it, so the archive would disagree with its own
+ * header -- and because that failure is silent at write time, it is exactly the
+ * kind of defect that only surfaces as "the page is broken after a restart".
+ * @param {number} fd - open file descriptor
+ * @param {Buffer} buffer - bytes to write
+ * @returns {number} bytes written (always `buffer.length` on success)
+ */
+function writeAll(fd, buffer) {
+  let offset = 0;
+  while (offset < buffer.length) {
+    const written = fs.writeSync(fd, buffer, offset, buffer.length - offset);
+    if (!Number.isInteger(written) || written <= 0) {
+      throw new Error(`asar: short write (${written} bytes at offset ${offset} of ${buffer.length})`);
+    }
+    offset += written;
+  }
+  return offset;
+}
+
+/**
  * Enforce the header arithmetic above. Called on both read and write so a
  * malformed archive can never be produced *or* silently accepted.
  * @param {{headerBufLen: number, payloadSize: number, jsonLen: number, fileSize?: number, realJsonLen?: number}} fields
@@ -309,17 +334,17 @@ function createPackage(source, archive, options = {}) {
     prefix.writeUInt32LE(headerBufLen, 4);
     prefix.writeUInt32LE(payloadSize, 8);
     prefix.writeUInt32LE(jsonLen, 12);
-    fs.writeSync(out, prefix);
-    fs.writeSync(out, headerJson);
-    if (padding > 0) fs.writeSync(out, Buffer.alloc(padding));
+    writeAll(out, prefix);
+    writeAll(out, headerJson);
+    if (padding > 0) writeAll(out, Buffer.alloc(padding));
 
     let written = 0;
     for (const payload of stored) {
       const body = fs.readFileSync(payload.path);
-      fs.writeSync(out, body);
+      writeAll(out, body);
       written += payload.size;
       const gap = align4(payload.size) - payload.size;
-      if (gap > 0) fs.writeSync(out, Buffer.alloc(gap));
+      if (gap > 0) writeAll(out, Buffer.alloc(gap));
     }
 
     // Mirror the declared-unpacked payloads beside the archive, which is where
@@ -348,4 +373,4 @@ function createPackage(source, archive, options = {}) {
   }
 }
 
-module.exports = { readHeader, extractAll, createPackage, align4, assertPickle };
+module.exports = { readHeader, extractAll, createPackage, align4, assertPickle, writeAll };
