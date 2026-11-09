@@ -50,6 +50,12 @@
 
 ## 安装
 
+### 从 npm 安装（推荐）
+
+设置 › **插件**（插件管理器）→ 安装 → 包名填 `dsh-theme-mls-desktop`，装完重启桌面端一次。
+插件管理器会顺带把包名写进 `dsh.profile.bundles` 并启用；以后在插件管理器里点「更新」即可。
+想钉死某个版本就装 `dsh-theme-mls-desktop@0.6.13` 这种精确版本。
+
 > ⚠️ **本插件会（可选地）修改你的桌面端安装**：把 `<install>/resources/app.asar` 打一个小补丁，
 > 用来实现透明窗口、隐藏原生 caption 按钮、启动即最大化。补丁**只改这几个行为**、可一键还原、
 > 用摘要识别版本，细节与安全模型见 [docs/SHELL-PATCH.md](docs/SHELL-PATCH.md)；
@@ -64,28 +70,6 @@
 > **随包代码里没有任何地方把它设成 `true`**；npm 全局那份（0.1.5-rc.1）则是无条件拒绝。
 > 报错本身不提任何替代路径 ——
 > 完整对照表与逐项排错见 [docs/INSTALL.md](docs/INSTALL.md)。
-
-### 从 npm 安装（0.6.13 起，推荐：装一次，以后一键更新）
-
-首次 npm 发布版本是 **0.6.13**（`npm view dsh-theme-mls-desktop version`；registry 上还没有的
-时候这条会 404，此时请走下面的手工安装）。
-用 DSH 自带的插件管理器安装，是唯一「装一次、之后一键更新」的路：
-
-1. 设置 › **插件**（插件管理器）→ 安装 → 输入包名 `dsh-theme-mls-desktop`。
-   （在 DSH 会话里，也可以让 AI 用 `plugin_manager` 工具的 `install_bundle`，
-   `target` 同样填包名。）
-2. 插件管理器安装时会**顺带把包名写进 `dsh.profile.bundles` 并启用** ——
-   这跟 `dsh plugin --profile desktop add` 不一样，后者在桌面端会被闸门挡掉、
-   而且不写 `bundles`（见下面的手工安装）。
-3. 装完重启桌面端一次。壳补丁由 `postinstall` 或「插件加载时的钩子」自动打，
-   即使被 pnpm 拦下也不影响主题。
-
-以后更新：插件管理器里这个包的版本列表会显示**可更新**，选中新版本点更新即可。
-它先用 `pnpm view` 校验新版本、再原地替换，**安装失败会回滚到旧版本**；更新完重启桌面端。
-想钉死某个版本就装 `dsh-theme-mls-desktop@0.6.10` 这种精确版本。
-
-> 主题设置页的「可更新」小圆点/横幅同样改读 npm registry 的 `latest`，
-> 给 GitHub tarball / 手工拷贝安装的用户兜底；它**只提示，不自动安装**。
 
 ### 手工安装（没有插件管理器 / 想从源码跑）
 
