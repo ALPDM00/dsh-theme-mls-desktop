@@ -450,6 +450,31 @@ const RAW_PATCHES = [
     replacement: '\t\t\twebviewTag: primary,\n\t\t\tdevTools: true\n\t\t},\n\t\t...transparentWindowOptions()',
   },
   {
+    // 2026-11-16 -- DSH 0.2.2-rc.3 added two OPAQUE background writes on Windows:
+    // one in the createWindow `nativeTheme` listener and one in `enterWorkspace()`
+    // right before `window.show()`. `transparent: true` only sets the alpha
+    // surface at creation; the first of these calls (which runs on every start)
+    // paints `chromeFallbackFill()` behind the page, so the boot plate stops being
+    // see-through while the window still maximises and hides its buttons --
+    // exactly the "only transparency came back" report. Keep the window alpha
+    // while the boot-chrome patch owns it; the stock opaque fill returns when
+    // `DSH_DESKTOP_BOOT_CHROME=0` turns this whole feature off.
+    name: 'main: alpha survives themed background repaint',
+    file: 'lib/main.js',
+    already: 'if (!window.isDestroyed()) window.setBackgroundColor(bootChromeEnabled() ? "#00000000" : chromeFallbackFill());',
+    anchor: '\t\tconst updateBackground = () => {\n\t\t\tif (!window.isDestroyed()) window.setBackgroundColor(chromeFallbackFill());\n\t\t};',
+    replacement: '\t\tconst updateBackground = () => {\n\t\t\tif (!window.isDestroyed()) window.setBackgroundColor(bootChromeEnabled() ? "#00000000" : chromeFallbackFill());\n\t\t};',
+  },
+  {
+    // The `enterWorkspace()` write runs on every product start, right before
+    // `show()` -- so it is the one that actually makes the first frame opaque.
+    name: 'main: alpha survives workspace entry',
+    file: 'lib/main.js',
+    already: '\tif (process.platform === "win32") window.setBackgroundColor(bootChromeEnabled() ? "#00000000" : chromeFallbackFill());',
+    anchor: '\tif (process.platform === "win32") window.setBackgroundColor(chromeFallbackFill());',
+    replacement: '\tif (process.platform === "win32") window.setBackgroundColor(bootChromeEnabled() ? "#00000000" : chromeFallbackFill());',
+  },
+  {
     name: 'main: measured caption palette respects boot chrome',
     file: 'lib/main.js',
     // Edits a stock block instead of inserting next to it, so it must be listed

@@ -334,7 +334,8 @@ node node_modules/dsh-theme-mls-desktop/shell-patch/auto.cjs --check --app "<桌
 正在运行中）。
 
 **升级时检查一次 revision**：补丁集本身也会变（例如 0.5.4 改了 caption 一处语义，
-`lib/main.js` 的 `patch-revision` 变成 `bbea47336549`）。升级后先跑
+2026-11-16 为 rc.3 补了透明保护，`lib/main.js` 的 `patch-revision` 变成
+`e5bab1a100d5`）。升级后先跑
 `node shell-patch/auto.cjs --check`：
 
 - 显示 `already patched (this revision)` → 不用做任何事，重启桌面端即可；

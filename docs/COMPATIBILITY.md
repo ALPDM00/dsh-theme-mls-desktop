@@ -19,7 +19,7 @@
 
 | 组件 | 要求 |
 | ---- | ---- |
-| deepseekHarness | `0.1.0-rc.8` 或更新（已实测 `0.2.0-rc.2` 与 `0.2.2-rc.1` / Electron 44） |
+| deepseekHarness | `0.1.0-rc.8` 或更新（已实测 `0.2.0-rc.2`、`0.2.2-rc.1`、`0.2.2-rc.3` / Electron 44） |
 | 客户端加载器 | `window.__ModuleLoader__.load`（浏览器运行时） |
 | 主题服务 | `ctx.get('theme').overrideTokens(id, map)` |
 | 样式服务 | `styles.insert(css)`（可选；缺席时回落到注入 `<style>`） |
@@ -74,10 +74,22 @@ DSH 的组件、路由与**数据**从不被写；运行条带只**读**会话�
 ——窗口不透明、不最大化、右上角三个原生按钮在启动动画上突兀地出现。插件每次加载都会
 `probeShell()` 看一次；原版就自动在后台重打（`docs/SHELL-PATCH.md`）。
 
+⚠️ 自动重打发生在**插件加载时**，而 Electron 在窗口启动那一刻就把 `app.asar` 读进内存了。
+如果升级安装程序是在应用已启动后才覆盖 `app.asar`（更新日志里 `patched … was unpatched` 的
+时间晚于进程启动时间），**当前这个窗口仍然是原版壳**，必须从托盘退出、重新打开桌面端才能看到
+透明 / 最大化 / 隐藏按钮。补丁已落盘这件事用 `node shell-patch/doctor.cjs` 的 `state current` 确认。
+
+rc.3 还新增了两处 **Windows 不透明底色写入**（`nativeTheme` 更新回调与 `enterWorkspace()`
+的 `show()` 之前各一处 `window.setBackgroundColor(chromeFallbackFill())`）。`transparent: true`
+给的 alpha 面会被它盖住，表现为"最大化 / 按钮都好了，只缺透明"。2026-11-16 的补丁把这两处改成
+`bootChromeEnabled() ? "#00000000" : chromeFallbackFill()`，所以 rc.3 需要**先 `revert` 再
+`apply`**（`patch-revision` 变了），然后重启。
+
 | 壳构建 | `lib/main.js` 里的 `windowsAppearance` handler | 说明 |
 | --- | --- | --- |
 | `0.2.0-rc.2` | `(event, language, color, symbolColor)`，还会写 `windowsLanguage` | 旧锚点 |
 | `0.2.2-rc.1` | `(event, _language, color, symbolColor)`，语言不再从这里写 | 2026-11-04 适配 |
+| `0.2.2-rc.3` | 同上（handler 未变） | 2026-11-16 复测：11 条锚点全部命中、`doctor.cjs` 报 `current` |
 
 同一次适配里还确认了：前端启动板仍然在 `#root > [data-dsh-boot]` 上、spinner 仍然通过
 `dataset.dshBootSpinner` 落 `data-dsh-boot-spinner`（`dsh-web-frontend` 的 boot kernel），

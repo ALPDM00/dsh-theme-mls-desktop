@@ -106,8 +106,8 @@ parked 这件事**必须打日志** —— "被压制的重绘"和"什么都没�
   再断言（`who=theme-restore`）又把它盖回 `rgba(11,13,11,1)`，caption 心跳（`who=caption`）同样会盖。
   现在的 `parked` 含义是"最近一次已知正确的一对颜色"。
 
-**patch-revision 变了，需要重打一次**：`lib/main.js` = `bbea47336549`、
-`lib/preload-app.cjs` = `f5937c0a5fa6`、`dist/index.html` = `782304e689f7`。
+**patch-revision 变了，需要重打一次**（2026-11-16 rc.3 透明修复后）：`lib/main.js` =
+`e5bab1a100d5`、`lib/preload-app.cjs` = `f5937c0a5fa6`、`dist/index.html` = `782304e689f7`。
 
 ```bash
 node shell-patch/auto.cjs --check     # 旧安装会报 STALE（旧 revision）
@@ -140,6 +140,29 @@ Windows 上得自己补。这段补丁因此写进文档本身：首帧就透明
 `MAIN_CAPTION_STATE` 已按新构建重写；其余八个锚点（`createWindow` 签名、electron import、
 `createMainWindow`、`webviewTag` 块、`hideMainWindow` 尾巴、preload 的
 `markDocumentPlatform`、`dist/index.html` 的 `<head>`）一字未变。
+
+### 壳升级之后（2026-11-16，DSH `0.2.2-rc.3`）：只剩"不透明"
+
+rc.3 新增了两处 Windows 背景色写入：
+
+- `createWindow()` 里 `process.platform === "win32" && primary` 的 `nativeTheme.on("updated")`
+  回调：`window.setBackgroundColor(chromeFallbackFill())`；
+- `enterWorkspace()` 在 `window.show()` 之前：`if (process.platform === "win32")
+  window.setBackgroundColor(chromeFallbackFill())`。
+
+`transparent: true` 只是建窗时创建 alpha 面；这两处不透明底色会把启动板的透视盖掉，而最大化
+（`maximizeWindowAtStartup`）和隐藏原生按钮（`boot chrome IPC`）都不受影响 —— 所以症状是
+**"只缺透明"**。补丁把两处都改成
+`bootChromeEnabled() ? "#00000000" : chromeFallbackFill()`：补丁启用时保持 alpha，
+`DSH_DESKTOP_BOOT_CHROME=0` 关功能时仍回原版不透明底色。
+
+新增两条锚点后 `lib/main.js` 的 `patch-revision` 变为 `e5bab1a100d5`，旧安装是 STALE：
+
+```bash
+node shell-patch/revert.cjs            # 从 .bak 还原
+node shell-patch/auto.cjs              # 重打新 revision
+# 然后托盘退出 → 重新打开
+```
 
 复核办法（都在本机、都不碰安装）：
 

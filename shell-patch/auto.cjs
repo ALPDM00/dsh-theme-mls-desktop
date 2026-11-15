@@ -416,7 +416,13 @@ function main(argv = process.argv.slice(2), env = process.env) {
       result.archiveMtime = after.archiveMtime;
       report.summary(`[auto] patched    ${label(after.state)}`);
       report.summary('[auto] DONE      restart DeepSeek Harness to see the effect');
-      appendLog(`patched ${found.app} (was ${probe.state}, now ${after.state}, via ${found.how})`);
+      // 2026-11-16: after a Desktop upgrade the installer can overwrite app.asar
+      // while the app is already running (Electron loaded the stock archive at
+      // launch). This run then patches the file on disk, but the *current* window
+      // cannot see it — leave that fact in the log instead of a bare "patched".
+      const late = process.uptime() > 20;
+      appendLog(`patched ${found.app} (was ${probe.state}, now ${after.state}, via ${found.how})` +
+        (late ? '; the app was already running - restart required' : ''));
     } else {
       report.summary('[auto] patch did not complete; app.asar was left as it was.');
       appendLog(`FAILED ${found.app} (state ${probe.state}, via ${found.how})`);

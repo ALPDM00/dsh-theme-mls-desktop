@@ -216,13 +216,14 @@ html[data-mar-boot] #root {
  * there when the first frame is painted. No entrance animation on purpose: the
  * standalone's rule is a plain `opacity: 1` with no `animation` at all, and the
  * scale-in this used to carry (plus the delay) read as "the logo now fades in".
- * It keeps a soft lime halo so it stays legible against an arbitrary desktop
- * wallpaper rather than a black plate. */
+ * 2026-11-16（用户）：先按"发光特效"去掉了整条 filter，随后确认要保留其中那层
+ * 黑色柔影：`drop-shadow(0 0 26px rgba(192,254,4,.38))`（石灰绿光晕）删除，
+ * `drop-shadow(0 0 4px rgba(0,0,0,.55))`（唯一的暗边）加回来。 */
 #dshMarBootHost .mb-logo-top {
   position: absolute; top: 45%; left: 50%; width: 115px; height: 115px;
   transform: translate(-50%, -50%);
   object-fit: contain; z-index: 10; opacity: 1;
-  filter: drop-shadow(0 0 26px rgba(192, 254, 4, .38)) drop-shadow(0 0 4px rgba(0, 0, 0, .55));
+  filter: drop-shadow(0 0 4px rgba(0, 0, 0, .55));
 }
 /* 2) the caption, also on screen from the first frame (no animation, matching
  * the standalone's `.caption` rule).

@@ -120,6 +120,14 @@
     BLACK_FADE: 900,     // 矩阵整体淡出的时长（用户 2026-10-10：再长一点）
     BLACK_HOLD: 700,     // 淡完之后**纯黑静置**的时长（"多留一点黑屏的时间"）
 
+    // ===== 2026-11-16：分段开关（由 start() 按设置页的两段开关写入）======
+    // SKIP_SWEEP  = 不播 ① 红扫 / ② 矩阵，从逐块显示直接开始（没有渐黑）。
+    // SKIP_FINISH = 不播 ③ 渐黑之后的部分；矩阵淡出后自动收场。
+    // 两个都是 false = 原来的整段四拍。
+    SKIP_SWEEP: false,
+    SKIP_FINISH: false,
+    AUTO_END: 0,         // >0 时到点自动收场（只播前半段用；整段版等用户点击）
+
     // ===== ④ 逐块显示内容 → 白点阵 → 绿横幅 =====
     // NOTE: 名字必须与 ① 的 `TILE_SIZE`（迷宫 tile 边长 = 5）区分开 —— 两者
     // 曾经同名，后者把前者覆盖成 80，面板划分整个塌成 3 条整幅横带
@@ -225,6 +233,31 @@
     CFG.DOTS_AT   = CFG.TILES_AT + CFG.REVEAL_DOTS_LEAD;
     CFG.BANNER_AT = CFG.TILES_AT + CFG.REVEAL_DUR + CFG.BANNER_DELAY;
     CFG.END       = CFG.BANNER_AT + CFG.BANNER_DUR;
+    CFG.AUTO_END  = 0;
+    // 2026-11-16（用户）：只播后半段（绿带 + 小点）时跳过 ①②，**也不要逐块显示**
+    // 与渐黑 —— 小点直接从正常界面上渐显（REVEAL_DOTS_IN 内），然后出绿带。
+    // 注意不能只把 TILES_AT 设为 0：paint()/resize() 仍会去建方块，所以两处都加了
+    // `!CFG.SKIP_SWEEP` 守卫，这里只负责把点阵和横幅的时间线摆好。
+    if (CFG.SKIP_SWEEP) {
+      CFG.SWEEP_END = 0;
+      CFG.MARK_AT = 0;
+      CFG.MARK_DONE = 0;
+      CFG.BLACK_AT = 0;
+      CFG.TILES_AT = 0;
+      CFG.DOTS_AT = 0;
+      CFG.BANNER_AT = CFG.REVEAL_DOTS_IN + CFG.BANNER_DELAY;
+      CFG.END = CFG.BANNER_AT + CFG.BANNER_DUR;
+    }
+    // 只播前半段（红扫 + 点阵）时，矩阵淡成纯黑就收场：方块 / 点阵 / 横幅
+    // 全部放到不可达的时刻，并在淡出后自动摘掉覆盖层（否则会永远停在黑屏，
+    // 四拍版是靠用户点击才收的）。
+    if (CFG.SKIP_FINISH) {
+      CFG.TILES_AT = 1e9;
+      CFG.DOTS_AT = 1e9;
+      CFG.BANNER_AT = 1e9;
+      CFG.END = 1e9;
+      CFG.AUTO_END = CFG.BLACK_AT + CFG.BLACK_FADE + 240;
+    }
   }
   computeTimeline();
 
@@ -771,14 +804,19 @@
   function paint(t, dt) {
     if (!sceneHidden) {
       sctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-      var rects = markRects();
-      var fade = clamp((t - CFG.BLACK_AT) / CFG.BLACK_FADE, 0, 1);
-      drawSweepBack(t);
-      drawMatrix(t, rects, 1 - fade);
-      drawSweepRed(t);
+      // 只播后半段时跳过 ①②：没有红扫 / 矩阵可画。start() 已经把这层切到
+      // 纯黑方块上了（见 start() 的 SKIP_SWEEP 分支），这里只是防御性跳过。
+      if (!CFG.SKIP_SWEEP) {
+        var rects = markRects();
+        var fade = clamp((t - CFG.BLACK_AT) / CFG.BLACK_FADE, 0, 1);
+        drawSweepBack(t);
+        drawMatrix(t, rects, 1 - fade);
+        drawSweepRed(t);
+      }
       // 换层不用淡入淡出：方块起始就是**纯黑**，与画布上那片黑逐像素接得上，
       // 所以先把方块铺好、再把画布摘掉，屏幕上没有跳变。
-      if (t >= CFG.TILES_AT) {
+      // 只播后半段时没有方块这一拍（见 SKIP_SWEEP 的时间线）。
+      if (!CFG.SKIP_SWEEP && t >= CFG.TILES_AT) {
         if (!tilesBuilt) buildTiles();
         hideScene();
       }
@@ -799,7 +837,10 @@
     var dt = now - lastFrame;
     lastFrame = now;
     if (dt > 50) dt = 50;
-    paint(now - t0, dt);
+    var t = now - t0;
+    paint(t, dt);
+    // 只播前半段时，矩阵淡成纯黑后自动收场（整段版 AUTO_END=0，仍然等用户点击）。
+    if (CFG.AUTO_END > 0 && t >= CFG.AUTO_END) { dismiss(); return; }
     raf = requestAnimationFrame(render);
   }
 
@@ -829,7 +870,7 @@
     buildRegions();
     buildDotGrid();
     // 方块按视口算，缩放后必须重铺（只有真的已经进入那一拍时才重建）
-    if (running && t0 && performance.now() - t0 >= CFG.TILES_AT) {
+    if (!CFG.SKIP_SWEEP && running && t0 && performance.now() - t0 >= CFG.TILES_AT) {
       dropTiles();
       buildTiles();
     }
@@ -892,6 +933,9 @@
     if (running) return;
     var o = opts || {};
     if (typeof o.text === 'string' && o.text.length) CFG.BANNER_TEXT = o.text;
+    // 2026-11-16：两段开关。缺省 true（老调用方 = 整段四拍）。
+    CFG.SKIP_SWEEP = o.sweep === false;
+    CFG.SKIP_FINISH = o.finish === false;
     // 文案在 start() 就写进 DOM，而不是等横幅展开那一拍才写：横幅的
     // clip-path 从起点就开始往右推，晚一帧写就会闪出上一轮（或 payload 默认）
     // 的那行字。
@@ -922,6 +966,9 @@
       return {
         t: t,
         phase: running ? phaseAt(t) : 'idle',
+        sweep: !CFG.SKIP_SWEEP,
+        finish: !CFG.SKIP_FINISH,
+        autoEnd: CFG.AUTO_END,
         CFG: CFG,
         W: W, H: H, TOTAL: TOTAL,
         rects: markRects(),

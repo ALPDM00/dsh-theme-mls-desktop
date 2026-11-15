@@ -2664,28 +2664,50 @@ bgObserver.observe(host, { childList: true, subtree: true, attributes: true, att
 var DONE_STORE_KEY = 'mar.done.v1';
       var DONE_TEXT_DEFAULT = '//RUN_COMPLETE';
 
+      // 2026-11-16（用户）：完成动画拆成两段独立开关 ——
+      //   sweep  = 前半段「红扫 + 点阵（矩阵）」
+      //   finish = 后半段「渐黑 → 逐块显示 → 绿带 + 小点」
+      // 两个都开 = 原来那整段四拍；只开一个就少播对应的那一半。
+      // 早先的 `{on:false}` 等价于两段全关（用户当时想要的就是"整段别播"）。
       function doneLoad() {
         try {
           var raw = (typeof window !== 'undefined' && window.localStorage)
             ? window.localStorage.getItem(DONE_STORE_KEY) : null;
-          if (!raw) return { on: true, text: DONE_TEXT_DEFAULT };
-          var parsed = JSON.parse(raw);
+          if (!raw) return { sweep: true, finish: true, text: DONE_TEXT_DEFAULT };
+          var parsed = JSON.parse(raw) || {};
+          var legacyOn = parsed.on !== false;
           return {
-            on: !(parsed && parsed.on === false),
-            text: (parsed && typeof parsed.text === 'string' && parsed.text.length)
+            sweep: typeof parsed.sweep === 'boolean' ? parsed.sweep : legacyOn,
+            finish: typeof parsed.finish === 'boolean' ? parsed.finish : legacyOn,
+            text: (typeof parsed.text === 'string' && parsed.text.length)
               ? parsed.text : DONE_TEXT_DEFAULT
           };
-        } catch (e) { return { on: true, text: DONE_TEXT_DEFAULT }; }
+        } catch (e) { return { sweep: true, finish: true, text: DONE_TEXT_DEFAULT }; }
       }
       function doneSave() {
         try {
           if (typeof window !== 'undefined' && window.localStorage) {
-            window.localStorage.setItem(DONE_STORE_KEY, JSON.stringify(DONE_STATE));
+            // `on` 留给读旧键的版本（= 任一段在播就还算开着），不是 UI 开关。
+            var out = {
+              on: doneEnabled(),
+              sweep: DONE_STATE.sweep !== false,
+              finish: DONE_STATE.finish !== false,
+              text: DONE_STATE.text
+            };
+            window.localStorage.setItem(DONE_STORE_KEY, JSON.stringify(out));
           }
         } catch (e) {}
       }
       var DONE_STATE = doneLoad();
-      function doneEnabled() { return DONE_STATE.on !== false; }
+      function doneEnabled() { return DONE_STATE.sweep !== false || DONE_STATE.finish !== false; }
+      function doneSweep() { return DONE_STATE.sweep !== false; }
+      function doneFinishOn() { return DONE_STATE.finish !== false; }
+      function doneParts() {
+        var parts = [];
+        if (doneSweep()) parts.push('红扫 + 点阵');
+        if (doneFinishOn()) parts.push('绿带 + 小点');
+        return parts;
+      }
 
       // 尊重系统「减少动态效果」：整段跳过（这一拍没有静态形态可言，半成品
       // 比不放更糟）。开关关掉时同样— 零开销"：不订阅、不建节点、不留定时器
@@ -2744,14 +2766,19 @@ if (!window.__mbDone) {
         return true;
       }
 
-      // 返回 'ok' | 'off' | 'reduced' | 'unavailable' —— 设置页用它把
+      // 返回 'ok' | 'off' | 'empty' | 'reduced' | 'unavailable' —— 设置页用它把
       // "按钮点了没反应"翻译成一句人话。
       function playDone(force) {
         if (!force && !doneEnabled()) return 'off';
+        if (!doneEnabled()) return 'empty';   // 预览：两段都关着，没什么可播的
         if (marDoneReduced()) return 'reduced';
         if (!buildDone()) return 'unavailable';
         try {
-          window.__mbDone.start({ text: DONE_STATE.text });
+          window.__mbDone.start({
+            text: DONE_STATE.text,
+            sweep: doneSweep(),
+            finish: doneFinishOn()
+          });
         } catch (e) {
           if (doneCleanup) doneCleanup();
           return 'unavailable';
@@ -3047,7 +3074,7 @@ function doneTurnBad(sessionId) {
       // 地方能看出订阅根本没挂上（后来又多了"短任— 这一种）
 function doneStateText() {
         var head;
-        if (!doneEnabled()) head = '已关闭';
+        if (!doneEnabled()) head = '已关闭（两段都关）';
         // 列表订阅挂上 ≠ 会话面也盯上了：两者失效的后果完全不同，不能报假绿灯。
         // 2026-10-11：这句原先只看 doneUnsub，于是 doneFaceId 为 null 时照样显示
         // "会话面已盯住"，把排查往"触发链没问题"的方向带偏了一整轮。
@@ -3056,6 +3083,10 @@ function doneStateText() {
           : '触发已就绪（会话快照订阅）；会话面未订上 —— 当前会话认不出来';
         else if (doneDomTimer) head = '触发已就绪（回合收尾 DOM 判据：data-turn-tail / turnStatus）';
         else head = '触发未就绪：等待 sessions 服务…';
+        // 2026-11-16：只开半段时把"播哪一半"写出来，免得看起来像开关失灵。
+        if (doneEnabled() && !(doneSweep() && doneFinishOn())) {
+          head += ' · 只播：' + doneParts().join(' → ');
+        }
         return doneLast && doneLast.why ? head + ' · 最近：' + doneLast.why : head;
       }
       function syncDoneState() {
@@ -4588,7 +4619,9 @@ try {
           // 开关下面 —— 引擎缺失 / 减少动态效果时用户能看见原因。
           '<div class="mar-set-group">' +
             '<div class="mar-set-head">运行动画</div>' +
-            '<div class="mar-set-row mar-set-switch"><label for="mar-run">启用</label>' +
+            // 2026-11-16（用户）：这一行的标签由「启用」改成「人形运行动画」，
+            // 与同组下面的「点阵动画」并列时读得懂哪个开关管哪段画面。
+            '<div class="mar-set-row mar-set-switch"><label for="mar-run">人形运行动画</label>' +
             '<input type="checkbox" class="mar-switch" id="mar-run">' +
             '<span class="mar-val" data-val="run"></span></div>' +
             '<div class="mar-set-row mar-set-note"><span id="mar-run-state"></span></div>' +
@@ -4606,9 +4639,17 @@ try {
           '</div>' +
           '<div class="mar-set-group">' +
             '<div class="mar-set-head">任务完成动画</div>' +
-            '<div class="mar-set-row mar-set-switch"><label for="mar-done">启用</label>' +
-            '<input type="checkbox" class="mar-switch" id="mar-done">' +
-            '<span class="mar-val" data-val="done"></span></div>' +
+            // 2026-11-16（用户）：原来的单一「启用」拆成两段开关。
+            //   两个都开 = 原来那整段四拍；
+            //   只开前半段 = 红扫 + 点阵，收尾渐黑后自动收掉；
+            //   只开后半段 = 跳过红扫 / 点阵，直接渐黑 → 逐块显示 → 绿带 + 小点；
+            //   两个都关 = 整个动画不播（等价于旧版把总开关关掉）。
+            '<div class="mar-set-row mar-set-switch"><label for="mar-done-sweep">红扫 + 点阵</label>' +
+            '<input type="checkbox" class="mar-switch" id="mar-done-sweep">' +
+            '<span class="mar-val" data-val="doneSweep"></span></div>' +
+            '<div class="mar-set-row mar-set-switch"><label for="mar-done-finish">绿带 + 小点</label>' +
+            '<input type="checkbox" class="mar-switch" id="mar-done-finish">' +
+            '<span class="mar-val" data-val="doneFinish"></span></div>' +
             '<div class="mar-set-row mar-set-done"><label for="mar-done-text">完成文案</label>' +
             '<input type="text" id="mar-done-text" maxlength="48" spellcheck="false" ' +
             'placeholder="' + DONE_TEXT_DEFAULT + '">' +
@@ -4626,7 +4667,8 @@ try {
         var seg = pane.querySelector('.mar-seg');
         var animIn = pane.querySelector('#mar-bg-anim');
         var billIn = pane.querySelector('#mar-billing');
-        var doneIn = pane.querySelector('#mar-done');
+        var doneSweepIn = pane.querySelector('#mar-done-sweep');
+        var doneFinishIn = pane.querySelector('#mar-done-finish');
         var doneTextIn = pane.querySelector('#mar-done-text');
         var donePlay = pane.querySelector('#mar-done-play');
         var doneNoteEl = pane.querySelector('#mar-done-note');
@@ -4697,22 +4739,23 @@ if (billIn) {
           });
         }
 
-        // 「任务完成动画」：一个开— + 一行文— + 一个预览
-//   关掉 = 不订阅（watchDone 只在打开时挂）、不建节点、不留定时器
-//   正在播的那一段立刻收掉；打开 = 立刻接上会话快照（基线静默，不会
-        //   因为"打开开关时正好有个会话在跑"而误播）
-// 预览忽略开关本身（它就是拿来试的），但照样尊重系统「减少动态效果」，
-        // 并把"为什么没— 写进下面那行小字 —— 一个点了没反应的按钮比没有按钮
+        // 「任务完成动画」：两段开关（红扫 + 点阵 / 绿带 + 小点）+ 一行文案 + 预览
+        //   两段都关 = 不播、不建节点、不留定时器；正在播的那一段立刻收掉。
+        //   打开任一段 = 立刻接上会话快照（基线静默，不会因为"打开开关时正好
+        //   有个会话在跑"而误播）。
+        // 预览忽略开关本身（它就是拿来试的），但照样尊重系统「减少动态效果」，
+        // 并把"为什么没播"写进下面那行小字 —— 一个点了没反应的按钮比没有按钮
         // 更糟
-if (doneIn) {
-          doneIn.addEventListener('change', function () {
-            DONE_STATE.on = !!doneIn.checked;
-            doneSave();
-            if (doneNoteEl) doneNoteEl.textContent = '';
-            if (doneEnabled()) attachDone(); else stopDone();
-            syncPane(pane);
-          });
+        function onDonePartChange() {
+          DONE_STATE.sweep = !!doneSweepIn.checked;
+          DONE_STATE.finish = !!doneFinishIn.checked;
+          doneSave();
+          if (doneNoteEl) doneNoteEl.textContent = '';
+          if (doneEnabled()) attachDone(); else stopDone();
+          syncPane(pane);
         }
+        if (doneSweepIn) doneSweepIn.addEventListener('change', onDonePartChange);
+        if (doneFinishIn) doneFinishIn.addEventListener('change', onDonePartChange);
         if (doneTextIn) {
           doneTextIn.addEventListener('change', function () {
             var v = String(doneTextIn.value || '').replace(/\s+/g, ' ').trim();
@@ -4730,6 +4773,7 @@ if (doneIn) {
             // 预览永远显示**触发链的实况**：这— 预览能播、真触发不播"的时候，
             // 用户按一次预览就把诊断读出来了（用户 2026-10-10 连报两轮）
 var head =
+              result === 'empty' ? '两段都关闭了：红扫 + 点阵、绿带 + 小点至少开一段才能预览' :
               result === 'reduced' ? '系统「减少动态效果」生效中，这一拍被跳过' :
               result === 'unavailable' ? '完成动画覆盖层不可用（payload 缺失或被 CSP 拦下）' :
               '';
@@ -4859,9 +4903,11 @@ var head =
         // 每轮 Token 结算：自己一个开关（与背景动画互不影响）
         var billIn = pane.querySelector('#mar-billing');
         if (billIn) billIn.checked = billingEnabled();
-        // 任务完成动画：开— + 文案（各一个，同样与背景动画互不影响）
-        var doneIn = pane.querySelector('#mar-done');
-        if (doneIn) doneIn.checked = doneEnabled();
+        // 任务完成动画：两段开关 + 文案（与背景动画互不影响）
+        var doneSweepIn = pane.querySelector('#mar-done-sweep');
+        if (doneSweepIn) doneSweepIn.checked = doneSweep();
+        var doneFinishIn = pane.querySelector('#mar-done-finish');
+        if (doneFinishIn) doneFinishIn.checked = doneFinishOn();
         var doneTextIn = pane.querySelector('#mar-done-text');
         if (doneTextIn && doneTextIn !== doc.activeElement) doneTextIn.value = DONE_STATE.text;
         syncDoneState();
@@ -4887,7 +4933,8 @@ var head =
           alpha: Math.round(bgNum(BG_STATE.alpha, 0, 1) * 100) + '%',
           speed: BG_STATE.speed.toFixed(2),
           billing: billingEnabled() ? '开' : '关',
-          done: doneEnabled() ? '开' : '关',
+          doneSweep: doneSweep() ? '开' : '关',
+          doneFinish: doneFinishOn() ? '开' : '关',
           boot: bootEnabled() ? '开' : '关',
           run: runEnabled() ? '开' : '关',
           dot: dotEnabled() ? '开' : '关',
