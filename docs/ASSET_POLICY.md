@@ -27,7 +27,8 @@
 | 启动覆盖层图像（`assets/boot/green-logo.png`、`blue-pixel.png`、`invert-blue-pixel.png`） | 把 DeepSeek 公司品牌标记程序化重绘为 PNG，用于启动转场 | DeepSeek 品牌标记 —— 合理引用；**不是** Bungie / Marathon |
 | ~~FUI 字符（准星、角标、数据牌）~~ | 已于 2026-09-18 随铭牌层一起移除 | MIT |
 | `Maratype.otf` | 启动覆盖层的装饰字体，**由维护者随包分发**，以保证所有人渲染一致 | 见 §3（权利与下架承诺） |
-| `assets/factions/*.svg`（赛博艾克米 / 阿拉克尼 / 纽卡洛里 / 特莱克斯 / 米达 / 关口 / 马拉松LOGO） | 设置页「主题色」那排色块的图案。**维护者手绘的矢量重绘**（纯几何路径 + 卡角刻线）：六个阵营符号 + 默认色那格用的马拉松 LOGO；构建时（`scripts/build.cjs`）URL-encode 成 data URI 内联进 `client.js` | 指向 Bungie《Marathon》的符号 —— **合理引用的同人重绘，不是提取自游戏的美术**；与字体同一条下架承诺（见 §3）。想排掉就删 `assets/factions/` 并重新构建（那排色块会退回纯色填充） |
+| `assets/factions/*.svg`（马拉松LOGO）与 `assets/swatches/*.png`（赛博艾克米 / 阿拉克尼 / 纽卡洛里 / 特莱克斯 / 米达 / 关口） | 设置页「主题色」那排色块的图案。**维护者手绘并像素化的重绘**：六个阵营符号（PNG 黑字蒙版）+ 默认色那格的马拉松 LOGO（矢量）；构建时（`scripts/build.cjs`）把 PNG 套进 366×237 的 SVG 色板、URL-encode 成 data URI 内联进 `client.js` | 指向 Bungie《Marathon》的符号 —— **合理引用的同人重绘，不是提取自游戏的美术**；与字体同一条下架承诺（见 §3）。想排掉就删 `assets/swatches/` 与 `assets/factions/` 并重新构建（那排色块会退回纯色填充） |
+| `assets/icons/*.png`（发送 / 停止 / 浅色 / 深色 / 开关开 / 开关关）与 `assets/run/figure-*.png`（空心 / 实心人形） | 界面控件的像素蒙版，维护者手绘；构建时 base64 内联进 `client.js`，通过 CSS mask / canvas 按主题墨色上色 | MIT（本项目原创） |
 | `design-language.md`、`README.md` | 本项目编写的文档 | MIT |
 
 ## 3. Maratype 字体与阵营标记 —— 随包分发与下架承诺
@@ -36,9 +37,10 @@
 （`assets/fonts/Maratype.otf`），这样每个装到这个主题的人看到的启动动画都一致。
 插件在构建时（`scripts/build.cjs`）把它以 base64 data-URI 内联，因此运行时不发起任何网络请求。
 
-`assets/factions/*.svg`（六个阵营标记）同样是**维护者手绘的矢量重绘**，在设置页
-「主题色」里充当七个色块的图案。构建时按 `data-accent` 生成一条规则、URL-encode 成
-`data:image/svg+xml` 就地内联，运行时同样不发起网络请求。
+`assets/factions/*.svg`（马拉松 LOGO）与 `assets/swatches/*.png`（六个阵营标记）同样是
+**维护者手绘并像素化的重绘**，在设置页「主题色」里充当七个色块的图案。构建时按
+`data-accent` 生成一条规则、URL-encode 成 `data:image/svg+xml` 就地内联，运行时同样
+不发起网络请求。`assets/icons/` 与 `assets/run/` 的控件蒙版同理，由构建 base64 内联。
 
 对这两项的共同态度：
 

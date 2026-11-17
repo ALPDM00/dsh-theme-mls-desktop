@@ -76,33 +76,16 @@
     ]
   };
 
-  /* ---- 人形（源文件局部坐标 164×291，原样搬过来）-------------------------
-   * rects: [x, y, w, h] → 头 / 左臂 / 躯干 / 右臂；腿是两条 41 宽的竖条。
-   * 身体底边 182，腿顶 170：重叠 12 源像素恰好并成一条胯线（原注释）。
-   * headDy：右人形头单独上移 6 源像素；hollow：左边空心、右边实心。
-   * rad=4.5 / inset=12 是源文件的圆角与空心描边厚度；缩放后分别约
-   * 0.7px / 1.8px，因此空心描边在 132px 高时仍然清楚。
+  /* ---- 人形（2026-11-18 改版：位图贴图）-----------------------------------
+   * 用户给了两张新的人形 PNG（左=空心线框 86×158、右=实心块 48×88），要求
+   * 「大小需要与目前的一致」：所以高度仍按 figH=46 CSS px，宽度随各自原图
+   * 比例。两张图存在 RUN_PAYLOAD.figures 里，由 create(host,{figures}) 传入，
+   * 引擎预载后按主题墨色 source-in 上色（保持原来的固定 #C0FE04 / ink 行为）。
+   * W/H 只用于计算横向占位（figW = figH × W/H），取空心图比例。
    */
   var FIG = {
-    W: 183,
-    H: 291,
-    // 2026-11-05 最终版：手臂/腿 41、臂隙 18、颈隙 13、空心描边 12。
-    // 局部单位（183×291）：头 65×68、颈隙 13、躯干 65×101、臂 41×101、
-    // 臂—躯干隙 18、腿 41×121（腿隙 35）。
-    rects: [
-      [ 59,   0,  65,  68],   // 头（与躯干间留 13 颈隙）
-      [  0,  81,  41, 101],   // 左臂 → 底 182（与腿 170 起错位重叠 8）
-      [ 59,  81,  65, 101],   // 躯干 → 底 182
-      [142,  81,  41, 101]    // 右臂 → 底 182
-    ],
-    legs: [[33, 41], [109, 41]],
-    legY: 170,
-    legBottom: 291,
-    titleBottom: 182,
-    headDy: { L: 0, R: -6 },
-    rad: 4.5,
-    inset: 12,                // 空心描边：用户确认回到 12（最终版，不再改动）
-    pad: 9                    // 源文件离屏画布 HP：给描边留的边距
+    W: 86,
+    H: 158
   };
 
   /* ---- 文字 --------------------------------------------------------------
@@ -198,35 +181,9 @@
     return L[L.length - 1][1];
   }
 
-  function rr(c, x, y, w, h, r) {
-    r = Math.max(0, Math.min(r, w / 2, h / 2));
-    c.beginPath();
-    c.moveTo(x + r, y);
-    c.arcTo(x + w, y, x + w, y + h, r);
-    c.arcTo(x + w, y + h, x, y + h, r);
-    c.arcTo(x, y + h, x, y, r);
-    c.arcTo(x, y, x + w, y, r);
-    c.closePath();
-  }
-
   /* =========================================================================
    * 三、布局 / 几何
    * ========================================================================= */
-
-  function figRects(hollow) {
-    var dy = FIG.headDy[hollow ? 'L' : 'R'];
-    var out = [];
-    var i, r;
-    for (i = 0; i < FIG.rects.length; i++) {
-      r = FIG.rects[i];
-      out.push(i === 0 ? [r[0], r[1] + dy, r[2], r[3]] : r);
-    }
-    var lh = FIG.legBottom - FIG.legY;
-    for (i = 0; i < FIG.legs.length; i++) {
-      out.push([FIG.legs[i][0], FIG.legY, FIG.legs[i][1], lh]);
-    }
-    return out;
-  }
 
   function computeLayout(w, h) {
     var sv = h / DEFAULT_HEIGHT;                 // 垂直缩放（默认高度时=1）
@@ -326,48 +283,29 @@
     c.restore();
   }
 
-  /* 人形离屏精灵：空心用“填充并集 → destination-out 内缩区”，和源文件一致。
-   * 这样相邻块（臂底 / 躯干底 / 腿顶）的边会自然并成同一条线，不会出现
-   * 一条条独立描边叠在一起的脏边。每个尺寸 / DPR / 颜色只重建一次。 */
-  function buildFigureSprite(figH, dpr, color, hollow) {
-    var scale = figH / FIG.H;
-    var pad = FIG.pad;
-    var wCss = Math.ceil((FIG.W + pad * 2) * scale);
-    var hCss = Math.ceil((FIG.H + pad * 2) * scale);
+  /* 人形离屏精灵（2026-11-18）：直接用两张用户给的 PNG 贴图。
+   * 画到离屏 canvas 后 source-in 填主题墨色 —— 贴图本身是白色+alpha，这块
+   * 只保留形状、换成 ink 色，和程序化时期“同一支固定绿”的观感一致。
+   * 每个尺寸 / DPR / 颜色只重建一次；图片未载入时返回 null，等 onload。 */
+  function buildFigureSprite(figH, dpr, color, img) {
+    if (!img || !img.naturalWidth || !img.naturalHeight) return null;
+    var ratio = img.naturalWidth / img.naturalHeight;
+    var wCss = figH * ratio;
+    var hCss = figH;
     var cv = document.createElement('canvas');
     cv.width = Math.max(1, Math.round(wCss * dpr));
     cv.height = Math.max(1, Math.round(hCss * dpr));
     var c = cv.getContext('2d');
-    var unit = scale * dpr;
-    c.setTransform(unit, 0, 0, unit, pad * scale * dpr, pad * scale * dpr);
-
-    var rects = figRects(hollow);
-    var i, r;
+    c.drawImage(img, 0, 0, cv.width, cv.height);
+    c.globalCompositeOperation = 'source-in';
     c.fillStyle = color;
-    for (i = 0; i < rects.length; i++) {
-      r = rects[i];
-      rr(c, r[0], r[1], r[2], r[3], FIG.rad);
-      c.fill();
-    }
-    if (hollow) {
-      c.globalCompositeOperation = 'destination-out';
-      for (i = 0; i < rects.length; i++) {
-        r = rects[i];
-        var ins = FIG.inset;
-        rr(c, r[0] + ins, r[1] + ins, r[2] - ins * 2, r[3] - ins * 2,
-          Math.max(FIG.rad - ins, 1));
-        c.fill();
-      }
-      c.globalCompositeOperation = 'source-over';
-    }
-    return { canvas: cv, wCss: wCss, hCss: hCss, scale: scale, pad: pad };
+    c.fillRect(0, 0, cv.width, cv.height);
+    return { canvas: cv, wCss: wCss, hCss: hCss };
   }
 
-  function drawFigure(c, sprite, cx, top, figH) {
-    var scale = figH / FIG.H;
-    var x = cx - (FIG.W / 2 + sprite.pad) * scale;
-    var y = top - sprite.pad * scale;
-    c.drawImage(sprite.canvas, x, y, sprite.wCss, sprite.hCss);
+  function drawFigure(c, sprite, cx, top) {
+    if (!sprite) return;
+    c.drawImage(sprite.canvas, cx - sprite.wCss / 2, top, sprite.wCss, sprite.hCss);
   }
 
   function drawPacket(c, L, u, color, fixedMax) {
@@ -510,6 +448,9 @@
     var W = 0, dpr = 1, L = null, M = null;
     var colors = { ink: '#C0FE04', dim: 'rgba(192,254,4,0.72)', dimAlpha: 1 };
     var sprites = { key: '', L: null, R: null };
+    // 2026-11-18：两张人形贴图（左空心 / 右实心），由 payload 传入。
+    var figImages = { L: null, R: null };
+    var figPending = 0;
     var raf = 0;
     var destroyed = false;
     var t0 = (window.performance && performance.now ? performance.now() : Date.now());
@@ -530,11 +471,12 @@
     }
 
     function ensureSprites() {
-      var key = dpr + '|' + L.figH + '|' + colors.ink;
+      var key = dpr + '|' + L.figH + '|' + colors.ink +
+        '|' + (figImages.L ? '1' : '0') + (figImages.R ? '1' : '0');
       if (sprites.key === key) return;
       sprites.key = key;
-      sprites.L = buildFigureSprite(L.figH, dpr, colors.ink, true);
-      sprites.R = buildFigureSprite(L.figH, dpr, colors.ink, false);
+      sprites.L = buildFigureSprite(L.figH, dpr, colors.ink, figImages.L);
+      sprites.R = buildFigureSprite(L.figH, dpr, colors.ink, figImages.R);
     }
 
     function rebuild() {
@@ -685,6 +627,33 @@
       reducedMq.addEventListener('change', onMotionPreference);
     }
 
+    // ---- 人形贴图预载 -------------------------------------------------------
+    // data URI 解码是异步的；载入后清空精灵缓存、重画一帧。两张都到齐前，
+    // 视觉带上暂时空着，不画旧几何（避免返祖）。
+    function onFigureLoaded() {
+      if (figPending > 0) figPending--;
+      if (figPending > 0 || destroyed || !L) return;
+      sprites.key = '';
+      rebuild();
+      if (state.reduced) { stop(); render(0.35); }
+      else { start(); }
+    }
+    (function loadFigures() {
+      var figs = opts.figures || {};
+      var pairs = [['L', figs.hollow], ['R', figs.solid]];
+      for (var i = 0; i < pairs.length; i++) {
+        (function (key, uri) {
+          if (!uri) return;
+          figPending++;
+          var img = new Image();
+          img.onload = onFigureLoaded;
+          img.onerror = onFigureLoaded;
+          figImages[key] = img;
+          img.src = uri;
+        })(pairs[i][0], pairs[i][1]);
+      }
+    })();
+
     var api = {
       set: set,
       destroy: destroy,
@@ -704,26 +673,20 @@
           beamHalfH: L.beam.halfH,
           beamCap: L.beam.cap == null ? 0 : L.beam.cap,
           figH: L.figH,
+          figW: L.figW,
           textLineY: L.text.lineY.slice(),
           ink: colors.ink,
           titleWeight: TEXT.titleWeight,
           lineWeight: TEXT.lineWeight,
           titleDots: 0,
+          // 2026-11-18：人形改为位图贴图，几何断言改为读贴图状态。
           figure: {
-            headW: FIG.rects[0][2],
-            torsoW: FIG.rects[2][2],
-            armW: FIG.rects[1][2],
-            legW: FIG.legs[0][1],
-            armGap: FIG.rects[2][0] - (FIG.rects[1][0] + FIG.rects[1][2]),
-            neckGap: FIG.rects[1][1] - (FIG.rects[0][1] + FIG.rects[0][3]),
-            hollowInset: FIG.inset,
-            armX0: FIG.rects[1][0],
-            armX1: FIG.rects[1][0] + FIG.rects[1][2],
-            torsoX0: FIG.rects[2][0],
-            torsoX1: FIG.rects[2][0] + FIG.rects[2][2],
-            legX0: FIG.legs[0][0],
-            legX1: FIG.legs[0][0] + FIG.legs[0][1],
-            legRightX0: FIG.legs[1][0]
+            art: 'raster',
+            width: L.figW,
+            height: L.figH,
+            hollowAspect: figImages.L ? figImages.L.naturalWidth / figImages.L.naturalHeight : 0,
+            solidAspect: figImages.R ? figImages.R.naturalWidth / figImages.R.naturalHeight : 0,
+            loaded: !!(figImages.L && figImages.L.naturalWidth && figImages.R && figImages.R.naturalWidth)
           }
         };
       },

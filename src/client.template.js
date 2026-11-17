@@ -673,6 +673,37 @@ window.__ModuleLoader__.load({
         '}',
         'body.theme-marathon button[class*="_primary"] svg,',
         'body.theme-marathon button[class*="_primary"] svg *{fill:var(--mar-accent-ink)!important;}',
+        '/* 2026-11-18（用户）：发送按钮换像素上箭头，停止按钮换像素骷髅。',
+        '   DSH 的按钮里是一张 16x16 的 SVG（发送 = 箭头 path，停止 = rect，重试/',
+        '   转圈不是这两者），所以用 :has() 只挑这两种状态，把原 svg 变透明，',
+        '   再叠一枚 mask 图形。mask 用 currentColor，禁用时的 40% 透明度照样生效。 */',
+        'body.theme-marathon button[class*="_primary"]:has(> svg path[d^="M8.3125"]),',
+        'body.theme-marathon button[class*="_primary"]:has(> svg rect[x="3"]){position:relative;}',
+        'body.theme-marathon button[class*="_primary"]:has(> svg path[d^="M8.3125"]) > svg,',
+        'body.theme-marathon button[class*="_primary"]:has(> svg rect[x="3"]) > svg{opacity:0;}',
+        'body.theme-marathon button[class*="_primary"]:has(> svg path[d^="M8.3125"])::before,',
+        'body.theme-marathon button[class*="_primary"]:has(> svg rect[x="3"])::before{',
+        '  content:"";position:absolute;left:50%;top:50%;width:18px;height:18px;',
+        '  transform:translate(-50%,-50%);background:currentColor;',
+        '  -webkit-mask-position:center;mask-position:center;',
+        '  -webkit-mask-size:contain;mask-size:contain;',
+        '  -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;}',
+        'body.theme-marathon button[class*="_primary"]:has(> svg path[d^="M8.3125"])::before{',
+        '  width:30px;height:30px;',
+        '  -webkit-mask-image:var(--mar-icon-send);mask-image:var(--mar-icon-send);}',
+        'body.theme-marathon button[class*="_primary"]:has(> svg rect[x="3"])::before{',
+        '  width:35px;height:35px;',
+        // 骷髅在原图 80×80 画布里偏低（glyph 中心 y=46，画布中心 40），
+        // 按画布居中会整体下沉 ~7.5%；这里只把停止态上提 2.6px 补回来。
+        '  transform:translate(-50%,calc(-50% - 2.6px));',
+        '  -webkit-mask-image:var(--mar-icon-stop);mask-image:var(--mar-icon-stop);}',
+        '/* 2026-11-18（用户）："停止生成按钮应该改为红底黑色" —— 只有停止态换红底，',
+        '   图标（骷髅）用主题黑墨；发送态仍是主题色底 + 深墨。 */',
+        'body.theme-marathon button[class*="_primary"]:has(> svg rect[x="3"]){',
+        '  background-color:var(--mar-signal)!important;',
+        '  background-image:none!important;',
+        '  border-color:var(--mar-signal)!important;',
+        '  color:#0B0D0B!important;}',
 
         '/* ---- injected sidebar entries in the collapsed rail -----------------',
         '   Plugins cannot register a sidebar slot, so they inject their own row',
@@ -1065,6 +1096,26 @@ window.__ModuleLoader__.load({
         '.mar-seg button[aria-checked="true"]{color:var(--mar-accent-ink);',
         '  background:var(--mar-accent);border-color:var(--mar-accent);}',
         '.mar-seg button:focus-visible{outline:1px solid var(--mar-accent);outline-offset:2px;}',
+        '/* 2026-11-18（用户）："浅色和深色，直接改为两个按钮，亮起启用，灰掉不启用，',
+        '   跟随系统保留" —— 浅/深变成 38x32 的图标按钮（太阳 / 月亮 mask），',
+        '   选中 = 主题色底 + 深色图形，未选中 = 灰掉；跟随系统仍是文字按钮。',
+        '   文字标签用 .mar-sr 视觉隐藏保留（无障碍名字 + 旧断言仍读得到）。 */',
+        '.mar-seg button[data-pair="light"],.mar-seg button[data-pair="dark"]{',
+        '  flex:0 0 38px;width:38px;height:32px;padding:0;justify-content:center;',
+        '  color:var(--mar-ink-tertiary);}',
+        '.mar-seg button[data-pair="light"]::before,.mar-seg button[data-pair="dark"]::before{',
+        '  content:"";width:22px;height:22px;background:currentColor;',
+        '  -webkit-mask-position:center;mask-position:center;',
+        '  -webkit-mask-size:contain;mask-size:contain;',
+        '  -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;}',
+        '.mar-seg button[data-pair="light"]::before{-webkit-mask-image:var(--mar-icon-sun);mask-image:var(--mar-icon-sun);}',
+        '.mar-seg button[data-pair="dark"]::before{-webkit-mask-image:var(--mar-icon-moon);mask-image:var(--mar-icon-moon);}',
+        '.mar-seg button[data-pair="light"]:hover,.mar-seg button[data-pair="dark"]:hover{',
+        '  color:var(--mar-ink-primary);border-color:var(--mar-accent);}',
+        '.mar-seg button[data-pair="light"][aria-checked="true"],',
+        '.mar-seg button[data-pair="dark"][aria-checked="true"]{color:var(--mar-accent-ink);}',
+        '.mar-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;',
+        '  clip:rect(0 0 0 0);white-space:nowrap;border:0;}',
         '/* --- 主题色：色块（2026-10-11 起；标题 2026-10-17 从「配色」改名）-----',
         '   点一下就把 UI 强调色（--mar-accent 系列）换成它。每一格画的是图形',
         '   （366x237，data-accent → 哪张图由构建脚本的 FACTIONS 决定）：六个阵营',
@@ -1084,19 +1135,28 @@ window.__ModuleLoader__.load({
         '  box-shadow:inset 0 0 0 2px var(--mar-bg-void);}',
         '.mar-sw button:focus-visible{outline:1px solid var(--mar-accent);outline-offset:2px;}',
         '/*__FACTION_CSS__*/',
+        '/*__ICON_CSS__*/',
         '/* the field switch — its OWN control, not a third segment. The pair below',
         '   is a radio group that always carries exactly one of its two choices, so',
         '   turning the animation off cannot un-pick a colour pair (and turning a',
-        '   pair on cannot start the animation). Squared, like every other control;',
-        '   the knob is the accent only while it is on. */',
+        '   pair on cannot start the animation).',
+        '   2026-11-18（用户）："开关的按钮，不再显示开关，直接由按钮替代" —— 原来',
+        '   34x18 的滑轨换成一个 26x26 的方形按钮面：开=主题色底 + 深色对勾，',
+        '   关=只有按钮自身那一圈 2px 边框（用户："白色的边框应该紧贴着边框"，',
+        '   所以不再叠一层 16px 的关图标，避免双层框）。**控件仍是原生 checkbox**',
+        '   （只换外观），所以 change 事件、.checked、键盘操作和现有测试全部原样有效。 */',
         '.mar-set-switch{margin:0 0 10px;}',
-        '.mar-switch{appearance:none;-webkit-appearance:none;flex:0 0 34px;width:34px;height:18px;',
+        '.mar-switch{appearance:none;-webkit-appearance:none;flex:0 0 26px;width:26px;height:26px;',
         '  margin:0;padding:0;position:relative;cursor:pointer;background:transparent;',
-        '  border:1px solid var(--mar-line-strong);}',
-        '.mar-switch::after{content:"";position:absolute;left:2px;top:2px;width:12px;height:12px;',
-        '  background:var(--mar-ink-tertiary);}',
-        '.mar-switch:checked{border-color:var(--mar-accent);background:var(--mar-wash-accent);}',
-        '.mar-switch:checked::after{left:18px;background:var(--mar-accent);}',
+        '  border:2px solid var(--mar-ink-tertiary);',
+        '  transition:background-color 100ms ease,border-color 100ms ease;}',
+        '.mar-switch::after{content:"";position:absolute;left:50%;top:50%;width:16px;height:16px;',
+        '  transform:translate(-50%,-50%);background:var(--mar-accent-ink);opacity:0;',
+        '  -webkit-mask:var(--mar-icon-switch-on) center/contain no-repeat;',
+        '  mask:var(--mar-icon-switch-on) center/contain no-repeat;}',
+        '.mar-switch:hover{border-color:var(--mar-accent);}',
+        '.mar-switch:checked{border-color:var(--mar-accent);background:var(--mar-accent);}',
+        '.mar-switch:checked::after{opacity:1;}',
         '.mar-switch:focus-visible{outline:1px solid var(--mar-accent);outline-offset:2px;}',
         '/* density / breathing only describe the field, so they dim while it is off',
         '   (the switch row itself never does; neither do the task-completion rows,',
@@ -3645,7 +3705,11 @@ try {
         runNativeSec = null;
         runNativeAt = 0;
         try {
-          runEngine = api.create(host, { height: RUN_HEIGHT, reduced: runReduced() });
+          runEngine = api.create(host, {
+            height: RUN_HEIGHT,
+            reduced: runReduced(),
+            figures: RUN_PAYLOAD && RUN_PAYLOAD.figures
+          });
         } catch (e) { runEngine = null; }
         if (!runEngine) {
           runBroken = true;
@@ -4568,10 +4632,12 @@ try {
             // 2026-11-05（用户）：外观改成和「通用设置 → 外观」同构的三格，
             // 并接成双向——点这里等于改通用设置，改通用设置/系统切黑白这里
             // 也跟着变。选中态跟 preference，不跟解析后的浅/深（见 syncPane）。
+            // 2026-11-18（用户）：浅/深改成图标按钮（太阳/月亮），文字只做
+            // 视觉隐藏的名字保留；跟随系统仍是文字按钮。
             '<div class="mar-set-row mar-set-appearance"><label>配色</label>' +
             '<div class="mar-seg" role="radiogroup" aria-label="外观配色">' +
-            '<button type="button" role="radio" data-pair="light" aria-checked="false">浅色</button>' +
-            '<button type="button" role="radio" data-pair="dark" aria-checked="false">深色</button>' +
+            '<button type="button" role="radio" data-pair="light" aria-checked="false" aria-label="浅色"><span class="mar-sr">浅色</span></button>' +
+            '<button type="button" role="radio" data-pair="dark" aria-checked="false" aria-label="深色"><span class="mar-sr">深色</span></button>' +
             '<button type="button" role="radio" data-pair="system" aria-checked="false">跟随系统</button>' +
             '</div></div>' +
             // 一句说明，既是给用户的交代，也是"两边同一件事"的明示。它同样带

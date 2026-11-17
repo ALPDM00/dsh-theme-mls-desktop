@@ -30,15 +30,18 @@ function read(p) { return fs.readFileSync(path.join(root, p), 'utf8'); }
 // the two were produced separately. The palette value wins: it is what the UI
 // actually wears. 马拉松LOGO.svg is the exception — its plate IS #C0FE04.
 const FACTIONS = [
-  ['05C938', '赛博艾克米.svg'],   // green
-  ['E60B10', '阿拉克尼.svg'],     // red
-  ['E7337C', '纽卡洛里.svg'],     // pink
-  ['E5710C', '特莱克斯.svg'],     // orange
-  ['C272E9', '米达.svg'],         // purple
-  ['81E8B1', '关口.svg'],         // mint
-  ['C0FE04', '马拉松LOGO.svg']    // the default: the Marathon logo
+  ['05C938', '01-cyber.png'],      // green
+  ['E60B10', '02-arakni.png'],     // red
+  ['E7337C', '03-newcalory.png'],  // pink
+  ['E5710C', '04-telex.png'],      // orange
+  ['C272E9', '05-mida.png'],       // purple
+  ['81E8B1', '06-guankou.png'],    // mint
+  ['C0FE04', '马拉松LOGO.svg']     // the default: the Marathon logo
 ];
 const factionDir = path.join(root, 'assets', 'factions');
+const swatchDir = path.join(root, 'assets', 'swatches');
+const iconDir = path.join(root, 'assets', 'icons');
+const runDir = path.join(root, 'assets', 'run');
 
 // ---- 0b) 名字不可信，内容可信 ----------------------------------------------
 // Issue #3 (2026-10-26) reported this repo's artwork as "filenames mangled by a
@@ -82,18 +85,52 @@ function resolveFaction(file) {
   return null;
 }
 
-const factionRules = FACTIONS.map(([hex, file]) => {
-  const resolved = resolveFaction(file);
-  if (resolved === null) {
-    console.error('[build] missing faction artwork: ' + path.join(factionDir, file));
-    console.error('[build] files actually present: ' + (factionFiles.join(', ') || '(none)'));
-    console.error('[build] titles read from them: ' + (Array.from(factionByTitle.keys()).join(', ') || '(none)'));
-    console.error('[build] if the names above look like 璧涘崥鑹惧厠绫?svg, this checkout stored ' +
-      'UTF-8 bytes under an ANSI code page; the content lookup should have covered that, ' +
-      'so a missing <title> or a renamed plate is the real cause.');
+// 2026-11-18: the six faction plates are now raster glyph masks
+// (assets/swatches/*.png, white-on-transparent). Each is wrapped in the same
+// 366x237 SVG shell the old vector plates used: accent-coloured plate + the
+// four corner crosses + the black glyph. The default (马拉松LOGO) stays the
+// original vector plate. Keeping the SVG shell means the swatch CSS, the
+// `--sw-img` contract and every existing check stay exactly as they were.
+const CROSSES =
+  '<g fill="#000" opacity="0.38">' +
+  '<rect x="9.5" y="21" width="25" height="2"/><rect x="21" y="9.5" width="2" height="25"/>' +
+  '<rect x="331.5" y="21" width="25" height="2"/><rect x="343" y="9.5" width="2" height="25"/>' +
+  '<rect x="9.5" y="214" width="25" height="2"/><rect x="21" y="202.5" width="2" height="25"/>' +
+  '<rect x="331.5" y="214" width="25" height="2"/><rect x="343" y="202.5" width="2" height="25"/>' +
+  '</g>';
+
+function rasterPlate(hex, file) {
+  const p = path.join(swatchDir, file);
+  if (!fs.existsSync(p)) {
+    console.error('[build] missing swatch artwork: ' + p);
     process.exit(1);
   }
-  const p = resolved;
+  const b64 = fs.readFileSync(p).toString('base64');
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="366" height="237" viewBox="0 0 366 237">' +
+    '<rect width="366" height="237" fill="#' + hex + '"/>' +
+    CROSSES +
+    '<image href="data:image/png;base64,' + b64 + '" x="54" y="22" width="258" height="193" ' +
+    'preserveAspectRatio="xMidYMid meet"/>' +
+    '</svg>';
+}
+
+const factionRules = FACTIONS.map(([hex, file]) => {
+  let svg;
+  if (/\.png$/i.test(file)) {
+    svg = rasterPlate(hex, file);
+  } else {
+    const resolved = resolveFaction(file);
+    if (resolved === null) {
+      console.error('[build] missing faction artwork: ' + path.join(factionDir, file));
+      console.error('[build] files actually present: ' + (factionFiles.join(', ') || '(none)'));
+      console.error('[build] titles read from them: ' + (Array.from(factionByTitle.keys()).join(', ') || '(none)'));
+      console.error('[build] if the names above look like 璧涘崥鑹惧厠绫?svg, this checkout stored ' +
+        'UTF-8 bytes under an ANSI code page; the content lookup should have covered that, ' +
+        'so a missing <title> or a renamed plate is the real cause.');
+      process.exit(1);
+    }
+    svg = fs.readFileSync(resolved, 'utf8').replace(/\s+/g, ' ').trim();
+  }
   // data:image/svg+xml with the SVG's own text percent-encoded. Smaller than
   // base64 for source-like text, and it stays readable in the built file.
   // WHAT MUST NEVER SURVIVE ENCODING: the generated rule is spliced into the
@@ -102,7 +139,6 @@ const factionRules = FACTIONS.map(([hex, file]) => {
   // whole client bundle down with it (measured: the swatches rendered nothing and
   // the page never reported). `%22` stays encoded — the double quotes in
   // `url("…")` are the delimiters *we* write.
-  const svg = fs.readFileSync(p, 'utf8').replace(/\s+/g, ' ').trim();
   const enc = encodeURIComponent(svg)
     .replace(/%20/g, ' ')
     .replace(/%3D/g, '=')
@@ -121,6 +157,41 @@ const factionRules = FACTIONS.map(([hex, file]) => {
                 // JS string in the template's stylesheet array, and a raw \n
                 // would end the literal (measured: the swatches went blank and
                 // the whole bundle failed to parse).
+
+// ---- 0a) icon masks (2026-11-18) -------------------------------------------
+// Six white-on-transparent PNG masks rendered through CSS `mask-image` so the
+// glyph always takes the theme ink: the send arrow / stop skull, the two
+// appearance icons, and the on/off faces of the toggle buttons. Each becomes a
+// custom property on body.theme-marathon; the stylesheet references the var.
+const ICONS = [
+  ['send', 'send.png'],
+  ['stop', 'stop.png'],
+  ['sun', 'sun.png'],
+  ['moon', 'moon.png'],
+  ['switch-on', 'switch-on.png'],
+  ['switch-off', 'switch-off.png']
+];
+const iconRules = 'body.theme-marathon{' + ICONS.map(([key, file]) => {
+  const p = path.join(iconDir, file);
+  if (!fs.existsSync(p)) {
+    console.error('[build] missing icon mask: ' + p);
+    process.exit(1);
+  }
+  return '--mar-icon-' + key + ':url("data:image/png;base64,' + fs.readFileSync(p).toString('base64') + '");';
+}).join('') + '}';
+if (/['\\\r\n]/.test(iconRules)) {
+  console.error('[build] generated icon CSS contains a character that would break the JS string literal');
+  process.exit(1);
+}
+
+// ---- 0b) running-strip figures (2026-11-18) --------------------------------
+// The two run-animation figures are raster masks too, shipped inside the run
+// payload so the engine stays a single self-contained string. They keep the
+// current 46px band height; width follows each PNG's own aspect ratio.
+const runFigures = {
+  hollow: 'data:image/png;base64,' + fs.readFileSync(path.join(runDir, 'figure-hollow.png')).toString('base64'),
+  solid: 'data:image/png;base64,' + fs.readFileSync(path.join(runDir, 'figure-solid.png')).toString('base64')
+};
 
 // ---- 1) font ---------------------------------------------------------------
 const fontPath = path.join(root, 'assets', 'fonts', 'Maratype.otf');
@@ -202,9 +273,9 @@ const donePayload = {
   engine: doneEngine
 };
 
-// The running strip is engine-only: its host element and the switch live in the
-// template, so there is nothing to inline but the script itself.
-const runPayload = { engine: runEngine };
+// The running strip ships its engine plus the two figure masks: the engine is
+// embedded as source text, the figures as data URIs handed to create().
+const runPayload = { engine: runEngine, figures: runFigures };
 // The right-side dot animation travels separately so either option can be
 // enabled without dragging the other engine in.
 const dotPayload = { engine: dotEngine + '\n;\n' + runThink };
@@ -249,6 +320,11 @@ if (tpl.indexOf(factionMarker) === -1) {
   console.error('[build] marker "' + factionMarker + '" not found in template — 配色 artwork would be dropped');
   process.exit(1);
 }
+const iconMarker = '/*__ICON_CSS__*/';
+if (tpl.indexOf(iconMarker) === -1) {
+  console.error('[build] marker "' + iconMarker + '" not found in template — icon masks would be dropped');
+  process.exit(1);
+}
 let out = tpl.split('__MARATYPE_BASE64__').join(fontB64);
 out = out.split(versionMarker).join(pluginVersion);
 out = out.split(marker).join(payloadJson);
@@ -256,6 +332,7 @@ out = out.split(doneMarker).join(doneJson);
 out = out.split(runMarker).join(runJson);
 out = out.split(dotMarker).join(dotJson);
 out = out.split(factionMarker).join(factionRules);
+out = out.split(iconMarker).join(iconRules);
 
 if (out.indexOf('__MARATYPE_BASE64__') !== -1) {
   console.error('[build] __MARATYPE_BASE64__ placeholder still present after replace');
@@ -266,8 +343,9 @@ if (out.indexOf('__MARATYPE_BASE64__') !== -1) {
 if (out.indexOf('/*__BOOT_PAYLOAD__*/') !== -1 || out.indexOf('/*__DONE_PAYLOAD__*/') !== -1 ||
     out.indexOf('/*__RUN_PAYLOAD__*/') !== -1 || out.indexOf('/*__DOT_PAYLOAD__*/') !== -1 ||
     out.indexOf(versionMarker) !== -1 ||
-    out.indexOf(factionMarker) !== -1 || /__IMG_[A-Z_]+__/.test(out)) {
-  console.error('[build] boot/done/run/dot/version/faction placeholder or image token still present after replace');
+    out.indexOf(factionMarker) !== -1 || out.indexOf(iconMarker) !== -1 ||
+    /__IMG_[A-Z_]+__/.test(out)) {
+  console.error('[build] boot/done/run/dot/version/faction/icon placeholder or image token still present after replace');
   process.exit(1);
 }
 if (out.indexOf('dshMarBootHost') === -1 || out.indexOf('#mb-canvas') === -1) {
