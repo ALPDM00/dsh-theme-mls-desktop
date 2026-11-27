@@ -58,10 +58,9 @@
 | 加性 DOM | 位置 | 何时存在 |
 | --- | --- | --- |
 | 启动 / 完成覆盖层 | `#dshMarBootHost` / `#dshMarDoneHost`，`body` 末尾，`pointer-events:none` | 播放期间，结束后自删 |
-| 背景点阵 | `#mar-ascii-bg`，`body` 第一个子节点，`pointer-events:none` | 开关打开时 |
+| 背景（TAU CETI IV 星球） | `#mar-scene-bg`，`body` 第一个子节点，`pointer-events:none` | 开关打开且 WebGL 可用时（等启动揭幕收场后挂载） |
 | 「主题设置」页 | 设置对话框内部（宿主自己的 `_panel` 里） | 打开设置页时 |
 | **运行动画条带** | `#dshMarRunHost`，`[data-composer-seat]` 的第一个子节点 | 回合运行期间；关掉开关 / 回合结束即拆 |
-| **点阵动画** | `#dshMarDotHost`，`[data-composer-seat]` 内、输入卡右侧的绝对定位层 | 回合运行期间；关掉开关 / 回合结束即拆 |
 
 DSH 的组件、路由与**数据**从不被写；运行条带只**读**会话快照（`sessions.binding(id).session
 .getSnapshot()`）与宿主自己的 `role="status"` 文案。卸载插件即恢复默认主题（`overrideTokens`
@@ -120,9 +119,9 @@ running / holding 共用同一个 key `"running"` —— 是 props 更新不是 
 `replace()` 的顺序是：`tearDownEntryFiber` → `removeOwnedStyles(id)`（按
 `style[data-plugin="<包名>"]` 直接摘样式表）→ `modules.import` → `entry.refresh()`。
 实测旧实例的 dispose 不一定跑完，因此主题侧做了三层兜底：幂等闸门以“样式表还在”为
-条件（被摘掉就当作全新 apply，主题自愈）、点阵 host 的关键定位内联、每次安装递增
+条件（被摘掉就当作全新 apply，主题自愈）、背景 canvas 的关键定位内联、每次安装递增
 `window.__marThemeRunToken` 让旧实例的 400ms 定时器自行退场，并在挂载前按 id 清掉
-上一个实例留下的 `#dshMarRunHost` / `#dshMarDotHost`。
+上一个实例留下的 `#dshMarRunHost` / `#mar-scene-bg`。
 
 **计费轮询也吃这套实例令牌（v0.6.13）**：旧实例的 2s `/dsh-mls-billing/state` 轮询如果
 还活着，会拿**它自己**那份 `billingOpen` 表去写纸条 —— 用户点开的纸条记在新实例的表里，
@@ -157,7 +156,7 @@ running / holding 共用同一个 key `"running"` —— 是 props 更新不是 
 | 设置项读写与 body 类 | ✅ |
 | 卸载/重挂载不留残留 | ✅ |
 | 计费引擎（价目表、峰谷、折叠、账本、宿主装配、回填） | ✅ |
-| 每轮结算块（落位、八行、用时冻结、圆角/间隙/尺寸、动画、开关、会话匹配） | ✅ |
+| 每轮结算块（落位、六行、用时冻结、圆角/间隙/尺寸、动画、开关、会话匹配） | ✅ |
 | 任务完成动画的触发链与四拍（含"挂载历史不误播、切会话不重播"） | ✅ |
 | 启动动画引擎的几何与时间线 | ✅ |
 | 桌面壳补丁（结构自洽、发现、应用/还原、并发加锁） | ✅ |

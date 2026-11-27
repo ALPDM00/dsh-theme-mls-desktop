@@ -5,6 +5,61 @@
 次版本号 = 向后兼容的新功能；
 修订号 = 向后兼容的 bug 修复。
 
+## [0.7.0] - 2026-11-27
+
+**一个版本收口：星球背景（TAU CETI IV）替换原来的 ASCII 点阵场、「背景动画」设置组、
+运行动画两个人形 / 点阵开关，以及发布前修掉的三处回归。**
+
+### 新增
+
+- **星球背景（TAU CETI IV）**：把官方 `/explorer` 的线框星球搬进背景层 —— 紫经纬线
+  `#5200FF` + 红飞船 `#F24723`，fov 6° 长焦、1s 等距扫掠进入（与官方 `tR()` 逐参数一致）、
+  1s 线框淡入、3°/s 逆时针自转、空白处可拖拽。几何是官方 `.chunks` 转码的自带资产
+  （`assets/scene/`，0.4MB），由宿主路由 `/dsh-mls-scene/*.msc` 按需发出；渲染器是自写的
+  WebGL（`src/scene/engine-scene.js`）。**深浅两套底盘都支持**，底板色跟配色走。
+  设置页对应一组「背景动画」：启用 / 场景 / 透明度 / 允许拖拽 / 一行状态小字。
+- **运行动画里的「点阵动画」保留为独立开关**：输入卡右侧那团 21×21 点阵有机体
+  （`engine-dot.js` + `think-anim1.js`、`DOT_PAYLOAD`、`mar.dot.v1`）。发布前它被
+  固定在**窗口右下角**（`position:fixed`，离右下各 20px，边长
+  `clamp(64,120, min(vw,vh)×10%)`，`z-index:2147482000`：界面之上、启动揭幕之下），
+  与输入卡 / 右侧边栏 / 任何面板无关，窗口多窄、边栏开不开都看得见。
+
+### 调整
+
+- **设置页**：「星球背景 · TAU CETI IV」组名改为 **「背景动画」**；**删掉「自动自转」开关**
+  （自转常开，只有系统「减少动态效果」会停它，旧存盘里的 `spin:false` 忽略）；
+  「运行动画」组两个开关按用户要求排成 **「人形动画」**（原「启用」）+ **「点阵动画」**。
+- **每轮 Token 结算改用 DSH 自带的用量口径**：缓存命中 / 未缓存输入 / 缓存读取 / 缓存写入 /
+  输出 + 本次费用（含峰谷计价），样式不变。
+- 适配 DSH **0.2.3-alpha.2**：回合进行中那行改读 `[data-chat-running]:not([data-holding])`
+  （旧 `_turnStatus` 判据在 0.2.3 上恒为 false，任务完成动画的 DOM 兜底因此失效）；
+  `package.json` 去掉两个已不存在的 `dsh.client.inject` 包名。
+
+### 修复（发布前）
+
+- **星球背景整块消失**：删 ASCII 点阵时 `var bgCanvas = null, bgCtx = null, bgMounted = false;`
+  整行被删，`bgMount()` 首句 `if (bgMounted) return` 抛 `ReferenceError`，函数在创建
+  canvas 之前就退出 —— 场景层从来没挂过。声明补回 `bgObserver` 旁边。
+- **启动动画还没播完，客户端就露出来**：上一步让 `apply()` 抛错，DSH 会重跑客户端插件；
+  重跑的 `apply()` 开头无条件清 `html[data-mar-boot]`，揭幕遮罩标记被提前摘掉。
+  现在清标记前先看 `#dshMarBootHost` 在不在（与 `bootFlagDrop()` 同一条判据）。
+- **点阵动画「设置里开了、界面上没有」**：旧实现贴在输入卡右侧空白里，要求空白 ≥120px；
+  1186px 宽的窗口里两侧各只剩 ~93px（右侧边栏展开只剩 16px），于是永远被收起。
+  现在改成窗口右下角的固定层（见上），彻底不再依赖 composer 几何。
+
+### 删除
+
+- **原来的背景点阵（ASCII 点阵场）**：画布与绘制链路、点阵密度 / 透明度 / 呼吸速度、
+  `#mar-ascii-bg`、`BG_PALETTE` 一并删除，页面后面只剩星球这一层背景。
+- 清掉 v0.7.0 模板合并留下的重复代码块（`bootIsPageLoad` / `bootAlreadyPlayed` /
+  `markBootPlayed` 与 `BOOT_ONCE_KEY` 上方逐字重复的第二份）。
+
+### 测试 / 文档
+
+- `test/dispose.test.cjs` 的断言从已删除的 `#mar-ascii-bg` 改为 `#mar-scene-bg`；
+  `check.cjs` 的背景层断言改成"点阵必须都在、必须是窗口右下角固定层、不许有 composer 几何"。
+- `docs/SETTINGS.md` / `docs/RUNNING.md` / `README.md` 同步改名、加回与位置变更。
+
 ## [0.6.15] - 2026-11-18
 
 ### 调整

@@ -225,9 +225,14 @@ const doneEngine  = read('src/boot/engine-done.js');
 // the same reason as the two overlays: the template's settings/DOM half must
 // never have to parse or string-build the engine.
 const runEngine   = read('src/run/engine-run.js');
-// 动画1（点阵有机体）是**独立选项**：自己的小引擎 + 逐帧数据。
+// 动画1（点阵有机体）是**独立选项**：自己的小引擎 + 逐帧数据。2026-11-27 用户
+// 要求把 0.8.0 删掉的它加回「运行动画」组（与上方人形条带并列的第二个开关）。
 const dotEngine   = read('src/run/engine-dot.js');
 const runThink    = read('src/run/think-anim1.js');
+
+// TAU CETI IV 场景背景的 WebGL 引擎（src/scene/engine-scene.js）。几何数据**不在**
+// 这里 —— 它在 assets/scene/*.msc.gz，由宿主路由按需发出（见 index.js）。
+const sceneEngine = read('src/scene/engine-scene.js');
 
 const imgAssets = {
   __IMG_BLUE_B64__:   path.join(root, 'assets', 'boot', 'blue-pixel.png'),
@@ -279,6 +284,10 @@ const runPayload = { engine: runEngine, figures: runFigures };
 // The right-side dot animation travels separately so either option can be
 // enabled without dragging the other engine in.
 const dotPayload = { engine: dotEngine + '\n;\n' + runThink };
+// TAU CETI IV 场景背景：只有引擎源码走 payload。几何数据（assets/scene/*.msc.gz，
+// 几 MB）由宿主路由 /dsh-mls-scene/*.msc 按需发出 —— 塞进 client.js 会变成一个
+// 十几 MB 的 base64 字符串（计划书 §5 的理由）。
+const scenePayload = { engine: sceneEngine };
 
 // ---- 3) assemble -----------------------------------------------------------
 if (tpl.indexOf('__MARATYPE_BASE64__') === -1) {
@@ -300,14 +309,19 @@ if (tpl.indexOf(runMarker) === -1) {
   console.error('[build] marker "' + runMarker + '" not found in template — running-strip payload would be dropped');
   process.exit(1);
 }
+const dotMarker = '/*__DOT_PAYLOAD__*/ null';
+if (tpl.indexOf(dotMarker) === -1) {
+  console.error('[build] marker "' + dotMarker + '" not found in template — dot-animation payload would be dropped');
+  process.exit(1);
+}
 const versionMarker = '__MAR_PLUGIN_VERSION__';
 if (tpl.indexOf(versionMarker) === -1) {
   console.error('[build] marker "' + versionMarker + '" not found in template — update check version would be dropped');
   process.exit(1);
 }
-const dotMarker = '/*__DOT_PAYLOAD__*/ null';
-if (tpl.indexOf(dotMarker) === -1) {
-  console.error('[build] marker "' + dotMarker + '" not found in template — dot-animation payload would be dropped');
+const sceneMarker = '/*__SCENE_PAYLOAD__*/ null';
+if (tpl.indexOf(sceneMarker) === -1) {
+  console.error('[build] marker "' + sceneMarker + '" not found in template — scene-background payload would be dropped');
   process.exit(1);
 }
 
@@ -315,6 +329,7 @@ const payloadJson = JSON.stringify(payload);
 const doneJson = JSON.stringify(donePayload);
 const runJson = JSON.stringify(runPayload);
 const dotJson = JSON.stringify(dotPayload);
+const sceneJson = JSON.stringify(scenePayload);
 const factionMarker = '/*__FACTION_CSS__*/';
 if (tpl.indexOf(factionMarker) === -1) {
   console.error('[build] marker "' + factionMarker + '" not found in template — 配色 artwork would be dropped');
@@ -331,6 +346,7 @@ out = out.split(marker).join(payloadJson);
 out = out.split(doneMarker).join(doneJson);
 out = out.split(runMarker).join(runJson);
 out = out.split(dotMarker).join(dotJson);
+out = out.split(sceneMarker).join(sceneJson);
 out = out.split(factionMarker).join(factionRules);
 out = out.split(iconMarker).join(iconRules);
 
@@ -342,10 +358,11 @@ if (out.indexOf('__MARATYPE_BASE64__') !== -1) {
 // payload (its alphabet includes the underscore), so match the placeholder shape.
 if (out.indexOf('/*__BOOT_PAYLOAD__*/') !== -1 || out.indexOf('/*__DONE_PAYLOAD__*/') !== -1 ||
     out.indexOf('/*__RUN_PAYLOAD__*/') !== -1 || out.indexOf('/*__DOT_PAYLOAD__*/') !== -1 ||
+    out.indexOf('/*__SCENE_PAYLOAD__*/') !== -1 ||
     out.indexOf(versionMarker) !== -1 ||
     out.indexOf(factionMarker) !== -1 || out.indexOf(iconMarker) !== -1 ||
     /__IMG_[A-Z_]+__/.test(out)) {
-  console.error('[build] boot/done/run/dot/version/faction/icon placeholder or image token still present after replace');
+  console.error('[build] boot/done/run/dot/scene/version/faction/icon placeholder or image token still present after replace');
   process.exit(1);
 }
 if (out.indexOf('dshMarBootHost') === -1 || out.indexOf('#mb-canvas') === -1) {
@@ -364,6 +381,13 @@ if (out.indexOf('var RUN_PAYLOAD = null') !== -1 || runJson.length < 1000) {
 if (out.indexOf('var DOT_PAYLOAD = null') !== -1 || dotJson.length < 1000 ||
     out.indexOf('__marThinkAnim') === -1 || out.indexOf('__marDotEngine') === -1) {
   console.error('[build] dot-animation payload missing from output');
+  process.exit(1);
+}
+// 场景引擎：源码本身就在 payload 里，所以"内联成功"的判据是引擎尾部的注册行
+// 和场景状态键同时出现，而 SCENE_PAYLOAD 不再是 null。
+if (out.indexOf('var SCENE_PAYLOAD = null') !== -1 || sceneJson.length < 4000 ||
+    out.indexOf('__marScene') === -1 || out.indexOf('mar.scene.v1') === -1) {
+  console.error('[build] scene-background payload missing from output');
   process.exit(1);
 }
 

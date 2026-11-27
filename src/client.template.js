@@ -50,11 +50,18 @@ window.__ModuleLoader__.load({
     // the strip simply never mounts and the native status row is left alone.
     var RUN_PAYLOAD = /*__RUN_PAYLOAD__*/ null;
 
-    // Right-side dot animation (动画1) payload. Separate from RUN_PAYLOAD on
-    // purpose: 2026-11-05 the user asked for the two animations to be two
-    // independent options, so either engine can be absent / off without the
-    // other noticing.
+    // Right-side dot animation (动画1 / 点阵动画) payload. Separate from
+    // RUN_PAYLOAD on purpose: the two animations are independent switches, so one
+    // can be enabled without dragging the other engine in. 2026-11-27（用户）：
+    // 0.8.0 把「点阵动画」整段删掉了，这里按 v0.7.4 的原实现加回来。
     var DOT_PAYLOAD = /*__DOT_PAYLOAD__*/ null;
+
+    // TAU CETI IV 场景背景（星球线框）的 WebGL 引擎，构建时由 scripts/build.cjs 从
+    // src/scene/engine-scene.js 注入。**几何数据不在这里** —— 它在
+    // assets/scene/*.msc.gz，由宿主路由 /dsh-mls-scene/<name>.msc 解压后发出
+    // （index.js 的 registerSceneRoutes）。原始模板跑起来时它是 null，
+    // 场景层就永远不会挂载。
+    var SCENE_PAYLOAD = /*__SCENE_PAYLOAD__*/ null;
 
     function apply(ctx) {
       var doc = (typeof document !== 'undefined') ? document : null;
@@ -72,16 +79,27 @@ window.__ModuleLoader__.load({
       // Cleared HERE, before the idempotency guard, on purpose: a second apply()
       // that short-circuits two lines below still has to be able to un-hide the
       // page. removeAttribute is idempotent, so a clean first load pays nothing.
-      if (doc && doc.documentElement) doc.documentElement.removeAttribute('data-mar-boot');
+      //
+      // 2026-11-27 — BUT ONLY WHEN NO BOOT OVERLAY IS ALIVE. A live #dshMarBootHost
+      // is the flag's one legitimate owner (the same rule bootFlagDrop() uses): the
+      // attribute is what boot.css turns into `body > * { visibility:hidden }`
+      // while the reveal plays over a transparent window. This line used to clear
+      // it unconditionally, so an apply() that ran a second time mid-boot (DSH
+      // re-runs a client plugin whose apply threw) dropped the flag half a second
+      // into the animation and the whole client appeared behind the whale/HUI
+      // frames — the "启动动画还没播完，客户端就已经显示出来了" report.
+      if (doc && doc.documentElement &&
+          !(doc.getElementById && doc.getElementById('dshMarBootHost'))) {
+        doc.documentElement.removeAttribute('data-mar-boot');
+      }
 
       // ---- idempotency -----------------------------------------------------
       // 2026-11-06: DSH 的 client HMR（dsh-client-modules `replace()`）在重跑本插件
       // 前会先 `removeOwnedStyles(id)` —— 直接摘掉我们的 <style data-plugin=…>，然后
       // 才 import + refresh。如果上一次的 dispose 没跑完（或没被调用），下面这行闸门
       // 会让新 apply 直接 return，页面就停在「样式表被摘掉、旧节点还在」的半死状态：
-      // 主题整体变淡，点阵失去 `position:absolute` 变成普通块，掉到输入框左下角。
-      // 所以闸门以「我们的样式表还在」为条件：样式表没了就当作全新 apply（旧 host
-      // 会在 runApply / dotSyncDom 里按 id 清掉）。
+      // 主题整体变淡、背景层失去定位。所以闸门以「我们的样式表还在」为条件：
+      // 样式表没了就当作全新 apply（旧 host 会在 runApply 里按 id 清掉）。
       if (typeof window !== 'undefined' && window.__dshThemeMarathonApplied) {
         var marSheet = doc
           ? (doc.querySelector('style[data-plugin="' + PLUGIN_ID + '"]') ||
@@ -938,12 +956,13 @@ window.__ModuleLoader__.load({
         '   (the only motion left is the boot overlay, which skips itself under',
         '   prefers-reduced-motion — see src/boot/boot.css / buildBoot below). */',
 
-        '/* ---- background layer: ASCII dot field (background ONLY) ------------- */',
-        '/* The canvas paints its own field colour (--mar-bg-field, written by JS from',
-        '   the chosen palette); clearRect only wipes the glyph layer, so the field is',
-        '   never repainted per frame. z-index:0 + first child of <body> puts it under',
-        '   #root without touching any stacking context DSH owns. */',
-        '#mar-ascii-bg{position:fixed;inset:0;width:100%;height:100%;display:block;',
+        '/* ---- background layer: TAU CETI IV scene (background ONLY) ------------- */',
+        '/* 页面后面只有这一张 canvas（0.8.0 起，原来的 ASCII 点阵场已删除）。它的底板色',
+        '   来自 --mar-bg-field（JS 按当前配色写），几何同样写 inline —— 这条规则只是',
+        '   同一次声明，外加"样式表被摘掉之后不至于闪出页面底色"。display 由 JS 管',
+        '   （sceneApply）。z-index:0 + <body> 的第一个子节点：垫在 #root 下面，且不',
+        '   碰 DSH 自己的任何层叠上下文。 */',
+        '#mar-scene-bg{position:fixed;inset:0;width:100%;height:100%;display:none;',
         '  z-index:0;pointer-events:none;background:var(--mar-bg-field,#0B0D0B);}',
         '/* Visibility: the full-viewport containers step aside — the frame, the two',
         '   columns, and whichever node inside each column paints an opaque plate',
@@ -1158,12 +1177,6 @@ window.__ModuleLoader__.load({
         '.mar-switch:checked{border-color:var(--mar-accent);background:var(--mar-accent);}',
         '.mar-switch:checked::after{opacity:1;}',
         '.mar-switch:focus-visible{outline:1px solid var(--mar-accent);outline-offset:2px;}',
-        '/* density / breathing only describe the field, so they dim while it is off',
-        '   (the switch row itself never does; neither do the task-completion rows,',
-        '   which have nothing to do with the background field, nor 外观 — its two',
-        '   buttons have nothing to do with the field either, and dimming them read as',
-        '   "像有一层灰黑色蒙住了" (user 2026-10-17). */',
-        '.mar-set-pane.mar-anim-off .mar-set-row:not(.mar-set-switch):not(.mar-set-done):not(.mar-set-appearance){opacity:.45;}',
         '.mar-set-row{display:flex;align-items:center;gap:12px;margin:0 0 10px;}',
         '/* 标签一律不换行：这行只有 8 个汉字（「每轮 Token 结算」），88px 的槽位',
         '   会让它折成两行，读起来像排版事故。112px + nowrap 一次解决。',
@@ -1274,20 +1287,27 @@ window.__ModuleLoader__.load({
         '   count. The 26px row, the font and the clock markup are still the host\'s.',
         '   Do NOT bring a background/gradient/clip back here: any one of the three',
         '   repaints the band over the clock. */',
-        'body.theme-marathon [class*="_turnStatus"]{',
+        'body.theme-marathon [data-chat-running]{',
         '  background:none;',
         '  background-clip:border-box;',
         '  -webkit-background-clip:border-box;',
         '  animation:none;',
         '  color:var(--mar-status-ink,var(--mar-accent-text));',
         '  -webkit-text-fill-color:currentColor;',
+        '  /* 0.2.3 起这行是 `css.running` + `TextShimmer`，shimmer 的渐变从这两个',
+        '     令牌里取色；把它们钉成同一个"状态墨色"，渐变就退化成一块平色。 */',
+        '  --dsw-alias-label-shimmer:var(--mar-status-ink,var(--mar-accent-text))!important;',
+        '  --dsw-alias-label-deep-diving:var(--mar-status-ink,var(--mar-accent-text))!important;',
         '}',
-        '/* The clock keeps the host\'s own caption colour; it is stripped of any',
-        '   background/animation of its own so nothing can sweep across it. */',
-        'body.theme-marathon [class*="_turnStatus"] [class*="_turnStatusClock"]{',
-        '  background:none;',
-        '  animation:none;',
-        '  -webkit-text-fill-color:var(--dsw-alias-label-caption);',
+        '/* The shimmer text itself: keep the host\'s markup, strip its paint. */',
+        'body.theme-marathon [data-chat-running] *{animation:none!important;}',
+        'body.theme-marathon [data-chat-running] [class*="_runningText"]{',
+        '  background:none!important;',
+        '  background-image:none!important;',
+        '  background-clip:border-box!important;',
+        '  -webkit-background-clip:border-box!important;',
+        '  -webkit-text-fill-color:currentColor!important;',
+        '  color:inherit!important;',
         '}',
 
         '/* ---- running animation（运行动画，2026-11-05）------------------------',
@@ -1316,11 +1336,11 @@ window.__ModuleLoader__.load({
         '    - var(--dsh-composer-dock-inset,8px) - var(--dsh-composer-dock-inset,8px));' +
         '  max-width:calc(var(--dsh-composer-card-max-width,952px) - var(--dsh-composer-dock-inset,8px) - var(--dsh-composer-dock-inset,8px));' +
         '  margin:0 auto var(--dsh-composer-stack-gap,6px);}',
-        // 点阵动画（动画1）：贴在输入卡右侧的空白里，绝对定位在 composer seat
-        // 内（seat 是 sticky = positioned）。right / top / 尺寸由 JS 按实测空白
-        // 算好，这里只管层与命中测试。
-        'body.mar-dot-on #dshMarDotHost{position:absolute;display:block;' +
-        '  pointer-events:none;z-index:1;}',
+        // 点阵动画（动画1）：**窗口右下角**的固定层，与输入卡 / 右侧边栏 / 面板无关
+        // （用户 2026-11-27："放在窗口的右下角，无论是什么层面"）。坐标/尺寸/层级由
+        // JS 内联写死，这里只管层与命中测试，并在样式表还在时稳住 fixed + 高层级。
+        'body.mar-dot-on #dshMarDotHost{position:fixed;display:block;' +
+        '  pointer-events:none;z-index:2147482000;}',
 
         '/* ---- the last native blues: COMPONENT-scoped custom properties --------',
         '   The five aliases above can be pinned through overrideTokens because DSH',
@@ -1341,20 +1361,13 @@ window.__ModuleLoader__.load({
         'body.theme-marathon [class*="_table"]{',
         '  --trajectory-turn-accent:color-mix(in srgb,var(--mar-accent) 22%,var(--mar-bg-deep))!important;}',
         'body.theme-marathon [class*="_turnLabelActive"]{color:var(--mar-accent-text)!important;}',
-        '/* the toast\'s inline "操作" action: was var(--dsw-static-deepseek-400) directly */',
-        'body.theme-marathon [class*="_toast_"] [class*="_action_"]{',
-        '  color:var(--mar-accent-text)!important;}',
         '/* the context meter\'s "对话" tint: was var(--dsw-static-blue-450) */',
         'body.theme-marathon [class*="_colorMessages"]{--meter-tint:var(--mar-accent)!important;}',
-        '/* file-type chips (attachments): .code/.html/.markdown/.word/.other were',
-        '   deepseek-500 / -450 / neutral-bluish-300. Only the blue ones are pinned —',
-        '   .excel/.image/... keep their semantic green/violet. */',
-        'body.theme-marathon [class*="_code_"],',
-        'body.theme-marathon [class*="_html_"],',
-        'body.theme-marathon [class*="_markdown_"],',
-        'body.theme-marathon [class*="_word_"],',
-        'body.theme-marathon [class*="_other_"]{',
-        '  --dsh-file-type-default-color:var(--mar-accent-text)!important;}',
+        '/* 2026-11-26：删掉两条在 DSH 0.2.3 上已经不存在的宿主选择器 ——',
+        '   toast 里那个"操作"按钮一条，和文件类型 chip 那一组',
+        '   （`_code_` / `_html_` / `_markdown_` / `_word_` / `_other_` +',
+        '   file-type 那个自定义属性）。安装包里 0 命中，留着只是噪音，',
+        '   真正需要时按当时的构建产物重新量一遍再写回来。 */',
 
         '/* ---- colour-pair switch: the settings mosaic, replayed over the palette --',
         '   Picking 主白 + 绿 or 主黑 + 绿 repaints the whole UI in a single frame:',
@@ -1527,137 +1540,52 @@ window.__ModuleLoader__.load({
       // them is a full-viewport texture.
 
       // ======================================================================
-      //  BACKGROUND LAYER — ASCII dot field
+      //  背景层：TAU CETI IV 线框星球（页面后面唯一的一层）
       //  --------------------------------------------------------------------
-      //  Ported from the standalone "ASCII 点阵呼吸场" page: a monospace grid
-      //  whose per-cell strength comes from four superposed sine waves — dense
-      //  glyphs where the field is strong, nothing where it is weak. Deviations
-      //  from the original, all on request:
-      //    * the '*' glyphs are gone from the palette (they read as noise)
-      //    * TWO colour pairs instead of one, both of them GREEN ON THE FIELD
-      //      and mirror images of each other:
-      //        主白 + 绿  → white field, acid-green glyphs, and a LIGHT UI
-      //        主黑 + 绿  → black field, acid-green glyphs, dark UI untouched
-      //      Green is the constant (glyphs, brand, accents); the PLATE is what
-      //      flips, and the UI ink flips with it — black ink on the white plate,
-      //      light ink on the dark one (see .mar-bg-light in the stylesheet).
-      //      The dark pair leaves DSH's palette completely alone.
-      //    * the pair and the field switch are SEPARATE state: the 背景动画
-      //      switch stops drawing the field but keeps BG_STATE.scheme, so the UI
-      //      stays white in 主白 + 绿 (it used to drop back to the dark pairing).
-      //      The pair buttons are a radio group — exactly one is always chosen —
-      //      and the switch is its own control, OFF by default.
-      //    * it is a BACKGROUND, nothing else: fixed, first child of <body>,
-      //      z-index 0, pointer-events:none. The only page surfaces it changes
-      //      are the full-viewport containers marked `.mar-bg-clear` (see
-      //      bgClearTargets: the frame, both columns, and the opaque plate each
-      //      column owns); every control keeps the colour it already owns.
-      //    * the marks are re-applied on any DOM change (bgWatch/bgKick), so a
-      //      session switch cannot leave the sidebar on an opaque plate for a
-      //      whole second — that is what read as "the field disappears and
-      //      comes back".
-      //    * pair / density / opacity / speed are user settings, persisted in
-      //      localStorage and surfaced in DSH's settings dialog under the
-      //      「主题设置」 tab this file injects (mountSettingsTab below).
-      //  Knobs: BG_STATE.anim (the field switch), .scheme (light|dark), .cell,
-      //  .alpha (how visible the glyphs are), .speed.
-      //  The canvas carries the field colour itself (--mar-bg-field), so
-      //  clearRect only wipes glyphs — the field is never repainted per frame.
+      //  2026-11-26（用户）："把原来的背景动画完全删除，包括设置里的选项" ——
+      //  原来的 ASCII 点阵场（点阵字符画 + 四道正弦叠加出来的呼吸字形）连同它的
+      //  开关 / 密度 / 透明度 / 呼吸速度四个旋钮一起删掉了，页面后面的背景只剩下面
+      //  这一层星球。
+      //
+      //  这一块保留下来的是**配色对**（light | dark）和"底板让位"这套机制：
+      //    · BG_MODES  每一对底盘的两个值：field（--mar-bg-field / 场景底板色）与
+      //                light（浅色层开关，样式表里 body.mar-bg-light 那一套）；
+      //    · BG_STATE  scheme（解析后的浅/深）+ pref（DSH 的外观偏好，与通用设置同步）；
+      //    · .mar-bg-clear 的打标（bgMarkClear / bgWatch）仍由 JS 维护 —— 它让页面
+      //      底板变透明，好让底下的 WebGL 画出来，这是背景层能存在的前提。
+      //  存储键沿用 dsh-theme-marathon.bg.v1：旧版本写进去的 anim / cell / speed /
+      //  alpha 读的时候忽略、写的时候也不再写，老用户的 scheme / pref 不会丢。
       // ======================================================================
       var BG_STORE_KEY = 'dsh-theme-marathon.bg.v1';
-      var BG_PALETTE = '   ...:::---+++◦◦••▢▣';   // sparse -> dense; ' ' = skip
-      var BG_FLOOR = 0.22;      // strength below this is not drawn at all
-      var BG_ALPHA0 = 0.08;     // alpha of the weakest glyph
-      var BG_ALPHA1 = 0.55;     // extra alpha at full strength
-      var BG_FPS = 30;          // the field breathes slowly; 30 is plenty
-      //   field         the field's own plate colour
-      //   light         the UI on top has to flip with it (see the light layer
-      //                 in the stylesheet): white plate, black ink. It is what
-      //                 the 背景动画 switch must NOT take away — see bgApplyMode.
-      //   (the GLYPH colour is not here any more — it is the theme accent, see
-      //    bgInk() below; 2026-10-19 用户："将主题色适配到背景动画中")
-      //  There is no scrim ("veil") any more. It existed for one reason: 60%
-      //  black over the old acid-green field was the only way to keep white ink
-      //  legible, so the .mar-bg-clear containers took a wash. With the field
-      //  green-on-plate in BOTH pairs the glyphs are decoration and the ink is
-      //  the plate's opposite, so the field simply runs through the chrome —
-      //  which is what the dark pair has always done. Two measured reasons it
-      //  could not stay:
-      //    * it broke the mirror (one pair washed, the other not);
-      //    * it COMPOUNDS. The frame, the centre column and that column's own
-      //      plate are all marked and nested, so a 60% scrim landed three times
-      //      over: 0.4^3 = 6% transmission. Measured on the white pair the field
-      //      was drawn (7509 glyph px on the canvas) and the page still had ZERO
-      //      green pixels — "主白 + 绿 也要有点阵" was a field painting
-      //      perfectly and visible nowhere.
+      //   field  底板色（写进 --mar-bg-field，也是场景 canvas 的 CSS 底色）
+      //   light  这一对是不是浅色底盘（决定 body.mar-bg-light 与场景线色）
       var BG_MODES = {
         light: { field: '#FFFFFF', light: true },    // 浅色底盘：白底
         dark:  { field: '#0B0D0B', light: false }    // 深色底盘：黑底
       };
-      //  The glyph colour IS the theme accent as of 2026-10-19 (用户："将主题色适配到
-      //  背景动画中"). It used to be the frozen '192,254,4' — that was the 2026-10-11
-      //  decision ("配色只调整 UI 的，不动其他"), which the user has now superseded for
-      //  this one surface. --mar-accent is written inline on <body> by accentApply(),
-      //  so ACCENT_STATE is the same value with no DOM round-trip. Returns the
-      //  'r,g,b' triple the canvas alpha prefix expects.
-      function bgInk() {
-        return accentRgb(ACCENT_STATE.color).join(',');
-      }
       var BG_STATE = bgLoad();
-      //   `pref` is the DSH appearance preference (light | dark | system) — the
-      //   same value 通用设置 edits. `scheme` is only ever the RESOLVED pair
-      //   (light | dark) used to paint; a system preference lands here as
-      //   whatever the OS currently says. bgLoad keeps a copy purely so a host
-      //   without the theme service still has something to paint; wherever the
-      //   service exists it is read back on mount and wins (see themeAdopt).
+      //   `pref` 是 DSH 的外观偏好（light | dark | system），与「通用设置 → 外观」
+      //   是同一个值；`scheme` 只保存**解析后**的浅/深，用来上色。
       var SYSTEM_MQ = null;
-
-      var bgCanvas = null, bgCtx = null, bgMounted = false;
-      var bgRaf = 0, bgElapsed = 0, bgLastMs = 0, bgDrawMs = 0, bgResizeTimer = null;
-      var bgW = 0, bgH = 0, bgCols = 0, bgRows = 0, bgDpr = 1;
 
       function bgNum(v, a, b) { return v < a ? a : (v > b ? b : v); }
 
-      // Read once at apply(); every later change goes through the pane handlers.
-      //   anim    whether the field is DRAWN at all: its own switch, OFF by
-      //           default, so the theme is usable without the dot field. ('green'
-      //           and the off|light|dark triple are the v1/v2 stores, migrated
-      //           on read.)
-      //   scheme  which colour PAIR the UI wears: light | dark. Exactly one of
-      //           the two is always chosen (the pair buttons are a radio group),
-      //           and it is kept while the field is off, so the 背景动画 switch
-      //           cannot flip the UI back.
-      //   alpha   how visible the glyphs are, 0..1 (默认 1 = 原来的强度).
-      //           用户 2026-10-19："再给背景动画添加一个透明度，用于调节可见范围"。
-      //           它乘在每条字形的 alpha 上，所以 0 就是"看不见"、1 是原样。
       function bgLoad() {
-        var out = { anim: false, scheme: 'dark', pref: 'dark', cell: 16, speed: 0.55, alpha: 1 };
+        var out = { scheme: 'dark', pref: 'dark' };
         var raw = null;
         try { raw = (typeof window !== 'undefined' && window.localStorage) ? window.localStorage.getItem(BG_STORE_KEY) : null; } catch (e) { raw = null; }
         if (!raw) return out;
         var s = null;
         try { s = JSON.parse(raw); } catch (e) { s = null; }
         if (!s || typeof s !== 'object') return out;
-        // v2 stored ONE mode (off|light|dark) that doubled as the pair: 'off'
-        // carried no pair at all, which is exactly why turning the animation off
-        // forgot which UI to keep. Split it on read — the pair always survives,
-        // the field switch is its own boolean.
+        //  v2 把"模式"和"底盘"存成一个值（off|light|dark|green），v3 才拆开。
+        //  点阵场删掉之后只剩底盘这一半有用，两种形状都要能读出 light / dark。
         var pair = (s.scheme === 'light' || s.scheme === 'dark') ? s.scheme : null;
-        if (s.mode === 'light' || s.mode === 'dark') { out.anim = true; pair = pair || s.mode; }
-        else if (s.mode === 'green') { out.anim = true; pair = pair || 'light'; }  // v1: acid field -> white field
-        else if (s.mode === 'off') out.anim = false;
-        if (typeof s.anim === 'boolean') out.anim = s.anim;   // v3 wins over a migrated mode
+        if (s.mode === 'light' || s.mode === 'dark') pair = pair || s.mode;
+        else if (s.mode === 'green') pair = pair || 'light';   // v1: 酸绿底 = 白底
         if (pair) out.scheme = pair;
-        //  v4 (2026-11-05): the preference joined the store. A store written
-        //  before it has no `pref`; the pair it was carrying IS the preference
-        //  it represented (an explicit light/dark), so it migrates losslessly.
         if (s.pref === 'light' || s.pref === 'dark' || s.pref === 'system') out.pref = s.pref;
         else out.pref = out.scheme;
-        if (typeof s.cell === 'number') out.cell = bgNum(Math.round(s.cell), 8, 48);
-        if (typeof s.speed === 'number') out.speed = bgNum(s.speed, 0, 1.5);
-        //  Store written before 2026-10-19 has no alpha → full strength (1), which
-        //  is exactly what those builds looked like.
-        if (typeof s.alpha === 'number') out.alpha = bgNum(s.alpha, 0, 1);
         return out;
       }
       function bgSave() {
@@ -1666,6 +1594,249 @@ window.__ModuleLoader__.load({
             window.localStorage.setItem(BG_STORE_KEY, JSON.stringify(BG_STATE));
           }
         } catch (e) {}
+      }
+
+      // ======================================================================
+      //  TAU CETI IV 场景背景 —— 与点阵场并列的另一层背景
+      //  --------------------------------------------------------------------
+      //  2026-11-26 用户："先做出星球的，看看效果，替换掉目前的背景动画"。
+      //  所以场景层默认 **开**（点阵场仍是默认关），装上就是星球在转。两套状态
+      //  完全独立、各有自己的存储键 —— 关点阵不影响星球，关星球也不动点阵。
+      //
+      //  on       启用场景（默认 true）
+      //  place    场景名。这一版只有 planet；三张城市地图留给下一段（计划书 P2）
+      //  opacity  线框透明度 0..1，乘在引擎的 alpha 上
+      //  drag     允许在空白处拖拽转动星球
+      //
+      //  2026-11-27（用户）：自转不再是一个可选项 —— 用户要求"保持默认的自动旋转
+      //  即可，不显示给用户"，所以 `spin` 从状态里删掉，mount / setOption 一律传
+      //  常开（只有系统「减少动态效果」时才停，那是无障碍要求，不是主题选项）。
+      //
+      //  浅色模式下不启用：场景底色是黑的，浅色 UI 压上去读不了（计划书 §8.3
+      //  的结论 —— 先"禁止"，不做反相）。设置页那一行会写明原因。
+      // ======================================================================
+      var SCENE_STORE_KEY = 'mar.scene.v1';
+      function sceneLoad() {
+        var out = { on: true, place: 'planet', opacity: 0.85, drag: true };
+        var raw = null;
+        try {
+          raw = (typeof window !== 'undefined' && window.localStorage)
+            ? window.localStorage.getItem(SCENE_STORE_KEY) : null;
+        } catch (e) { raw = null; }
+        if (!raw) return out;
+        var s = null;
+        try { s = JSON.parse(raw); } catch (e) { s = null; }
+        if (!s || typeof s !== 'object') return out;
+        if (typeof s.on === 'boolean') out.on = s.on;
+        //  白名单：盘上的 place 只认这一版真的实现过的场景，别的一律回落
+        if (s.place === 'planet') out.place = s.place;
+        if (typeof s.opacity === 'number') out.opacity = bgNum(s.opacity, 0, 1);
+        if (typeof s.drag === 'boolean') out.drag = s.drag;
+        //  旧存盘里的 `spin:false` 直接忽略（那个开关已经没有了）。
+        return out;
+      }
+      function sceneSave() {
+        try {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            window.localStorage.setItem(SCENE_STORE_KEY, JSON.stringify(SCENE_STATE));
+          }
+        } catch (e) {}
+      }
+      var SCENE_STATE = sceneLoad();
+      var sceneCanvas = null, sceneMounted = false, sceneEngineTried = false;
+      var sceneBad = '';        // 状态小字里的失败原因，'' = 正常
+      var scenePlaceApplied = '';   // 已经下发给引擎的场景名（避免反复重播进入动画）
+      var sceneBootWait = null, sceneBootTimer = null;   // 等启动揭幕收场的观察器 / 兜底定时器
+
+      // 引擎按需注入：payload 是源码字符串，和 BOOT_PAYLOAD 的引擎同一套做法
+      // （classic <script> + textContent，同步执行）。注入一次就够，节点用完即摘。
+      function sceneEngine() {
+        if (typeof window === 'undefined') return null;
+        if (window.__marScene) return window.__marScene;
+        if (sceneEngineTried) return window.__marScene || null;
+        sceneEngineTried = true;
+        if (!SCENE_PAYLOAD || !SCENE_PAYLOAD.engine) { sceneBad = '引擎缺失'; return null; }
+        try {
+          var s = doc.createElement('script');
+          s.textContent = SCENE_PAYLOAD.engine;
+          (doc.head || doc.documentElement).appendChild(s);
+          if (s.parentNode) s.parentNode.removeChild(s);
+        } catch (e) { sceneBad = '引擎注入失败'; return null; }
+        if (!window.__marScene) sceneBad = '引擎未注册';
+        return window.__marScene || null;
+      }
+
+      //  能不能画：引擎在 + WebGL 可用。available() 内部会缓存结果，重复调用不贵；
+      //  它只探测一次，绝不在失败后循环重试 —— bgApplyMode 会被 DOM 变化频繁触发。
+      function sceneUsable() {
+        var engine = sceneEngine();
+        if (!engine || typeof engine.available !== 'function') return false;
+        return !!engine.available();
+      }
+
+      //  该不该显示：开关 + 引擎可用。**深浅两套底盘都支持**（2026-11-26 用户：
+      //  "需要适配浅色模式"）：底板色跟着当前配色走（--mar-bg-void，深色 #0B0D0B /
+      //  浅色 #FFFFFF），线色由引擎按 light 换成压暗过的一档。
+      function sceneWanted() {
+        if (!SCENE_STATE.on) return false;
+        if (!sceneCanvas) return false;
+        return sceneUsable();
+      }
+
+      //  当前配色对应的底板色 + 是否浅色：BG_MODES 的 field 就是 --mar-bg-void
+      //  （深色 #0B0D0B / 浅色 #FFFFFF），和 DSH 自己的 bg-base 是同一个值 ——
+      //  用户 2026-11-26："背景的黑色应该要与 deepseekharness 的黑色保持一致"。
+      function scenePlate() {
+        var ui = BG_MODES[BG_STATE.scheme] || BG_MODES.dark;
+        return { bg: ui.field, light: !!ui.light };
+      }
+
+      function sceneMount() {
+        if (sceneMounted || !sceneCanvas) return;
+        var engine = sceneEngine();
+        if (!engine || typeof engine.mount !== 'function') { sceneBad = '引擎缺失'; return; }
+        var plate = scenePlate();
+        try {
+          sceneMounted = !!engine.mount(sceneCanvas, {
+            place: SCENE_STATE.place,
+            opacity: SCENE_STATE.opacity,
+            drag: SCENE_STATE.drag,
+            spin: !reducedMotion(),   // 常开；只有系统的「减少动态效果」能停
+            // 减少动态效果：只画一帧静态图，不启动循环（与点阵场的既有语义一致）
+            still: reducedMotion(),
+            bg: plate.bg,
+            light: plate.light
+          });
+        } catch (e) {
+          sceneMounted = false;
+        }
+        if (!sceneMounted) sceneBad = '挂载失败';
+        else scenePlaceApplied = SCENE_STATE.place;   // mount 已经把 place 下发给引擎了
+      }
+
+      function sceneUnmount() {
+        if (!sceneMounted) return;
+        sceneMounted = false;
+        scenePlaceApplied = '';
+        try { if (window.__marScene) window.__marScene.unmount(); } catch (e) {}
+      }
+
+      //  进入动画不能和启动揭幕抢戏。
+      //  用户 2026-11-26："星球…会有一个进入动画…我每看到背景动画的启动动画" ——
+      //  揭幕那几秒整页被 #dshMarBootHost 盖住，1s 的相机扫掠在底下播完了也没人
+      //  看得见。所以场景挂载要等揭幕收场：宿主把 #dshMarBootHost 摘掉、并且摘掉
+      //  html[data-mar-boot] 之后才 mount —— 进入动画一定落在用户眼前。
+      //  兜底：15s 后无论如何都挂（引擎死了 / 揭幕卡住，也不能永远没有背景）。
+      function sceneBootPending() {
+        if (typeof window === 'undefined' || !doc) return false;
+        if (doc.getElementById('dshMarBootHost')) return true;
+        if (doc.documentElement && doc.documentElement.hasAttribute('data-mar-boot')) return true;
+        return false;
+      }
+
+      function sceneBootRelease() {
+        if (sceneBootWait) { try { sceneBootWait.disconnect(); } catch (e) {} sceneBootWait = null; }
+        if (sceneBootTimer) { clearTimeout(sceneBootTimer); sceneBootTimer = null; }
+        sceneApply();
+      }
+
+      function sceneWaitBoot() {
+        if (sceneBootWait || sceneBootTimer) return;
+        if (typeof MutationObserver === 'function') {
+          sceneBootWait = new MutationObserver(function () {
+            if (!sceneBootPending()) sceneBootRelease();
+          });
+          try {
+            sceneBootWait.observe(body, { childList: true });
+            if (doc.documentElement) {
+              sceneBootWait.observe(doc.documentElement, { attributes: true, attributeFilter: ['data-mar-boot'] });
+            }
+          } catch (e) { sceneBootWait = null; }
+        }
+        if (typeof setTimeout === 'function') {
+          sceneBootTimer = setTimeout(sceneBootRelease, 15000);
+        }
+      }
+
+      function sceneApply(want) {
+        if (typeof want !== 'boolean') want = sceneWanted();
+        if (!sceneCanvas) return;
+        if (!want) { sceneCanvas.style.display = 'none'; sceneUnmount(); return; }
+        if (!sceneMounted) {
+          // 揭幕还在放：先不挂（否则进入动画在覆盖层底下空播一遍）
+          if (sceneBootPending()) {
+            sceneCanvas.style.display = 'none';
+            sceneWaitBoot();
+            return;
+          }
+          sceneMount();
+        }
+        // 挂不上（GL 上下文被拒 / 程序链接失败）就不能留一块底板盖住页面。
+        if (!sceneMounted) { sceneCanvas.style.display = 'none'; return; }
+        var plate = scenePlate();
+        // 画布自己的 CSS 底色也必须是同一个色：WebGL 还没画出第一帧、或窗口正在缩放时，
+        // 露出来的是它，差一档就是"背景比 DSH 更黑"的观感。
+        sceneCanvas.style.background = plate.bg;
+        sceneCanvas.style.display = 'block';
+        var engine = window.__marScene;
+        if (engine && typeof engine.setOption === 'function') {
+          engine.setOption('opacity', SCENE_STATE.opacity);
+          engine.setOption('drag', SCENE_STATE.drag);
+          engine.setOption('spin', !reducedMotion());
+          //  底板 / 深浅跟着配色走（切换色板时 bgApplyMode 会再进来一次）
+          engine.setOption('bg', plate.bg);
+          engine.setOption('light', plate.light);
+          //  place 只在**真的换了**的时候下发：setPlace 会重置进入动画，
+          //  每次 apply 都发一遍等于每改一个设置就重播一次扫掠。
+          if (scenePlaceApplied !== SCENE_STATE.place) {
+            scenePlaceApplied = SCENE_STATE.place;
+            engine.setOption('place', SCENE_STATE.place);
+          }
+        }
+      }
+
+      //  设置页那一行小字：说清楚"为什么现在看不到星球"，比只说"关"有用。
+      function sceneNoteText() {
+        if (!SCENE_STATE.on) return '已关闭';
+        if (!SCENE_PAYLOAD || !SCENE_PAYLOAD.engine) return '场景引擎未随本版本构建（payload 缺失）';
+        if (sceneBad && !sceneMounted) return '当前设备画不了：' + sceneBad;
+        if (!sceneUsable()) return '当前设备不支持 WebGL（禁用硬件加速 / 远程桌面）';
+        if (!sceneMounted) return sceneBootPending() ? '等启动动画放完再进场' : '等待挂载';
+        var stats = null;
+        try { stats = window.__marScene.stats(); } catch (e) { stats = null; }
+        var plate = scenePlate();
+        if (!stats) return '已加载 · ' + (plate.light ? '浅色底盘' : '深色底盘');
+        return '已加载 · ' + (plate.light ? '浅色底盘' : '深色底盘') + ' · ' + stats.gl + ' · ' +
+          stats.segments + ' 段线框' + (stats.fps ? ' · ' + stats.fps + ' fps' : '');
+      }
+
+      //  排障入口：DevTools 里一句 `__marSceneDebug()` 就能看到场景层的完整状态。
+      //  设置页那行小字只说一个原因，这里把"该不该显示 / 挂没挂上 / 引擎怎么想"
+      //  全部摊开 —— 背景层出问题时先看这里，别猜。
+      if (typeof window !== 'undefined') {
+        window.__marSceneDebug = function () {
+          var stats = null;
+          try { stats = window.__marScene ? window.__marScene.stats() : null; } catch (e) { stats = null; }
+          return {
+            state: {
+              on: SCENE_STATE.on, place: SCENE_STATE.place, opacity: SCENE_STATE.opacity,
+              drag: SCENE_STATE.drag, spin: !reducedMotion()
+            },
+            scheme: BG_STATE.scheme,
+            payload: !!(SCENE_PAYLOAD && SCENE_PAYLOAD.engine),
+            engine: !!window.__marScene,
+            usable: sceneUsable(),
+            wanted: sceneWanted(),
+            mounted: sceneMounted,
+            bootPending: sceneBootPending(),
+            bad: sceneBad,
+            note: sceneNoteText(),
+            canvas: sceneCanvas
+              ? { w: sceneCanvas.width, h: sceneCanvas.height, display: sceneCanvas.style.display }
+              : null,
+            stats: stats
+          };
+        };
       }
 
       // ======================================================================
@@ -1757,14 +1928,6 @@ window.__ModuleLoader__.load({
         body.style.setProperty('--mar-accent-text', light ? '#0B0D0B' : color);
         body.style.setProperty('--mar-wash-accent',
           'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',.14)');
-        //  The dot field's glyphs ARE this accent now (bgInk), so repaint the canvas
-        //  immediately instead of waiting for the next rAF frame. It matters most
-        //  under reduced motion, where the field is a single static frame that
-        //  would otherwise keep the previous colour until something else redraws.
-        //  bgW/bgCtx are 0/null before the first bgResize, hence the guard.
-        if (bgCtx && BG_STATE.anim && bgW > 0) {
-          try { bgDraw(bgElapsed); } catch (e) {}
-        }
       }
 
       // ---- RESERVED: the switch animation ----------------------------------
@@ -1783,83 +1946,8 @@ window.__ModuleLoader__.load({
         if (typeof apply === 'function') apply();
       }
 
-      function bgResize() {
-        if (!bgCanvas || !bgCtx || typeof window === 'undefined') return;
-        bgDpr = Math.min(window.devicePixelRatio || 1, 2);
-        bgW = window.innerWidth;
-        bgH = window.innerHeight;
-        bgCanvas.width = Math.round(bgW * bgDpr);
-        bgCanvas.height = Math.round(bgH * bgDpr);
-        try { bgCtx.setTransform(bgDpr, 0, 0, bgDpr, 0, 0); } catch (e) {}
-        bgCols = Math.ceil(bgW / BG_STATE.cell);
-        bgRows = Math.ceil(bgH / BG_STATE.cell);
-      }
-
-      function bgDraw(t) {
-        if (!bgCtx || !BG_STATE.anim) return;
-        var g = bgCtx, cell = BG_STATE.cell;
-        //  The glyph colour is the live theme accent (bgInk), and the per-glyph
-        //  alpha is the old curve scaled by the 透明度 knob — so alpha 1 reproduces
-        //  every earlier build exactly, and 0 draws nothing at all.
-        var ink = bgInk();
-        var alphaMul = bgNum(BG_STATE.alpha, 0, 1);
-        g.clearRect(0, 0, bgW, bgH);
-        g.font = '500 ' + Math.max(9, Math.round(cell * 0.8)) +
-          'px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
-        g.textBaseline = 'top';
-        var cx = bgCols * 0.5, cy = bgRows * 0.5;
-        for (var r = 0; r < bgRows; r++) {
-          for (var c = 0; c < bgCols; c++) {
-            var n = (Math.sin(c * 0.18 + t) +
-                     Math.sin(r * 0.24 - t * 0.7) +
-                     Math.sin((c + r) * 0.12 + t * 0.45) +
-                     Math.sin(Math.hypot(c - cx, r - cy) * 0.16 - t * 0.55)) * 0.25;
-            var v = (n + 1) * 0.5;
-            if (v < BG_FLOOR) continue;
-            var ch = BG_PALETTE.charAt(Math.min(BG_PALETTE.length - 1, Math.floor(v * BG_PALETTE.length)));
-            if (ch === ' ') continue;
-            g.fillStyle = 'rgba(' + ink + ',' +
-              ((BG_ALPHA0 + (v - BG_FLOOR) * BG_ALPHA1) * alphaMul).toFixed(3) + ')';
-            g.fillText(ch, c * cell, r * cell);
-          }
-        }
-      }
-
-      // rAF runs every frame but only paints every 1000/BG_FPS ms: the field's
-      // own clock (bgElapsed) advances on wall time, so capping the paint rate
-      // slows nothing down, it only drops frames.
-      function bgTick(now) {
-        if (!bgCanvas || !bgCtx) { bgRaf = 0; return; }
-        if (doc.hidden) { bgRaf = 0; bgLastMs = 0; return; }
-        if (!bgLastMs) bgLastMs = now;
-        if (now - bgDrawMs < 1000 / BG_FPS) { bgRaf = window.requestAnimationFrame(bgTick); return; }
-        bgElapsed += (now - bgLastMs) * BG_STATE.speed / 1000;
-        bgLastMs = now;
-        bgDrawMs = now;
-        bgDraw(bgElapsed);
-        bgRaf = window.requestAnimationFrame(bgTick);
-      }
-
-      function bgStart() {
-        if (bgRaf || !bgCanvas || !BG_STATE.anim) return;
-        // reduced motion: no loop at all — one static frame still shows the field.
-        // Same bail-out when there is no rAF (jsdom in the unit test).
-        if (reducedMotion() || typeof window === 'undefined' || !window.requestAnimationFrame) {
-          bgDraw(bgElapsed);
-          return;
-        }
-        bgLastMs = 0;
-        bgDrawMs = 0;
-        bgRaf = window.requestAnimationFrame(bgTick);
-      }
-      function bgStop() {
-        if (bgRaf && typeof window !== 'undefined' && window.cancelAnimationFrame) {
-          window.cancelAnimationFrame(bgRaf);
-        }
-        bgRaf = 0;
-      }
-
-      // ---- who steps aside for the field ------------------------------------
+      // ---- who steps aside for the background -------------------------------
+      // （这一套是给场景层用的：页面底板必须透明，WebGL 才画得出来。）
       // Two passes, because they have different costs and different jobs.
       //
       // PASS 1 — anchors. Pure selector lookups, no style reads, so it is cheap
@@ -2096,12 +2184,18 @@ var bgCleared = [];
       //   · 锚点那一趟（不读样式）→ 每个 DOM 变化批次都跑，节点被换掉— *下一— *就补
 //   · 底板扫描那一趟（要读样式）→ 只在标记掉线后跑，且 400ms 内不重复
       var bgObserver = null, bgKickRaf = 0, bgKickFullAt = 0;
+      // 2026-11-27: 0.8.0 删 ASCII 点阵背景时，这个旗标和 bgCanvas / bgCtx 同在一行
+      // （`var bgCanvas = null, bgCtx = null, bgMounted = false;`），整行被删，
+      // 于是 bgMount() 第一句 `if (bgMounted) return` 直接 ReferenceError ——
+      // 场景层一个字节都没跑到就已经抛了：星球背景消失、apply() 后半段全部跳过。
+      // 它必须和 bgObserver 一样活在整个 apply 生命周期里（bgMount/bgTeardown 读写）。
+      var bgMounted = false;
 
       function bgKick() {
         if (bgKickRaf || typeof window === 'undefined' || !window.requestAnimationFrame) return;
         bgKickRaf = window.requestAnimationFrame(function () {
           bgKickRaf = 0;
-          if (!BG_STATE.anim) return;
+          if (!sceneWanted()) return;
           bgMarkAdd(bgAnchorTargets());
           // #3: the anchor pass never marks inside the seat, but a DOM swap can
           // bring in a node that already carries a stale `.mar-bg-clear`
@@ -2325,18 +2419,18 @@ bgObserver.observe(host, { childList: true, subtree: true, attributes: true, att
         } catch (e) {}
       }
 
+      //  背景层的总闸门。名字保留 bgApplyMode（调用点很多：挂载、换配色、
+      //  设置页开关都会走它），但它现在只管两件事：
+      //    1. 把当前配色对上色（body.mar-bg-light / --mar-bg-field / 强调色）；
+      //    2. 让页面底板给背景层让位（body.mar-bg-on + .mar-bg-clear 打标），
+      //       然后把场景显示/隐藏交给 sceneApply。
       function bgApplyMode() {
-        var on = BG_STATE.anim;
-        // The UI palette follows the chosen COLOUR PAIR, never the field switch.
-        // It used to be read off the drawn field (null once that was off), so
-        // switching the animation off in 主白 + 绿 tore the light layer off the
-        // page and left the dark palette behind — the report "关闭后会切换为主黑+绿".
-        // The pair is its own state (BG_STATE.scheme) and survives the switch,
-        // which is also why the pair buttons are a radio group that can never
-        // end up with nothing selected.
+        var scene = sceneWanted();
+        // The UI palette follows the chosen COLOUR PAIR. The pair is its own
+        // state (BG_STATE.scheme) and the pair buttons are a radio group that can
+        // never end up with nothing selected.
         var ui = BG_MODES[BG_STATE.scheme] || BG_MODES.dark;
-        if (on) body.classList.add('mar-bg-on'); else body.classList.remove('mar-bg-on');
-        // no veil any more (see BG_MODES): the field runs through the chrome
+        if (scene) body.classList.add('mar-bg-on'); else body.classList.remove('mar-bg-on');
         body.classList.remove('mar-bg-veil');
         if (ui.light) body.classList.add('mar-bg-light'); else body.classList.remove('mar-bg-light');
         body.style.setProperty('--mar-bg-field', ui.field);
@@ -2344,16 +2438,11 @@ bgObserver.observe(host, { childList: true, subtree: true, attributes: true, att
         //  variable carries the accent as TEXT depends on the plate, and this is
         //  the one place both sides of that decision are already in hand.
         accentApply();
-        //  …and the alias map with it. It does not change with the plate (the
-        //  values are var(--mar-*)), but this is the one call site that runs on
-        //  mount AND on every plate switch, and re-asserting costs nothing.
+        //  …and the alias map with it.
         themeAliasApply();
-        if (bgCanvas) bgCanvas.style.display = on ? 'block' : 'none';
-        bgMarkClear(!on);
-        if (!on) { bgStop(); return; }
-        bgResize();
-        bgDraw(bgElapsed);
-        bgStart();
+        // 场景层：显示/隐藏 + 挂载/卸载 + 底板色/线色都在 sceneApply 里。
+        sceneApply(scene);
+        bgMarkClear(!scene);
       }
 
       // ---- colour-pair switch: the settings mosaic over the palette --------
@@ -2603,49 +2692,21 @@ bgObserver.observe(host, { childList: true, subtree: true, attributes: true, att
         //   teardown at the top of this function covers the case it was there for.
       }
 
-      function bgOnResize() {
-        if (bgResizeTimer) clearTimeout(bgResizeTimer);
-        bgResizeTimer = setTimeout(function () {
-          bgResizeTimer = null;
-          bgResize();
-          bgDraw(bgElapsed);
-        }, 120);
-      }
-      function bgOnVisibility() {
-        if (doc.hidden) bgStop();
-        else bgStart();
-      }
-
       function bgMount() {
         if (bgMounted) return;
         bgMounted = true;
-        bgCanvas = doc.createElement('canvas');
-        bgCanvas.id = 'mar-ascii-bg';
-        bgCanvas.setAttribute('aria-hidden', 'true');
-        // Geometry is pinned INLINE as well as in the stylesheet rule above.
-        // If the sheet is withdrawn while the node survives -- DSH's `styles`
-        // service drops a plugin's sheet on unload, and a dispose that throws
-        // before bgTeardown() leaves the canvas behind -- the canvas would fall
-        // back to its width/height ATTRIBUTES (innerWidth*dpr) and become an
-        // in-flow block the size of the viewport, pushing #root completely
-        // off-screen. Measured: #root rect top 0 -> 952, scrollHeight 952 ->
-        // 1904, and elementFromPoint at the centre returned the canvas -- i.e.
-        // the animated field "swallowing the whole UI", restart-only to fix.
-        // Inline geometry cannot be withdrawn with a stylesheet, so the worst
-        // case degrades to "an unthemed page with a full-screen backdrop".
-        bgCanvas.style.cssText =
-          'position:fixed;left:0;top:0;width:100%;height:100%;display:block;' +
-          'z-index:0;pointer-events:none;';
-        if (body.firstChild) body.insertBefore(bgCanvas, body.firstChild);
-        else body.appendChild(bgCanvas);
-        bgCtx = null;
-        try {
-          bgCtx = bgCanvas.getContext ? bgCanvas.getContext('2d', { alpha: true }) : null;
-        } catch (e) { bgCtx = null; }   // jsdom / CSP: no 2d context, field stays empty
-        if (typeof window !== 'undefined' && window.addEventListener) {
-          window.addEventListener('resize', bgOnResize, { passive: true });
-          doc.addEventListener('visibilitychange', bgOnVisibility);
-        }
+        // ---- 背景层（TAU CETI IV 星球）---------------------------------------
+        // 页面后面只有这一个 canvas。几何全部写 inline：样式表要是被摘掉
+        // （DSH 的 styles 服务在卸载时会这么做），它也不能退化成占满视口的
+        // in-flow 块把 #root 顶出屏幕。默认 display:none，由 sceneApply 打开。
+        sceneCanvas = doc.createElement('canvas');
+        sceneCanvas.id = 'mar-scene-bg';
+        sceneCanvas.setAttribute('aria-hidden', 'true');
+        sceneCanvas.style.cssText =
+          'position:fixed;left:0;top:0;width:100%;height:100%;display:none;' +
+          'z-index:0;pointer-events:none;background:var(--mar-bg-field,#0B0D0B);';
+        if (body.firstChild) body.insertBefore(sceneCanvas, body.firstChild);
+        else body.appendChild(sceneCanvas);
         // DSH 是唯一数据源：先把当前的偏好 / 解析后的浅深接过来，再画第一帧。
         themeAdopt(false);
         bgApplyMode();
@@ -2665,12 +2726,6 @@ bgObserver.observe(host, { childList: true, subtree: true, attributes: true, att
       }
 
       function bgTeardown() {
-        bgStop();
-        if (bgResizeTimer) { clearTimeout(bgResizeTimer); bgResizeTimer = null; }
-        if (typeof window !== 'undefined' && window.removeEventListener) {
-          window.removeEventListener('resize', bgOnResize);
-          doc.removeEventListener('visibilitychange', bgOnVisibility);
-        }
         if (bgObserver) { try { bgObserver.disconnect(); } catch (e) {} bgObserver = null; }
         if (bgKickRaf && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(bgKickRaf);
         bgKickRaf = 0;
@@ -2695,9 +2750,14 @@ bgObserver.observe(host, { childList: true, subtree: true, attributes: true, att
             body.style.removeProperty(tName);
           }
         }
-        if (bgCanvas && bgCanvas.parentNode) bgCanvas.parentNode.removeChild(bgCanvas);
-        bgCanvas = null;
-        bgCtx = null;
+        // 背景层：引擎先停（rAF / 监听 / GL 资源），节点再摘 —— 顺序反了，
+        // 引擎下一帧还会往一个已经离屏的 canvas 上画。
+        sceneUnmount();
+        if (sceneBootWait) { try { sceneBootWait.disconnect(); } catch (e) {} sceneBootWait = null; }
+        if (sceneBootTimer) { clearTimeout(sceneBootTimer); sceneBootTimer = null; }
+        if (sceneCanvas && sceneCanvas.parentNode) sceneCanvas.parentNode.removeChild(sceneCanvas);
+        sceneCanvas = null;
+        sceneBad = '';
         bgMounted = false;
       }
 
@@ -3284,7 +3344,20 @@ function doneCountTails() {
         try { return doc.querySelectorAll('[data-turn-tail]').length; } catch (e) { return 0; }
       }
       function doneStatusOn() {
-        try { return !!doc.querySelector('[class*="_turnStatus"]'); } catch (e) { return false; }
+        try {
+          // 0.2.3 起宿主把这行画成 `[data-chat-running]`（RunningStatus.tsx 的稳定
+          // 语义属性），老的哈希类名 `_turnStatus` 在 0.2.3 已经不存在 —— 只认它会让
+          // 这条兜底判据恒为 false。
+          //
+          // **必须排除 `[data-holding]`**：回合停下之后，宿主还会把这行留在原位
+          // 挂着（`data-holding` + visibility:hidden），等轮次动作行来接班。那已经是
+          // "停了"，不是"还在跑"；不排除它，下面 doneDomPoll 的下降沿（statusLeft）
+          // 会一直等到动作行挂上才成立，DOM 兜底整段延后 —— 表现就是"回合结束了一会儿
+          // 才播完成动画"，或者干脆被别的判据抢先。
+          if (doc.querySelector('[data-chat-running]:not([data-holding])')) return true;
+          // 更老的构建（0.2.2 及以前）只有哈希类名，留作兜底。
+          return !!doc.querySelector('[class*="_turnStatus"]');
+        } catch (e) { return false; }
       }
       // 转录（可能出现回合尾巴的那个容器）：首次挂载 / 切换会话 / 重绘会换掉它。
       function doneDomScope() {
@@ -3804,14 +3877,16 @@ try {
         } catch (e) {}
       }
 
+
       // ---- dot animation（点阵动画，《动画1》，独立选项，2026-11-05）---------
-      // 用户要求：两个动画作为**两个独立选项**；动画1 放在输入框右侧（空间足够）；
-      // 不要一开始就铺格子，要逐格生长；文字提示保持原生，不换成运行动画那三行。
-      // 所以这里只做一层纯装饰：绝对定位在 `[data-composer-seat]` 右侧的空白里，
+      // 用户要求：两个动画作为**两个独立选项**；不要一开始就铺格子，要逐格生长；
+      // 文字提示保持原生，不换成运行动画那三行。所以这里只做一层纯装饰：
       // 只画 21×21 有机体——不碰 `[data-chat-running]` 的任何子节点，也不加
       // `mar-run-on`，原生提示该怎么显示还怎么显示。
+      //  2026-11-27（用户第二轮）：位置从「输入卡右侧空白」改成**窗口右下角**，
+      //  `position:fixed` 挂在 body 上，与输入卡 / 右侧边栏 / 任何面板无关，层级压在
+      //  界面之上、启动揭幕之下 —— 无论什么层面都看得见。尺寸/坐标见 dotSize()。
       var DOT_STORE_KEY = 'mar.dot.v1';
-      var DOT_MIN = 64, DOT_MAX = 120, DOT_PAD = 28, DOT_BOTTOM_PAD = 8;
       function dotLoad() {
         try {
           var raw = (typeof window !== 'undefined' && window.localStorage)
@@ -3831,11 +3906,14 @@ try {
       var DOT_STATE = dotLoad();
       function dotEnabled() { return DOT_STATE.on !== false; }
 
+      //  2026-11-27（用户）：点阵固定在**窗口右下角**，与输入卡、右侧边栏、任何面板
+      //  都无关 —— 宿主不再是 seat 里的绝对定位元素，而是 body 上的 `position:fixed`，
+      //  层级压在界面之上、启动揭幕之下。窗口多窄、右侧边栏开不开都看得见。
+      //  （历史：0.7.2 及以前贴在输入卡右侧空白里，1200px 左右的窗口一律判"空间不足"，
+      //   用户看到的就是"设置里开着的，界面上却没有"。）
+      var DOT_MAX = 120, DOT_MIN = 64, DOT_MARGIN = 20;
+      var DOT_Z = 2147482000;   // DSH 界面之上、启动揭幕(#dshMarBootHost=2147483000)之下
       var dotHost = null, dotEngine = null, dotScriptEl = null, dotBroken = false;
-      var dotObserver = null, dotAnchor = null;
-      // 原生输入卡的基准几何（只看可见卡时更新）：审批/提问接管期间沿用它，
-      // 点阵因此不会因为接管卡宽窄不同而挪位。见 dotBaseOf()。
-      var dotBase = null;
 
       function dotEngineApi() {
         var api = (typeof window !== 'undefined') ? window.__marDotEngine : null;
@@ -3858,8 +3936,6 @@ try {
         return !!dotEngineApi();
       }
       function dotUnmount() {
-        if (dotObserver) { try { dotObserver.disconnect(); } catch (e) {} dotObserver = null; }
-        dotAnchor = null;
         if (dotEngine) {
           try { if (typeof dotEngine.destroy === 'function') dotEngine.destroy(); } catch (e) {}
           dotEngine = null;
@@ -3876,156 +3952,52 @@ try {
           dotEngine.set({ fresh: runInk(), reduced: runReduced() });
         } catch (e) {}
       }
-      // 右侧空白：输入卡外沿到 composer seat 边缘的一半（左右对称）。
-      // 2026-11-05 bug 修复：输入框高度/宽度变化后（textarea 变高、窗口缩放）
-      // 必须**重新量**，否则绝对定位的宿主会停在旧坐标上“乱跑”。现在每次
-      // 400ms 轮询 + ResizeObserver 都会调用 dotPlace() 重算 top/right/size。
-      //
-      // 2026-11-06 bug：审批卡 / 提问卡接管 composer 时，slot 链的 overlay
-      // fallback 把原生 composer 留在 DOM 里，只给外层套一个 display:none
-      // （dsh-client-ui-renderer 的 renderChainResult）。隐藏卡的 rect 全是 0，
-      // 旧公式 top = 0 - seat.top - size - 8 被 clamp 到 0，点阵于是跳到 seat
-      // 顶部——用户看到它“自己跑到输入框上面”，审批消失（卡恢复可见）又落回
-      // 右下角。锚点必须取**当前可见**的那张卡：
-      //   · 平时：[data-composer-card]；
-      //   · 审批/提问接管：[data-approval-key] / [data-question-key] 里的
-      //     card（根节点的第一个元素子节点）。
-      // 一个都量不到（例如揭幕/animation 期间整体隐藏）就收起点阵，宁可没有
-      // 也不要把 top 钳在 0 上停在半空。
-      //
-      // 2026-11-06 第二轮（用户：“审批出现时点阵会略微改变位置，想固定住”）：审批卡
-      // 的 max-width 是 chat-content-width，输入卡是它 +32，所以接管时右侧留白
-      // 变宽 16px，按接管卡重算就会横移 8px。位置必须**钉在审批出现前的那一帧**：
-      // 基准卡（宽度 + 底边距）只在原生输入卡可见时更新，接管期间沿用缓存。
-      // 纵向改用 seat 底边做锚（两种卡都贴 seat 底部），高度变化不影响。
-      function dotAnchorOf(seat) {
-        var i, r, el;
-        try {
-          var cards = seat.querySelectorAll('[data-composer-card]');
-          for (i = 0; i < cards.length; i++) {
-            r = cards[i].getBoundingClientRect();
-            if (r.width > 1 && r.height > 1) return { el: cards[i], takeover: false };
-          }
-          var roots = seat.querySelectorAll('[data-approval-key],[data-question-key]');
-          for (i = 0; i < roots.length; i++) {
-            el = roots[i].firstElementChild;
-            if (!el) continue;
-            r = el.getBoundingClientRect();
-            if (r.width > 1 && r.height > 1) return { el: el, takeover: true };
-          }
-        } catch (e) {}
-        return null;
+      //  尺寸/位置都只看窗口：边长 = clamp(64, 120, min(vw,vh) × 10%)，离右下角各 20px。
+      //  与输入卡、右侧边栏都不再有关系（用户 2026-11-27："把点阵动画放在窗口的右下角，
+      //  无论是什么层面"）。
+      function dotSize() {
+        var vw = (typeof window !== 'undefined' && window.innerWidth) || 1200;
+        var vh = (typeof window !== 'undefined' && window.innerHeight) || 800;
+        var s = Math.round(Math.min(vw, vh) * 0.1);
+        if (s > DOT_MAX) s = DOT_MAX;
+        if (s < DOT_MIN) s = DOT_MIN;
+        return s;
       }
-      function dotBaseOf(seat, anchor) {
-        var sr = null, cr = null;
-        try {
-          sr = seat.getBoundingClientRect();
-          cr = anchor.el.getBoundingClientRect();
-        } catch (e) { return null; }
-        if (!sr || !cr || cr.width < 2 || cr.height < 2) return null;
-        // seat 宽度变了（窗口缩放）说明缓存已过期：接管期间量不到输入卡，只能
-        // 先用接管卡兜底，等接管结束再用输入卡重建基准。
-        if (anchor.takeover) {
-          if (dotBase && Math.abs(sr.width - dotBase.seatWidth) <= 2) return dotBase;
-          return { width: cr.width, bottomGap: sr.bottom - cr.bottom, seatWidth: sr.width };
-        }
-        dotBase = { width: cr.width, bottomGap: sr.bottom - cr.bottom, seatWidth: sr.width };
-        return dotBase;
-      }
-      function dotGeom(seat, anchor) {
-        var sr = null, base = null;
-        try { sr = seat.getBoundingClientRect(); } catch (e) { return null; }
-        // 零尺寸 = display:none 的 fallback 卡；量不出就返回 null（收起），
-        // 绝不让位置落进 clamp 变成 0。
-        base = dotBaseOf(seat, anchor);
-        if (!sr || !base || base.width < 2) return null;
-        var margin = (sr.width - base.width) / 2;
-        if (margin < DOT_MIN + DOT_PAD * 2) return null;
-        var size = Math.max(DOT_MIN, Math.min(DOT_MAX, Math.round(margin - DOT_PAD * 2)));
-        // 固定在卡的**右下角**：右边居中于右侧空白，底边距卡片底
-        // DOT_BOTTOM_PAD（卡片长高时它跟着底边走，不会往上漂）。以 seat 底边
-        // 为锚，审批卡与输入卡切换时纵向也不动。
-        var bottom = Math.round(base.bottomGap + DOT_BOTTOM_PAD);
-        if (bottom < 0) bottom = 0;
-        return {
-          size: size,
-          bottom: bottom,
-          right: Math.round(margin / 2 - size / 2)
-        };
-      }
-      function dotPlace(seat, anchor) {
+      function dotPlace() {
         if (!dotHost) return false;
-        var g = dotGeom(seat, anchor);
-        if (!g) return false;
-        // 定位必须是内联的：HMR 重载会先摘掉主题样式表，若这时旧 host 还活着，
-        // 只靠样式表里的 `position:absolute` 会让它变成 seat 里的普通块（掉到输入
-        // 框左下）。内联 position 让点阵在任何「半拆除」状态下都还在右下角。
-        if (dotHost.style.position !== 'absolute') {
-          dotHost.style.position = 'absolute';
-          dotHost.style.pointerEvents = 'none';
-          dotHost.style.zIndex = '1';
-        }
-        var px = g.size + 'px';
+        // 定位/层级/尺寸全部走内联：HMR 先摘样式表时，点阵也不能退化成普通块。
+        var px = dotSize() + 'px';
         if (dotHost.style.width !== px) {
           dotHost.style.width = px;
           dotHost.style.height = px;
         }
-        dotHost.style.right = g.right + 'px';
-        dotHost.style.bottom = g.bottom + 'px';
+        dotHost.style.right = DOT_MARGIN + 'px';
+        dotHost.style.bottom = DOT_MARGIN + 'px';
         return true;
-      }
-      // 锚点会在「正常输入卡 ⇄ 审批/提问卡」之间切换，观察对象要跟着换。
-      function dotObserve(seat, anchor) {
-        if (dotObserver && dotAnchor && dotAnchor.el === anchor.el) return;
-        if (dotObserver) { try { dotObserver.disconnect(); } catch (e) {} dotObserver = null; }
-        dotAnchor = anchor;
-        if (typeof ResizeObserver !== 'function') return;
-        try {
-          dotObserver = new ResizeObserver(function () {
-            if (dotHost && dotAnchor) { dotPlace(seat, dotAnchor); dotPush(); }
-          });
-          dotObserver.observe(seat);
-          dotObserver.observe(anchor.el);
-        } catch (e) { dotObserver = null; }
       }
       function dotSyncDom() {
         if (!dotEnabled()) { if (dotHost) dotUnmount(); return; }
         if (!DOT_PAYLOAD && !dotEngineApi()) return;
-        var row = null, seat = null;
-        try {
-          row = doc.querySelector('[data-chat-running]');
-          seat = doc.querySelector('[data-composer-seat]');
-        } catch (e) { row = null; }
-        if (!row || row.hasAttribute('data-holding') || !runRowVisible(row) || !seat) {
+        // 启动揭幕期间不显示：那几秒整页被覆盖层盖住，点阵露出来只会闪一下。
+        var booting = false;
+        try { booting = !!doc.getElementById('dshMarBootHost'); } catch (e) {}
+        if (booting) { if (dotHost) dotUnmount(); return; }
+        // 只在真实回合进行中出现（与原生运行提示同一时机）；宿主已经挂上就只重新摆位。
+        var row = null;
+        try { row = doc.querySelector('[data-chat-running]'); } catch (e) { row = null; }
+        if (!row || row.hasAttribute('data-holding') || !runRowVisible(row)) {
           if (dotHost) dotUnmount();
           return;
         }
-        // 可见的卡：平时是输入卡，被审批/提问接管时换成接管卡。
-        var anchor = dotAnchorOf(seat);
-        if (!anchor) {
-          if (dotHost) dotUnmount();
-          return;
-        }
-        if (dotHost && dotHost.parentNode === seat) {
-          if (!dotPlace(seat, anchor)) {
-            // 右侧空白被压到放不下 64px：收起，等空间回来再挂。
-            dotUnmount();
-            return;
-          }
-          dotObserve(seat, anchor);
+        if (dotHost && dotHost.parentNode) {
+          dotPlace();
           dotPush();
           return;
         }
-        var g = dotGeom(seat, anchor);
-        if (!g) {
-          if (dotHost) dotUnmount();
-          return;
-        }
-        dotUnmount();
         if (!dotEnsureEngine()) { dotBroken = true; syncDotState(); return; }
         var api = dotEngineApi();
         if (!api) { dotBroken = true; syncDotState(); return; }
-        // 同上：把上一个实例留下的同名 host 清掉。
+        // 把上一个实例（HMR 半拆除）留下的同名 host 清掉，别让两份叠在一起。
         try {
           var staleDots = doc.querySelectorAll('#dshMarDotHost');
           for (var sd = 0; sd < staleDots.length; sd++) {
@@ -4034,14 +4006,15 @@ try {
             }
           }
         } catch (e) {}
+        var size = dotSize();
         var host = doc.createElement('div');
         host.id = 'dshMarDotHost';
         host.className = 'mar-dot-host';
         host.setAttribute('aria-hidden', 'true');
-        host.style.cssText = 'position:absolute;pointer-events:none;z-index:1;' +
-          'width:' + g.size + 'px;height:' + g.size + 'px;' +
-          'right:' + g.right + 'px;bottom:' + g.bottom + 'px;';
-        try { seat.appendChild(host); } catch (e) { return; }
+        host.style.cssText = 'position:fixed;pointer-events:none;z-index:' + DOT_Z + ';' +
+          'right:' + DOT_MARGIN + 'px;bottom:' + DOT_MARGIN + 'px;' +
+          'width:' + size + 'px;height:' + size + 'px;';
+        try { (doc.body || doc.documentElement).appendChild(host); } catch (e) { return; }
         dotHost = host;
         try { dotEngine = api.create(host, { reduced: runReduced() }); } catch (e) { dotEngine = null; }
         if (!dotEngine) {
@@ -4051,9 +4024,6 @@ try {
           return;
         }
         dotBroken = false;
-        // 输入框 / 接管卡尺寸变化（textarea 长高、卡片换宽、审批卡展开、seat
-        // 因条带出现而变高）时立刻重新贴合右下角，不用等下一次 400ms 轮询。
-        dotObserve(seat, anchor);
         dotPush();
         syncDotState();
       }
@@ -4061,8 +4031,8 @@ try {
         if (!dotEnabled()) return '已关闭';
         if (!DOT_PAYLOAD) return '点阵引擎缺失（payload 被丢弃）';
         if (dotBroken) return '点阵动画不可用';
-        if (dotHost) return '运行中 · 显示在输入框右侧';
-        return '待命 · 任务时在输入框右侧显示';
+        if (dotHost) return '运行中 · 显示在窗口右下角';
+        return '待命 · 任务时在窗口右下角显示';
       }
       function syncDotState() {
         try {
@@ -4071,10 +4041,9 @@ try {
         } catch (e) {}
       }
       function dotOnResize() {
-        // 窗口缩放：重新量一次右下角。宿主已存在时 dotSyncDom 会走 dotPlace。
-        if (dotHost) dotSyncDom();
+        // 窗口缩放：边长跟着 min(vw,vh) 变，重新摆一次即可（不影响引擎）。
+        if (dotHost) { dotPlace(); dotPush(); }
       }
-
       function runApply() {
         // 上一次实例（HMR 半拆除）可能把 #dshMarRunHost / #dshMarDotHost 留在
         // 座位里。按 id 兜底清掉，别让两个实例各挂一份（点阵会闪、条带会叠）。
@@ -4109,11 +4078,11 @@ try {
         syncDotState();
       }
       var runResizeBound = false;
-
       // 诊断钩子（DevTools / 无头夹具）：开关、挂载点、最近一帧喂给引擎的状态。
       try {
         if (typeof window !== 'undefined') {
           window.__marRunDebug = function () {
+            var dh = dotHost ? dotHost.getBoundingClientRect() : null;
             return {
               enabled: runEnabled(),
               payload: !!RUN_PAYLOAD,
@@ -4124,20 +4093,20 @@ try {
               rowPresent: !!(runRow && runRow.isConnected),
               last: runLast,
               follow: accentFollow(),
-              metrics: (runEngine && typeof runEngine.metrics === 'function')
-                ? runEngine.metrics() : null,
+              // 点阵动画：开着开关却看不见时，先看这里（enabled/mounted/rect/note）
               dot: {
                 enabled: dotEnabled(),
                 payload: !!DOT_PAYLOAD,
                 mounted: !!dotHost,
-                engine: !!dotEngine,
                 broken: dotBroken,
-                size: dotHost ? dotHost.getBoundingClientRect().width : 0,
-                rect: dotHost ? (function () {
-                  var r = dotHost.getBoundingClientRect();
-                  return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
-                })() : null
-              }
+                size: dotSize(),
+                corner: { right: DOT_MARGIN, bottom: DOT_MARGIN },
+                rect: dh ? { x: Math.round(dh.x), y: Math.round(dh.y),
+                             w: Math.round(dh.width), h: Math.round(dh.height) } : null,
+                note: dotStateText()
+              },
+              metrics: (runEngine && typeof runEngine.metrics === 'function')
+                ? runEngine.metrics() : null
             };
           };
         }
@@ -4651,22 +4620,33 @@ try {
               accentSwatches() +
             '</div>' +
           '</div>' +
+          // 背景动画（TAU CETI IV 星球）：2026-11-26 用户"先做出星球的，看看效果，
+          // 替换掉目前的背景动画"。原来的「点阵背景」组（ASCII 点阵场）已删除，
+          // 页面后面只剩这一层。
+          // 2026-11-27（用户）：组名从「星球背景 · TAU CETI IV」改回「背景动画」——
+          // 用户在设置里看到的就是"背景动画"这一个概念；「自动自转」开关也删了
+          // （自动旋转保持默认常开，不再给用户关掉它的入口）。
+          // 这一版只有「星球」一个场景；Perimeter / Dire Marsh / Outpost 三张
+          // 城市地图是下一段（计划书 P2），做完往这个 seg 里加按钮即可。
           '<div class="mar-set-group">' +
             '<div class="mar-set-head">背景动画</div>' +
-            '<div class="mar-set-row mar-set-switch"><label for="mar-bg-anim">启用</label>' +
-            '<input type="checkbox" class="mar-switch" id="mar-bg-anim">' +
-            '<span class="mar-val" data-val="anim"></span></div>' +
-            '<div class="mar-set-row"><label for="mar-bg-cell">点阵密度</label>' +
-            '<input type="range" id="mar-bg-cell" min="8" max="40" step="2">' +
-            '<span class="mar-val" data-val="cell"></span></div>' +
-            // 透明度（2026-10-19 用户："再给背景动画添加一个透明度，用于调节可见范围"）：
-            // 乘在每条字形的 alpha 上，100% = 原来的强度，0% = 看不见。
-            '<div class="mar-set-row"><label for="mar-bg-alpha">透明度</label>' +
-            '<input type="range" id="mar-bg-alpha" min="0" max="1" step="0.01">' +
-            '<span class="mar-val" data-val="alpha"></span></div>' +
-            '<div class="mar-set-row"><label for="mar-bg-speed">呼吸速度</label>' +
-            '<input type="range" id="mar-bg-speed" min="0" max="1.5" step="0.05">' +
-            '<span class="mar-val" data-val="speed"></span></div>' +
+            '<div class="mar-set-row mar-set-switch"><label for="mar-scene">启用</label>' +
+            '<input type="checkbox" class="mar-switch" id="mar-scene">' +
+            '<span class="mar-val" data-val="scene"></span></div>' +
+            '<div class="mar-set-row mar-set-scene"><label>场景</label>' +
+            '<div class="mar-seg" role="radiogroup" aria-label="场景">' +
+            '<button type="button" role="radio" data-place="planet" aria-checked="true">星球</button>' +
+            '</div></div>' +
+            // 透明度：与点阵场那个同名旋钮互不影响，它乘在场景线框的 alpha 上。
+            '<div class="mar-set-row mar-set-scene"><label for="mar-scene-alpha">透明度</label>' +
+            '<input type="range" id="mar-scene-alpha" min="0" max="1" step="0.01">' +
+            '<span class="mar-val" data-val="sceneOpacity"></span></div>' +
+            // 拖拽：只留"用户可以转"这一个开关；自转常开（见 sceneApply）。
+            '<div class="mar-set-row mar-set-switch"><label for="mar-scene-drag">允许拖拽</label>' +
+            '<input type="checkbox" class="mar-switch" id="mar-scene-drag">' +
+            '<span class="mar-val" data-val="sceneDrag"></span></div>' +
+            // 状态小字：说清楚"为什么现在看不到星球"（浅色 / 无 WebGL / payload 缺）
+            '<div class="mar-set-row mar-set-scene mar-set-note"><span id="mar-scene-state"></span></div>' +
           '</div>' +
           // 启动动画：冷启动揭幕（鲸鱼 → HUI 框 → 蓝块 → 红扫 → 揭幕）。
           // 一个开关，没有别的行 —— 用户 2026-10-17 明确要求删掉那句
@@ -4683,16 +4663,16 @@ try {
           // 运行动画（2026-11-05 用户要求）：把输入框上方那条原生“深度求索中”
           // 提示换成运行动画.html 的条带。默认 ON；两个“为什么”的状态小字写在
           // 开关下面 —— 引擎缺失 / 减少动态效果时用户能看见原因。
+          // 2026-11-27（用户）：这一组里第一个人形条带、第二个点阵动画 ——
+          // 点阵动画（右侧 21×21 有机体）0.8.0 被整段删掉，按用户要求加回来：
+          // 两个仍是**独立开关**，各自的状态小字在各自开关下面。
           '<div class="mar-set-group">' +
             '<div class="mar-set-head">运行动画</div>' +
-            // 2026-11-16（用户）：这一行的标签由「启用」改成「人形运行动画」，
-            // 与同组下面的「点阵动画」并列时读得懂哪个开关管哪段画面。
-            '<div class="mar-set-row mar-set-switch"><label for="mar-run">人形运行动画</label>' +
+            '<div class="mar-set-row mar-set-switch"><label for="mar-run">人形动画</label>' +
             '<input type="checkbox" class="mar-switch" id="mar-run">' +
             '<span class="mar-val" data-val="run"></span></div>' +
             '<div class="mar-set-row mar-set-note"><span id="mar-run-state"></span></div>' +
-            // 点阵动画（动画1，2026-11-05 用户要求把开关移进「运行动画」组）：
-            // 仍是独立开关，但和上方的人形条带同属一个分组。
+            // 点阵动画（动画1）：贴在输入卡右侧空白里的 21×21 有机体，逐格生长。
             '<div class="mar-set-row mar-set-switch"><label for="mar-dot">点阵动画</label>' +
             '<input type="checkbox" class="mar-switch" id="mar-dot">' +
             '<span class="mar-val" data-val="dot"></span></div>' +
@@ -4731,20 +4711,64 @@ try {
           '</div>';
 
         var seg = pane.querySelector('.mar-seg');
-        var animIn = pane.querySelector('#mar-bg-anim');
         var billIn = pane.querySelector('#mar-billing');
         var doneSweepIn = pane.querySelector('#mar-done-sweep');
         var doneFinishIn = pane.querySelector('#mar-done-finish');
         var doneTextIn = pane.querySelector('#mar-done-text');
         var donePlay = pane.querySelector('#mar-done-play');
         var doneNoteEl = pane.querySelector('#mar-done-note');
-        var cellIn = pane.querySelector('#mar-bg-cell');
-        var speedIn = pane.querySelector('#mar-bg-speed');
-        var alphaIn = pane.querySelector('#mar-bg-alpha');
         var bootIn = pane.querySelector('#mar-boot');
         var runIn = pane.querySelector('#mar-run');
         var dotIn = pane.querySelector('#mar-dot');
         var followIn = pane.querySelector('#mar-follow');
+        var sceneIn = pane.querySelector('#mar-scene');
+        var sceneAlphaIn = pane.querySelector('#mar-scene-alpha');
+        var sceneDragIn = pane.querySelector('#mar-scene-drag');
+        var sceneSeg = pane.querySelector('.mar-seg[aria-label="场景"]');
+
+        // 星球背景（TAU CETI IV）：四个控件都写自己的存储键，改动后只走
+        // bgApplyMode()/sceneApply() —— 背景层换不换、引擎挂不挂都在那两处。
+        if (sceneIn) {
+          sceneIn.addEventListener('change', function () {
+            SCENE_STATE.on = !!sceneIn.checked;
+            sceneSave();
+            bgApplyMode();
+            syncPane(pane);
+          });
+        }
+        if (sceneAlphaIn) {
+          sceneAlphaIn.addEventListener('input', function () {
+            SCENE_STATE.opacity = bgNum(parseFloat(sceneAlphaIn.value), 0, 1);
+            if (!isFinite(SCENE_STATE.opacity)) SCENE_STATE.opacity = 0.85;
+            sceneSave();
+            sceneApply();
+            syncPane(pane);
+          });
+        }
+        if (sceneDragIn) {
+          sceneDragIn.addEventListener('change', function () {
+            SCENE_STATE.drag = !!sceneDragIn.checked;
+            sceneSave();
+            sceneApply();
+            syncPane(pane);
+          });
+        }
+        if (sceneSeg) {
+          sceneSeg.addEventListener('click', function (ev) {
+            var b = ev.target;
+            while (b && b !== sceneSeg) {
+              if (b.getAttribute && b.getAttribute('data-place')) break;
+              b = b.parentNode;
+            }
+            if (!b || b === sceneSeg) return;
+            var next = b.getAttribute('data-place');
+            if (next !== 'planet' || next === SCENE_STATE.place) { syncPane(pane); return; }
+            SCENE_STATE.place = next;
+            sceneSave();
+            sceneApply();
+            syncPane(pane);
+          });
+        }
 
         // 启动动画（2026-10-17）：独立开关，**默认 ON**。它没有即时反馈 ——
         // 揭幕只在冷启动那一瞬播，设置页能打开时它早结束了 —— 所以这里只写盘，
@@ -4772,9 +4796,9 @@ try {
           });
         }
 
-        // 点阵动画（动画1，2026-11-05）：与运行动画完全独立的第二个选项。
-        // 关掉 = 摘掉输入框右侧的 canvas、不再观察；打开 = 如果正好在跑，
-        // 立刻让它在右侧生长出来。
+        // 点阵动画（动画1，2026-11-05 / 2026-11-27 加回）：与运行动画完全独立的
+        // 第二个选项。关掉 = 摘掉输入框右侧的 canvas、不再观察；打开 = 如果正好
+        // 在跑，立刻让它在右侧生长出来。
         if (dotIn) {
           dotIn.addEventListener('change', function () {
             DOT_STATE.on = !!dotIn.checked;
@@ -4856,17 +4880,6 @@ var head =
           });
         }
 
-        // 背景动画 is its own switch and NEVER touches the pair: stopping the
-        // field leaves the UI exactly as it is (this is the "关闭后会切换为
-        // 主黑+绿" report). Density / breathing only describe the field, so they
-        // dim while it is off but keep their values.
-        animIn.addEventListener('change', function () {
-          BG_STATE.anim = !!animIn.checked;
-          bgSave();
-          bgApplyMode();
-          syncPane(pane);
-        });
-
         // The preference is a radio group: exactly one of 浅色 / 深色 / 跟随系统
         // is always chosen. A click writes the SAME preference 通用设置 edits
         // (the service persists it and resolves `system`), so the two rows can
@@ -4907,28 +4920,6 @@ var head =
             syncPane(pane);
           });
         }
-        cellIn.addEventListener('input', function () {
-          BG_STATE.cell = bgNum(parseInt(cellIn.value, 10) || 16, 8, 48);
-          bgSave();
-          bgResize();
-          bgDraw(bgElapsed);
-          syncPane(pane);
-        });
-        // 透明度：只重画当前这一帧（不用 resize），所以拖动是即时的。
-        if (alphaIn) {
-          alphaIn.addEventListener('input', function () {
-            BG_STATE.alpha = bgNum(parseFloat(alphaIn.value), 0, 1);
-            if (!isFinite(BG_STATE.alpha)) BG_STATE.alpha = 1;
-            bgSave();
-            bgDraw(bgElapsed);
-            syncPane(pane);
-          });
-        }
-        speedIn.addEventListener('input', function () {
-          BG_STATE.speed = bgNum(parseFloat(speedIn.value) || 0, 0, 1.5);
-          bgSave();
-          syncPane(pane);
-        });
         if (onClose) pane.__marClose = onClose;
         // Paint the CURRENT state into the parked pane as well: it is built and
         // hidden at mount time, so without this the first frame after the tab is
@@ -4940,8 +4931,6 @@ var head =
 
       function syncPane(pane) {
         if (!pane) return;
-        var animIn = pane.querySelector('#mar-bg-anim');
-        if (animIn) animIn.checked = !!BG_STATE.anim;
         //   选中态跟的是 PREFERENCE（light | dark | system），不是解析后的
         //   scheme：跟随系统时唯一选中的永远是「跟随系统」，哪怕它此刻解析成
         //   深色 —— 与通用设置那三格显示的规则完全一致。
@@ -4960,13 +4949,7 @@ var head =
             sws[j].style.setProperty('--sw', hex);
           }
         }
-        var cellIn = pane.querySelector('#mar-bg-cell');
-        var speedIn = pane.querySelector('#mar-bg-speed');
-        var alphaIn = pane.querySelector('#mar-bg-alpha');
-        if (cellIn) { cellIn.value = String(BG_STATE.cell); cellIn.disabled = !BG_STATE.anim; }
-        if (alphaIn) { alphaIn.value = String(BG_STATE.alpha); alphaIn.disabled = !BG_STATE.anim; }
-        if (speedIn) { speedIn.value = String(BG_STATE.speed); speedIn.disabled = !BG_STATE.anim; }
-        // 每轮 Token 结算：自己一个开关（与背景动画互不影响）
+        // 每轮 Token 结算：自己一个开关（与背景层互不影响）
         var billIn = pane.querySelector('#mar-billing');
         if (billIn) billIn.checked = billingEnabled();
         // 任务完成动画：两段开关 + 文案（与背景动画互不影响）
@@ -4981,7 +4964,7 @@ var head =
         // 名单之外），所以这里不写任何说明文字——用户 2026-10-17 要求删掉那句。
         var bootIn = pane.querySelector('#mar-boot');
         if (bootIn) bootIn.checked = bootEnabled();
-        // 运行动画：开关 + 状态小字（引擎缺失 / 减少动态效果 / 正在替换）
+        // 运行动画：人形开关 + 状态小字（引擎缺失 / 减少动态效果 / 正在替换）
         var runIn = pane.querySelector('#mar-run');
         if (runIn) runIn.checked = runEnabled();
         syncRunState();
@@ -4991,20 +4974,34 @@ var head =
         syncDotState();
         var followIn = pane.querySelector('#mar-follow');
         if (followIn) followIn.checked = accentFollow();
-        if (BG_STATE.anim) pane.classList.remove('mar-anim-off');
-        else pane.classList.add('mar-anim-off');
+        // 背景动画（TAU CETI IV）：开关 / 场景 / 透明度 / 拖拽 + 状态小字
+        var sceneIn = pane.querySelector('#mar-scene');
+        if (sceneIn) sceneIn.checked = !!SCENE_STATE.on;
+        var sceneBtns = pane.querySelectorAll('.mar-seg[aria-label="场景"] button');
+        for (var sb = 0; sb < sceneBtns.length; sb++) {
+          sceneBtns[sb].setAttribute('aria-checked',
+            sceneBtns[sb].getAttribute('data-place') === SCENE_STATE.place ? 'true' : 'false');
+        }
+        var sceneAlphaIn = pane.querySelector('#mar-scene-alpha');
+        if (sceneAlphaIn) {
+          if (sceneAlphaIn !== doc.activeElement) sceneAlphaIn.value = String(SCENE_STATE.opacity);
+          sceneAlphaIn.disabled = !SCENE_STATE.on;
+        }
+        var sceneDragIn = pane.querySelector('#mar-scene-drag');
+        if (sceneDragIn) { sceneDragIn.checked = !!SCENE_STATE.drag; sceneDragIn.disabled = !SCENE_STATE.on; }
+        var sceneStateEl = pane.querySelector('#mar-scene-state');
+        if (sceneStateEl) sceneStateEl.textContent = sceneNoteText();
         var vals = {
-          anim: BG_STATE.anim ? '开' : '关',
-          cell: BG_STATE.cell + ' px',
-          alpha: Math.round(bgNum(BG_STATE.alpha, 0, 1) * 100) + '%',
-          speed: BG_STATE.speed.toFixed(2),
           billing: billingEnabled() ? '开' : '关',
           doneSweep: doneSweep() ? '开' : '关',
           doneFinish: doneFinishOn() ? '开' : '关',
           boot: bootEnabled() ? '开' : '关',
           run: runEnabled() ? '开' : '关',
           dot: dotEnabled() ? '开' : '关',
-          follow: accentFollow() ? '开' : '关'
+          follow: accentFollow() ? '开' : '关',
+          scene: SCENE_STATE.on ? '开' : '关',
+          sceneOpacity: Math.round(bgNum(SCENE_STATE.opacity, 0, 1) * 100) + '%',
+          sceneDrag: SCENE_STATE.drag ? '开' : '关'
         };
         var outs = pane.querySelectorAll('.mar-val');
         for (var k = 0; k < outs.length; k++) {
@@ -5303,21 +5300,11 @@ var head =
         if (probe && probe.parentNode) probe.parentNode.removeChild(probe);
       }
 
-
-      function bootIsPageLoad() {
-        try {
-          var entries = performance.getEntriesByType('navigation');
-          if (entries && entries.length > 0 && entries[0].type) return entries[0].type === 'navigate';
-        } catch (e) {}
-        // No Navigation Timing (older engines, tests): assume a real load.
-        return true;
-      }
-      function bootAlreadyPlayed() {
-        try { return sessionStorage.getItem(BOOT_ONCE_KEY) === '1'; } catch (e) { return false; }
-      }
-      function markBootPlayed() {
-        try { sessionStorage.setItem(BOOT_ONCE_KEY, '1'); } catch (e) {}
-      }
+      // 2026-11-27 — the three helpers that used to sit here (bootIsPageLoad /
+      // bootAlreadyPlayed / markBootPlayed) were a verbatim second copy of the
+      // block above `caption` (see BOOT_ONCE_KEY), left behind by the v0.7.0
+      // template merge. Two spellings of "has the reveal played yet" on one
+      // scope is how a real divergence would start; one copy stays, above.
 
       // ---- 启动动画 开关（2026-10-17，用户要求） ---------------------------
       // 冷启动揭幕以前**没有 UI 开关**：想关只能停用整个插件（docs/INSTALL.md
@@ -5370,7 +5357,7 @@ var head =
         // `#dshMarBootHost{position:fixed;inset:0;…}` rule in the boot payload.
         host.className = 'mar-boot-host';
         // Geometry and clipping are pinned inline as well as in boot.css, for the
-        // same reason as #mar-ascii-bg: the HUI frames zoom to 19558x8778px
+        // same reason as #mar-scene-bg: the HUI frames zoom to 19558x8778px
         // (measured), and they are only kept from blowing the document up to that
         // size by the host's `overflow:hidden`. If the sheet were ever withdrawn
         // while the host was still mounted, the overlay would stop being a
@@ -5878,7 +5865,7 @@ billingTick();
         //   it wrote last time — which are these same names. Re-asserting here is
         //   what keeps the palette from being undone a beat after it lands.
         themeAliasApply();
-        if (BG_STATE.anim) { bgMarkClear(false); bgWatch(); }
+        if (sceneWanted()) { bgMarkClear(false); bgWatch(); }
       }
       if (typeof setInterval !== 'undefined') mosaicSweeper = setInterval(sweepReveals, 1200);
 
@@ -5901,15 +5888,25 @@ var BILLING_ENDPOINT = '/dsh-mls-billing/state';
       // 会话匹配已经是**精确的**（见 billingDisplayedSessionId），所以这里只剩"别翻太旧"。
       var BILLING_FRESH_MS = 7 * 24 * 60 * 60 * 1000;
       var BILLING_STORE_KEY = 'mar.billing.v1';
+      //  2026-11-27（用户）："既然官方给了，我们直接用官方的…内容可以改为官方的缓存命中、
+      //  未缓存输入、缓存读取、缓存写入、输出(token)，然后加上本次费用（含峰谷计价）"。
+      //  数字本来就是官方 `assistant/message.data.usage`（@deepseek-ai/dsh-llm 的
+      //  TokenUsage，四桶互不重叠），这一步只是把**展示口径**对齐 DSH 自带的「本轮用量」
+      //  面板，免得同一轮两边术语不一样。
+      //    缓存命中  = 命中率（%），与官方面板同一口径：命中 /(命中 + 未命中)
+      //    未缓存输入 = inputTokens 里没命中缓存的那部分
+      //    缓存读取  = cacheReadTokens
+      //    缓存写入  = cacheWriteTokens
+      //    输出      = outputTokens（已含 reasoning）
+      //    本次费用  = 四桶 × 当时的峰谷单价（计费状态不再单列一行：模型没定价时
+      //               直接在金额后面缀「未定价」并标红）
       var BILLING_ROWS = [
-        ['消费 Token', 'total', 1],
-        ['输入 Token', 'input', 0],
-        ['输出 Token', 'output', 0],
-        ['缓存命中 Token', 'hit', 0],
-        ['缓存命中率', 'hitRate', 1],
-        ['缓存未命中 Token', 'miss', 0],
-        ['本次费用', 'cost', 0],
-        ['计费状态', 'status', 1]
+        ['缓存命中', 'hitRate', 1],
+        ['未缓存输入', 'miss', 0],
+        ['缓存读取', 'hit', 0],
+        ['缓存写入', 'write', 0],
+        ['输出', 'out', 0],
+        ['本次费用', 'cost', 0]
       ];
       var billingState = null;
       var billingOpen = {};        // turn -> true；块随转录销毁，所以这份状态天然不跨会
@@ -6032,12 +6029,8 @@ function billingLoad() {
         return pad(Math.floor(total / 60)) + ':' + pad(total % 60);
       }
 
-      /** 这一轮该显示的状态：结束/结算中/未定价。 */
-      function mlsbStatus(turn, streaming) {
-        if (turn.unpriced && turn.unpriced.length > 0) return 'UNPRICED';
-        if (streaming) return 'STREAMING';
-        return 'SETTLED';
-      }
+      //  「计费状态」那一行 2026-11-27 去掉了：模型没定价时直接把「未定价」缀在金额
+      //  后面（见 updateTurnBlock），比单列一行 SETTLED 有意义。
 
       function buildTurnBlock(turn) {
         var root = mlsbEl('div', 'mlsb-turn');
@@ -6101,17 +6094,17 @@ var bodyInner = mlsbEl('div', 'mlsb-turn-body-inner');
 
       function updateTurnBlock(block, turn) {
         var values = block.mlsbValues;
-        var totals = turn.totals || { total: 0, input: 0, out: 0, hit: 0, miss: 0, hitRate: 0 };
-        var status = mlsbStatus(turn, false);
-        values.total.textContent = mlsbCount(totals.total);
-        values.input.textContent = mlsbCount(totals.input);
-        values.output.textContent = mlsbCount(totals.out);
-        values.hit.textContent = mlsbCount(totals.hit);
+        var totals = turn.totals || { total: 0, miss: 0, hit: 0, write: 0, out: 0, hitRate: 0 };
         values.hitRate.textContent = (Number(totals.hitRate) * 100).toFixed(1) + '%';
         values.miss.textContent = mlsbCount(totals.miss);
-        values.cost.textContent = mlsbMoney(turn.cost, turn.currency || 'CNY');
-        values.status.textContent = status;
-        values.status.className = status === 'UNPRICED' ? 'mlsb-signal' : (BILLING_ROWS[7][2] ? 'mlsb-acid' : null);
+        values.hit.textContent = mlsbCount(totals.hit);
+        values.write.textContent = mlsbCount(totals.write);
+        values.out.textContent = mlsbCount(totals.out);
+        var unpriced = !!(turn.unpriced && turn.unpriced.length);
+        values.cost.textContent = mlsbMoney(turn.cost, turn.currency || 'CNY') +
+          (unpriced ? ' · 未定价' : '');
+        values.cost.className = unpriced ? 'mlsb-signal'
+          : (BILLING_ROWS[BILLING_ROWS.length - 1][2] ? 'mlsb-acid' : null);
         block.querySelector('[data-mlsb="turn-clock"]').textContent = mlsbClock(turn.durationMs);
         var open = billingOpen[turn.turn] === true;
         if (open) block.classList.add('mlsb-open'); else block.classList.remove('mlsb-open');
@@ -6429,10 +6422,12 @@ attachDone();
           function () { captionDispose(); captionAskVisible(); },
           // Sweep by id/selector instead of trusting the references above: the
           // boot host (engine threw before wiring itself up), the background
-          // canvas (bgTeardown lost its handle, or the node was re-created), and
-          // any of the body classes bgTeardown would have removed.
+          // canvas (bgTeardown lost its handle, or the node was re-created), any
+          // leftover of the removed ASCII dot field, and any of the body classes
+          // bgTeardown would have removed.
           function () {
-            var strays = [doc.getElementById('dshMarBootHost'), doc.getElementById('mar-ascii-bg'),
+            var strays = [doc.getElementById('dshMarBootHost'),
+                          doc.getElementById('mar-scene-bg'),
                           doc.getElementById('dshMarDoneHost'), doc.getElementById('dshMarRunHost'),
                           doc.getElementById('dshMarDotHost')];
             for (var s = 0; s < strays.length; s++) {

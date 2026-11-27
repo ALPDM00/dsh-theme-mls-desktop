@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>TAU CETI IV · 星球背景预览</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #bg { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #hud {
+    position: fixed; left: 16px; bottom: 14px; color: #5200FF;
+    font: 12px/1.6 ui-monospace, Consolas, monospace; opacity: .75;
+    pointer-events: none; letter-spacing: .08em;
+  }
+  #hud b { color: #C0FE04; font-weight: 500; }
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<div id="hud">TAU CETI IV · <b id="st">loading</b></div>
+<script src="/src/scene/engine-scene.js"></script>
+<script>
+  var st = document.getElementById('st');
+  var canvas = document.getElementById('bg');
+  var params = new URLSearchParams(location.search);
+  var opts = {
+    opacity: params.has('alpha') ? Number(params.get('alpha')) : 0.85,
+    spin: params.get('spin') !== '0',
+    drag: true
+  };
+  if (params.has('yaw')) opts.yaw = Number(params.get('yaw'));
+  if (params.has('pitch')) opts.pitch = Number(params.get('pitch'));
+  if (params.has('dist')) opts.dist = Number(params.get('dist'));
+  // 浅色 / 深色底盘对拍：?light=1&bg=%23FFFFFF
+  if (params.has('light')) { opts.light = params.get('light') === '1'; }
+  if (params.has('bg')) { opts.bg = params.get('bg'); }
+  if (opts.bg) document.body.style.background = opts.bg;
+  if (!window.__marScene || !window.__marScene.available()) {
+    st.textContent = 'WebGL unavailable';
+  } else {
+    var ok = window.__marScene.mount(canvas, opts);
+    st.textContent = ok ? 'mounted' : 'mount failed';
+    setInterval(function () {
+      var s = window.__marScene.stats();
+      st.textContent = s.gl + ' · ' + s.segments + ' segs · ' + s.fps + ' fps';
+    }, 500);
+  }
+  window.__scene = window.__marScene;
+</script>
+</body>
+</html>

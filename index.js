@@ -46,6 +46,9 @@ const name = 'dsh-theme-mls-desktop'
 /** Void colour of the fixed Marathon palette (`--mar-bg-void`). */
 const VOID = '#0B0D0B'
 
+/** 场景背景的资产路由前缀（客户端 src/scene/engine-scene.js 硬编码同一个值）。 */
+const SCENE_ROUTE = '/dsh-mls-scene'
+
 /**
  * Style row injected into the served index.html <head>.
  *
@@ -212,6 +215,76 @@ function scheduleBilling(ctx, log) {
 }
 
 /**
+ * 场景背景的几何资产路由（TAU CETI IV 星球线框）。
+ *
+ * `assets/scene/*.msc.gz` 是 `tools/build-scene.cjs` 的产物：官方 `.chunks` 里的
+ * 线框几何经过"丢碎段 → 重编号 → int16 量化 → gzip"之后的二进制（格式见
+ * docs/PLAN-SCENE-BACKGROUND.md §6）。它**不能**塞进 `client.js`：几 MB 二进制
+ * 变成 base64 会把 668 KB 的客户端包撑到十几 MB。
+ *
+ * 所以走宿主路由：磁盘上是 `.msc.gz`，进程内解压一次并缓存，浏览器 `fetch` 拿到的
+ * 就是可以直接 `new Int16Array(buf)` 的原始字节 —— 客户端连 `DecompressionStream`
+ * 都不需要。前缀路由由宿主自己加鉴权（与 billing 的 `/dsh-mls-billing/*` 同一套），
+ * 页面里的 same-origin fetch 带得上凭据。
+ *
+ * 文件名走白名单正则，路径拼接之外的任何输入都不信任（`..` 进不来）。
+ * 路由随插件卸载一起撤销（`dispose`）。
+ * @param ctx - Host context; `webServer` 服务可能比插件晚就绪，所以用 inject 等它。
+ * @param log - 与 apply() 共用的日志函数。
+ */
+function registerSceneRoutes(ctx, log) {
+  const path = require('node:path')
+  const fs = require('node:fs')
+  const zlib = require('node:zlib')
+  const dir = path.join(__dirname, 'assets', 'scene')
+  const cache = new Map()
+  if (!fs.existsSync(dir)) {
+    log('scene: assets/scene missing — run `node tools/build-scene.cjs`')
+    return
+  }
+  ctx.inject(['webServer'], (wsCtx) => {
+    const dispose = wsCtx.webServer.register({
+      kind: 'prefix',
+      path: SCENE_ROUTE,
+      handler: (req, res) => {
+        const file = String(req.url || '').split('?')[0]
+          .replace(/^\/dsh-mls-scene\/?/, '')
+        if (!/^[a-z]+\.msc$/.test(file)) {
+          res.statusCode = 404
+          res.end()
+          return
+        }
+        const key = file.slice(0, -4)
+        let buf = cache.get(key)
+        if (!buf) {
+          try {
+            buf = zlib.gunzipSync(fs.readFileSync(path.join(dir, key + '.msc.gz')))
+          } catch (error) {
+            res.statusCode = 404
+            res.end()
+            return
+          }
+          cache.set(key, buf)
+        }
+        res.setHeader('Content-Type', 'application/octet-stream')
+        res.setHeader('Content-Length', buf.length)
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+        res.end(buf)
+      },
+    })
+    if (typeof dispose === 'function') {
+      wsCtx.on('dispose', () => {
+        try {
+          dispose()
+        } catch {
+          /* 卸载路径不抛 */
+        }
+      })
+    }
+  })
+}
+
+/**
  * Host activation. The webserver emits `webserver/index-inject` on every
  * index render and each listener pushes its current rows, so the table is
  * read fresh per response and unloading the plugin withdraws the row.
@@ -230,6 +303,12 @@ async function apply(ctx) {
   ctx.on('webserver/index-inject', (table) => {
     table.push({ kind: 'style', text: NATIVE_BOOT_CSS })
   })
+  // 场景背景的几何数据：独立能力，挂不上只是"没有星球"，绝不能让主题加载失败。
+  try {
+    registerSceneRoutes(ctx, log)
+  } catch (error) {
+    log('scene: route unavailable (' + String((error && error.message) || error) + ')')
+  }
   try {
     scheduleBilling(ctx, log)
   } catch (error) {

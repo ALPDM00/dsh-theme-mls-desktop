@@ -1,15 +1,17 @@
-# 运行动画（两个独立选项）
+# 运行动画（条带）
 
 > 2026-11-05 新增。对象是 DSH 客户端在回合进行中画在输入框上方的那条原生提示
-> （鲸鱼图标 +「深度求索中，用时 N 秒 …」）。主题在**同一个「运行动画」分组**里提供
-> 三个独立开关（默认：前两个开、跟随主题色关）：
+> （鲸鱼图标 +「深度求索中，用时 N 秒 …」）。主题在「运行动画」分组里提供三个开关
+> （默认：人形动画开、点阵动画开、跟随主题色关）：
 >
-> 1. **运行动画** —— 132px 条带，替换原生提示；居中的人形 + 短直线 + 光点，
+> 1. **人形动画** —— 132px 条带，替换原生提示；居中的人形 + 短直线 + 光点，
 >    下面三行文字跟随真实状态。
-> 2. **点阵动画** —— 《动画1》的 21×21 点阵有机体，放在输入框右侧的空白里，
->    从零逐格生长；**不替换、也不改原生文字提示**。
-> 3. **跟随主题色** —— 关：固定 `#C0FE04` / `#8F96B2`；开：条带墨色与点阵新生格
->    改读 `--mar-accent-text`（成熟格仍 `#8F96B2`）。
+> 2. **点阵动画** —— 输入卡右侧空白里的 21×21 点阵有机体（《动画1》），逐格生长，
+>    不碰原生提示。2026-11-26 曾随 ASCII 点阵背景一起删除（用户当时的原话是
+>    "把原来的背景动画完全删除，包括设置里的选项，点阵动画"），**2026-11-27 按用户
+>    要求加回**（"设置里的运行动画中，第一个是人形动画，第二个是点阵动画，需要加回来"），
+>    `DOT_PAYLOAD` / `#dshMarDotHost` / `mar.dot.v1` / `body.mar-dot-on` 全部恢复。
+> 3. **跟随主题色** —— 关：固定 `#C0FE04`；开：两个动画的墨色改读 `--mar-accent-text`。
 >
 > 返回 [README](../README.md)。
 
@@ -36,28 +38,19 @@
 
 ## 2. 点阵动画（选项 2，《动画1》）
 
-- 位置：**输入卡右侧的空白**。`[data-composer-seat]` 是 `position:sticky` 的定位容器，
-  宿主 `#dshMarDotHost` 绝对定位在 seat 内；它按**原生输入卡**的实测宽度算
-  右侧可用空白，`right = 空白/2 - 尺寸/2`，**底边贴卡片右下角（距卡底 8px）**，
-  纵向以 seat 的底边为锚（`bottom`，不是 `top`）。
-- **接管态不会跑位**：审批或提问卡接管时，slot 链只把原生输入卡包进
-  `display:none`（卡片还在 DOM 里，rect 全 0）。2026-11-06 前的版本会因此把
-  `top` 算成负数并钳到 0，点阵跳到 seat 顶部（表现为“跑到输入框上面”）；现在
-  只认可见卡片，一张可见卡都量不到就暂时收起，绝不把点阵停在半空。
-- **接管期间位置完全冻结**：基准几何（输入卡宽度 + 底边距）只在原生输入卡可见
-  时更新，审批 / 提问卡（`[data-approval-key]` / `[data-question-key]`）接管时沿用
-  缓存——审批卡的 `max-width` 比输入卡窄 32px，若按它重算，点阵会横移 8px。窗口
-  尺寸真的变了（seat 宽度变化 >2px）才回落到接管卡重新量。实测审批出现/消失
-  前后点阵 rect 完全一致。
-- **插件热更新后不跑位**：点阵 host 的 `position:absolute` / `pointer-events` /
-  `z-index` 都写在行内，不依赖主题样式表——HMR 先摘掉 `<style>`、旧实例还没退场的
-  瞬间，点阵也不会变成 seat 里的普通块（旧版本会掉到输入框左下）。每次安装会递增
-  `window.__marThemeRunToken`，旧实例的 400ms 定时器看到令牌变化自行退场。
-- 尺寸：`clamp(64, 空白 - 56, 120)`；空白不足 120px 时自动缩小，再不够就不显示
-  （实测 1600 视口每侧约 213px → 120px）。
-- **输入框改尺寸时会重新量**：ResizeObserver 盯 seat / card + 400ms 轮询都会重算
-  top / right / size，所以 textarea 长高、窗口缩放、条带出现/消失后点阵仍然贴着
-  右下角，不会停在旧坐标上。
+- 位置：**窗口右下角**（2026-11-27 用户："把点阵动画放在窗口的右下角，无论是什么层面"）。
+  宿主 `#dshMarDotHost` 是挂在 `<body>` 上的 `position:fixed`，`right/bottom = 20px`，
+  边长 `clamp(64, 120, min(vw,vh) × 10%)`（1186×808 窗口 → 81px），`z-index:2147482000`
+  —— 压在 DSH 界面之上、启动揭幕（`#dshMarBootHost` = 2147483000）之下。
+- **与输入卡 / 右侧边栏 / 任何面板无关**：不再量 composer 的几何，右侧边栏展开时点阵
+  照样在窗口右下角。层里位置全部走行内样式（fixed / right / bottom / size / z-index），
+  HMR 先摘 `<style>` 的瞬间也不会退化成普通块。
+- 历史（只作记录）：0.7.2 及以前它贴在**输入卡右侧空白**里，按输入卡宽度算右侧留白，
+  要求 ≥120px 才显示；1200px 左右的窗口一律判"空间不足"，用户看到的是"设置里开着的、
+  界面上却没有"。0.7.3 改成按空白自适应（44–120px），0.7.4 起直接固定在窗口右下角。
+- **只在回合进行中出现**：`[data-chat-running]` 在、且不是 `data-holding`、且不是
+  `display:none` 才挂；启动揭幕（`#dshMarBootHost` 存在）期间一律不显示。
+- **窗口缩放**：`resize` 时按新的 `min(vw,vh)` 重算边长并重新摆位，引擎不停。
 - **没有静态点阵底/边框**：不亮的格子直接不存在；每一格第一次亮起时在 8 帧内
   从 0 淡到目标亮度，所以它从“几乎空”逐渐长成一团，不会一开始就铺满格子。
 - **双色**：新生格闪 `#C0FE04`（酸绿），成熟后按 STATES 的 warm 值退到 `#8F96B2`
@@ -66,6 +59,8 @@
 - **不碰原生文字**：不加 `mar-run-on`、不隐藏 `[data-chat-running]` 的任何子节点，
   「深度求索中，用时 N 秒」照常显示（除非选项 1 把它替换掉）。
 - 与选项 1 完全独立：关掉任一个不影响另一个；两个引擎各自一份 payload。
+- 自检：DevTools 里 `__marRunDebug().dot` → `enabled / payload / mounted / broken /
+  size / corner / rect / note`。
 
 ## 3. 挂载点与 DOM 契约（实测 DSH 0.2.2-rc.1）
 
@@ -122,14 +117,12 @@
 
 | 东西 | 位置 |
 | --- | --- |
-| 两个选项的挂载 / 数据 / 开关 / 生命周期 | `src/client.template.js` 的 `// ---- running animation` 与 `// ---- dot animation` 段 |
+| 挂载 / 数据 / 开关 / 生命周期 | `src/client.template.js` 的 `// ---- running animation` 段 |
 | 条带几何与绘制（BEAM / PKT / FIG / TEXT；`sag = 0`、线长 220） | `src/run/engine-run.js` |
-| 右侧点阵引擎（方形 canvas、DPR、reduced、destroy） | `src/run/engine-dot.js` |
-| 点阵数据与绘制（21×21 / 141 帧 / 逐格淡入） | `src/run/think-anim1.js`（`FRAMES` / `STATES` 逐字来自《动画1》） |
-| 构建注入 | `scripts/build.cjs` → `RUN_PAYLOAD` / `DOT_PAYLOAD` |
-| 样式（隐藏原生子节点、条带宽度、点阵层） | `client.template.js` 样式表 `running animation` 段 |
-| 设置项 / 存储键 | 同一个「运行动画」组：运行动画 `mar.run.v1`、点阵动画 `mar.dot.v1`、跟随主题色 `mar.run.follow.v1`（前两个默认 `true`，跟随默认 `false`） |
-| 诊断钩子 | `window.__marRunDebug()`：三个开关、挂载、尺寸、条带 layout metrics、最近一帧状态 |
+| 构建注入 | `scripts/build.cjs` → `RUN_PAYLOAD` |
+| 样式（隐藏原生子节点、条带宽度） | `client.template.js` 样式表 `running animation` 段 |
+| 设置项 / 存储键 | 「运行动画」组：运行动画 `mar.run.v1`、跟随主题色 `mar.run.follow.v1`（默认 `true` / `false`） |
+| 诊断钩子 | `window.__marRunDebug()`：开关、挂载、条带 layout metrics、最近一帧状态 |
 
 条带常量（源 `运行动画.html` → 132px 条带）：
 
@@ -143,22 +136,17 @@
 
 ## 6. 生命周期与失败路径
 
-1. `apply()` 末尾调用 `runApply()`：按两个动画开关分别给 `<body>` 加 `mar-run-on` /
-   `mar-dot-on`，起一个共享的 `MutationObserver`（body childList，100ms 合并）+
-   400ms 轮询（只跑任一动画开启时）；「跟随主题色」只影响颜色，不影响挂载。
+1. `apply()` 末尾调用 `runApply()`：按运行动画开关给 `<body>` 加 `mar-run-on`，
+   起一个 `MutationObserver`（body childList，100ms 合并）+ 400ms 轮询（只在运行动画
+   开启时跑）；「跟随主题色」只影响颜色，不影响挂载。
 2. 看见 `[data-chat-running]` 且不在 `data-holding`、可见、找得到 seat：
-   - 选项 1：创建 `#dshMarRunHost` 插到 `seat.firstChild`，注入 `RUN_PAYLOAD.engine`；
-   - 选项 2：找 `[data-composer-card]` 量右侧空白，创建 `#dshMarDotHost` 绝对定位，
-     注入 `DOT_PAYLOAD.engine`。
-3. 选项 1 每 250ms 读一次快照 / 原生标题，`inst.set(state)`；点阵引擎自己按 RAF 动画，
-   400ms 轮询只补 ink / reduced。
-4. 运行行消失 / 进入 holding / 座位被重建 → 两个宿主各自摘掉并 `destroy()`。
-5. 引擎脚本被 CSP 拦下或 `create()` 抛错：撤掉对应宿主，设置页状态小字显示不可用；
-   另一个选项不受影响。
-6. 系统 `prefers-reduced-motion: reduce`：两者都只画一帧静态。
-7. `dispose()`：停观察器 / 定时器、销毁两个引擎、摘两个宿主、删两个注入 `<script>`、
-   移除 resize 监听、清 `window.__marRunEngine` / `__marDotEngine` / `__marRunDebug`、
-   去掉 `body.mar-run-on` / `mar-dot-on`。
+   创建 `#dshMarRunHost` 插到 `seat.firstChild`，注入 `RUN_PAYLOAD.engine`。
+3. 每 250ms 读一次快照 / 原生标题，`inst.set(state)`。
+4. 运行行消失 / 进入 holding / 座位被重建 → 宿主摘掉并 `destroy()`。
+5. 引擎脚本被 CSP 拦下或 `create()` 抛错：撤掉宿主，设置页状态小字显示不可用。
+6. 系统 `prefers-reduced-motion: reduce`：只画一帧静态。
+7. `dispose()`：停观察器 / 定时器、销毁引擎、摘宿主、删注入的 `<script>`、
+   清 `window.__marRunEngine` / `__marRunDebug`、去掉 `body.mar-run-on`。
 
 ## 7. 已知边界
 
@@ -167,11 +155,16 @@
 - **工具名过长**：第三行先缩到 80% 字号，再省略号；820px 宽下约 35 个中文字以内不裁。
 - **`data-tool` 是 ui-tool 的 DOM 契约**：它和 `data-state` 一起在 `ToolRow` 根节点上。
   将来若改名，第三行会退回「等待模型响应」，条带其余部分不受影响。
-- **右侧空间不足**：窗口窄 / 宿主把输入卡调得很宽时，点阵会缩小到 64px；连 64px 都
-  放不下就不显示（不压到输入卡上）。
+- **右侧空间不足**：点阵尺寸**跟着可用空白自适应** —— 两侧各留 `pad = clamp(6, 28, 空白×12%)`，
+  剩下的就是边长，夹在 `[44, 120]`。连 `44 + 2×6 = 56px` 都没有才收起（DSH 新版把
+  右侧边栏展开时，输入卡两侧各只剩 ~16px，就是这种情况）。收起时设置页把它写成
+  「右侧空间不足（右侧边栏展开时会这样）· 收起侧边栏后自动显示」，不是假装"待命"；
+  空间回来（收起侧边栏 / 窗口变宽）400ms 内自动挂上，不用刷新。
+- **窗口宽度**：2026-11-27 实测 1186px 宽的窗口里输入卡两侧各剩 ~93px —— 旧规则要求
+  ≥120px，所以点阵一直藏着；现在这种宽度下边长 71px、位置在输入卡右下角的空白里。
 - **运行行被上一行 turn-tail 隐藏**：宿主把运行行 `display:none` 时它仍然在 DOM 里，
-  我们的判据会先把两个动画都撤掉。
-- **没有"预览"按钮**：两个动画都只在真实回合里出现（与原生提示同一时机）。要手工验，
+  我们的判据会把条带撤掉。
+- **没有"预览"按钮**：条带只在真实回合里出现（与原生提示同一时机）。要手工验，
   用无头夹具（见下）或 DevTools 里 `__marRunDebug()`。
 
 ## 8. 验证
@@ -182,22 +175,16 @@
 node .generated/verify-run.cjs
 ```
 
-它加载**真实 `client.js`**，用 0.2.2-rc.1 的真实类名复刻「转录 + 运行行 + composer seat」，
-断言 103 项：三个开关互相独立 / 条带挂载与几何（高度 132、底 ≤ 卡顶、**直线 sag=0、
-线长 220、人形 46、无呼吸点、三条同字重、矩形圆角且端部与中部同厚**）/
-点阵挂载在卡**右下角**、尺寸 64–120、逐格像素、**输入框变高变宽后重贴右下角**、
-**审批 / 提问卡接管 composer 后点阵位置与接管前完全一致（不随审批卡变窄而挪）、
-接管结束回到输入卡** / **HMR 重载（脏/干净两条路径）后样式表自愈、点阵仍一份且
-仍贴右下角** /
-**新生绿与成熟 `#8F96B2` 双色** / **跟随主题色开（#FF00AA）关（#C0FE04）** /
-原生子节点隐藏与 `role=status` 保留 / 用时与工具名（快照 + DOM 双路）/ 行消失与重挂 /
-`display:none` / 三个 `localStorage` 键。
+它加载**真实 `client.js`**，用真实类名复刻「转录 + 运行行 + composer seat」，
+断言条带挂载与几何（高度 132、底 ≤ 卡顶、**直线 sag=0、线长 220、人形 46、
+无呼吸点、三条同字重、矩形圆角且端部与中部同厚**）/ 跟随主题色开（#FF00AA）
+关（#C0FE04）/ 原生子节点隐藏与 `role=status` 保留 / 用时与工具名（快照 + DOM 双路）/
+行消失与重挂 / `display:none` / 两个 `localStorage` 键。
 截图写在 `.generated/probe-out/run/`。
 
 单独预览：
 
 - 条带：`.generated/run-strip/preview.html?w=820&mode=run&clean=1&t=0.6`
-- 点阵右侧：`.generated/run-strip/dot-preview.html`
 
 静态校验：`node check.cjs`；构建：`node scripts/build.cjs`
-（`src/run/engine-run.js` → `RUN_PAYLOAD`；`engine-dot.js` + `think-anim1.js` → `DOT_PAYLOAD`）。
+（`src/run/engine-run.js` → `RUN_PAYLOAD`）。

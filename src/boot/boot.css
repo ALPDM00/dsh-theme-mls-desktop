@@ -71,10 +71,11 @@ html[data-mar-boot] #root {
   background: transparent !important;
 }
 /* 2026-09-26: making html/body/#root transparent is not enough on its own.
- * DSH's own plates -- sidebar, conversation column, composer, the theme's ASCII
- * field canvas (#mar-ascii-bg) -- each paint their own background, so with only
- * the rules above the deepest thing over the window's alpha surface is still the
- * live app and the "transparent" boot shows the interface instead of the desktop.
+ * DSH's own plates -- sidebar, conversation column, composer, and the theme's
+ * background scene canvas (#mar-scene-bg) -- each paint their own background, so
+ * with only the rules above the deepest thing over the window's alpha surface is
+ * still the live app and the "transparent" boot shows the interface instead of
+ * the desktop.
  * Take the whole app out of the visible layer for the duration instead: every
  * direct child of <body> except the boot overlay itself. `visibility` (not
  * `display`) so nothing re-lays-out when the attribute comes off.

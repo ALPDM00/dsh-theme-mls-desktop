@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "generated": "2026-11-26T10:18:48.482Z",
+  "scenes": [
+    {
+      "name": "planet",
+      "kind": 0,
+      "file": "planet.msc.gz",
+      "source": "3fdfae69-bf8b-4f7a-a2a2-d331afedae3a.chunks",
+      "blocks": 2,
+      "vertices": 3173,
+      "indices": 6300,
+      "segments": 3150,
+      "droppedSegments": 0,
+      "bbox": [
+        -0.4988,
+        0.5,
+        -0.5,
+        0.5,
+        -0.4997,
+        0.4997
+      ],
+      "maxQuantStep": 0.000015,
+      "bytesRaw": 44280,
+      "bytesGzip": 13639
+    },
+    {
+      "name": "ship",
+      "kind": 1,
+      "file": "ship.msc.gz",
+      "source": "caa68a98-44e9-44d8-8869-94f29da79dd9.chunks",
+      "blocks": 12,
+      "vertices": 72018,
+      "indices": 78680,
+      "segments": 39340,
+      "droppedSegments": 0,
+      "bbox": [
+        -0.63,
+        -0.287,
+        0.187,
+        0.395,
+        0.018,
+        0.549
+      ],
+      "maxQuantStep": 0.000008,
+      "bytesRaw": 746868,
+      "bytesGzip": 402977
+    }
+  ]
+}
